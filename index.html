@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NATURA VIDA — Gestión</title>
+<meta name="theme-color" content="#01773B">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <header class="top">
+    <div class="brandrow">
+      <div class="brand" id="brandClickArea">
+        <div class="logo" id="bizLogo">🏪</div>
+        <div style="min-width:0;">
+          <div class="bizname" id="bizName">NATURA VIDA</div>
+          <div class="bizsub">Tocar para ir a Ajustes</div>
+        </div>
+      </div>
+      <div class="stamp" id="dateStamp"></div>
+    </div>
+  </header>
+
+  <main id="mainArea">
+    <div class="loading">Cargando datos…</div>
+  </main>
+
+  <button class="fab hidden" id="fabAdd" aria-label="Agregar">+</button>
+
+  <nav class="bottom" id="bottomNav"></nav>
+
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const d = new Date();
+    document.getElementById('dateStamp').textContent = d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  });
+</script>
+<script src="js/db.js"></script>
+<script src="js/ui-helpers.js"></script>
+<script src="js/state.js"></script>
+<script src="js/products.js"></script>
+<script src="js/pricegroups.js"></script>
+<script src="js/clients.js"></script>
+<script src="js/sales.js"></script>
+<script src="js/quotes.js"></script>
+<script src="js/receipt.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
