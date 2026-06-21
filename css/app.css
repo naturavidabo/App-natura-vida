@@ -798,3 +798,121 @@ nav.bottom button .ic svg,
 .dangerItem span:nth-child(2),
 .dangerItem .arrow{color:var(--red) !important;}
 .dangerItem .ic{background:var(--red-bg) !important;}
+
+/* ===== ONLINE + REVENDEDOR ===== */
+.resellerSaleHero{
+  background:
+    linear-gradient(135deg,rgba(255,255,255,.92),rgba(232,244,237,.92)),
+    radial-gradient(circle at top right,rgba(131,173,65,.26),transparent 42%);
+  border:1px solid rgba(1,119,59,.12);
+  border-radius:24px;
+  box-shadow:var(--shadow-soft);
+  padding:20px 18px;
+  margin-bottom:14px;
+}
+.resellerSaleHero h1{
+  margin:5px 0 8px;
+  font-size:24px;
+  letter-spacing:-.04em;
+  line-height:1.05;
+}
+.resellerSaleHero p{
+  margin:0;
+  color:var(--gray);
+  font-size:13px;
+  line-height:1.45;
+}
+.resellerCatalogCard .catalogBody{gap:8px;}
+.sellerPriceBox{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:7px;
+}
+.sellerPriceBox div{
+  border:1px solid rgba(1,119,59,.08);
+  border-radius:13px;
+  padding:8px;
+  background:linear-gradient(180deg,#FFFFFF,#F5FAF7);
+}
+.sellerPriceBox span{
+  display:block;
+  font-family:'JetBrains Mono',monospace;
+  font-size:8.5px;
+  color:var(--gray);
+  text-transform:uppercase;
+  font-weight:800;
+}
+.sellerPriceBox strong{
+  display:block;
+  color:var(--pine);
+  margin-top:3px;
+  font-size:13px;
+}
+.sellerPriceField{margin:0;}
+.sellerPriceField label{font-size:8.5px;}
+.sellerPriceField input{
+  min-height:40px;
+  text-align:center;
+  font-size:17px;
+  font-weight:850;
+  color:var(--pine-dark);
+  background:#fff;
+}
+.sellerMargin{
+  border-radius:999px;
+  background:var(--green-bg);
+  color:var(--pine-dark);
+  font-weight:800;
+  font-size:11px;
+  text-align:center;
+  padding:7px 8px;
+}
+.sellerMargin.negative{
+  background:var(--red-bg);
+  color:var(--red);
+}
+.resellerProfitBox{
+  background:linear-gradient(135deg,var(--pine-dark),var(--pine));
+  color:#fff;
+  border:none;
+}
+.resellerProfitBox .lbl,.resellerProfitBox .val{color:#fff;}
+.syncStatePill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 9px;
+  border-radius:999px;
+  background:var(--green-bg);
+  color:var(--pine-dark);
+  font-family:'JetBrains Mono',monospace;
+  font-weight:800;
+  font-size:9px;
+}
+
+/* ===== NATURA VIDA V4 — Catálogo PDF e intercambio inteligente ===== */
+.catalogOptionRow{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:8px;
+  margin:12px 0 16px;
+}
+.catalogOptionRow label{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  background:linear-gradient(180deg,#FFFFFF,#F7FAF8);
+  border:1px solid rgba(1,119,59,.10);
+  border-radius:14px;
+  padding:11px 12px;
+  color:var(--ink);
+  font-size:12.5px;
+  font-weight:700;
+}
+.catalogOptionRow input{accent-color:var(--pine);}
+.moreItem#moreCatalogPdf .ic{background:linear-gradient(135deg,#EAF6EF,#DCEEDF);}
+.moreItem#moreSmartPackages .ic{background:linear-gradient(135deg,#F8F2DE,#EAF6EF);}
+.salesChannelToggle{display:grid;grid-template-columns:1fr;gap:6px;}
+.salesChannelToggle button{min-height:42px;}
+.salesChannelNotice{margin-top:-6px;margin-bottom:12px;}
+@media (min-width:420px){.salesChannelToggle{grid-template-columns:1fr 1fr 1fr;}}

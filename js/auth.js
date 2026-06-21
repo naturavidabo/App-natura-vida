@@ -1,4 +1,4 @@
-/* auth.js — Autenticación local offline-first con sesión persistente y control básico por rol. */
+/* auth.js — Autenticación offline local + autenticación online opcional Supabase. */
 
 async function sha256Hex(text) {
   const enc = new TextEncoder().encode(String(text || ''));
@@ -6,8 +6,41 @@ async function sha256Hex(text) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function permissionsForRole(roleName) {
+  if (roleName === 'Administrador') return ['*'];
+  if (roleName === 'Supervisor') return ['products:read', 'clients:read', 'quotes:read', 'sales:read', 'team_reports:read'];
+  return ['products:read', 'clients:manage', 'quotes:manage', 'sales:create', 'own_reports:read'];
+}
+
+function applyOnlineSession(user, profile) {
+  const roleName = profile.role || 'Revendedor';
+  AppState.session = {
+    isAuthenticated: true,
+    online: true,
+    onlineUserId: user.id,
+    userId: user.id,
+    username: profile.username || user.email,
+    fullName: profile.full_name || profile.username || user.email,
+    roleId: profile.role_id || roleName.toLowerCase(),
+    roleName,
+    permissions: permissionsForRole(roleName)
+  };
+}
+
 async function authenticateUser(username, password) {
-  const users = await DB.getByIndex('users', 'byUsername', String(username || '').trim().toLowerCase());
+  const cleanUser = String(username || '').trim();
+
+  if (window.isOnlineConfigured && isOnlineConfigured()) {
+    const online = await onlineSignIn(cleanUser, password);
+    if (online.ok) {
+      applyOnlineSession(online.user, online.profile);
+      await writeAudit('login:online', 'user', online.user.id, null, { username: cleanUser }).catch(() => {});
+      return { ok: true, user: online.user, online: true };
+    }
+    return online;
+  }
+
+  const users = await DB.getByIndex('users', 'byUsername', cleanUser.toLowerCase());
   const user = users.find(u => u.status === 'active');
   if (!user) return { ok: false, message: 'Usuario no encontrado o inactivo.' };
   const hash = await sha256Hex(password);
@@ -16,6 +49,7 @@ async function authenticateUser(username, password) {
   const permissions = permissionsRows.flatMap(p => Array.isArray(p.actions) ? p.actions : []);
   AppState.session = {
     isAuthenticated: true,
+    online: false,
     userId: user.id,
     username: user.username,
     fullName: user.fullName || user.username,
@@ -24,12 +58,20 @@ async function authenticateUser(username, password) {
     permissions
   };
   localStorage.setItem('natura_vida_session', JSON.stringify({ userId: user.id }));
-  await writeAudit('login', 'user', user.id, null, { username: user.username });
-  return { ok: true, user };
+  await writeAudit('login:local', 'user', user.id, null, { username: user.username }).catch(() => {});
+  return { ok: true, user, online: false };
 }
 
 async function restoreSession() {
   try {
+    if (window.isOnlineConfigured && isOnlineConfigured()) {
+      const online = await getOnlineSessionProfile();
+      if (online && online.user && online.profile) {
+        applyOnlineSession(online.user, online.profile);
+        return true;
+      }
+    }
+
     const raw = localStorage.getItem('natura_vida_session');
     if (!raw) return false;
     const saved = JSON.parse(raw);
@@ -40,6 +82,7 @@ async function restoreSession() {
     const permissions = permissionsRows.flatMap(p => Array.isArray(p.actions) ? p.actions : []);
     AppState.session = {
       isAuthenticated: true,
+      online: false,
       userId: user.id,
       username: user.username,
       fullName: user.fullName || user.username,
@@ -53,10 +96,12 @@ async function restoreSession() {
   }
 }
 
-function logoutSession() {
+async function logoutSession() {
   localStorage.removeItem('natura_vida_session');
+  if (window.onlineSignOut) await onlineSignOut().catch(() => {});
   AppState.session = {
     isAuthenticated: false,
+    online: false,
     userId: null,
     username: null,
     fullName: null,
@@ -76,9 +121,19 @@ function requireAuth() {
   return !!(AppState.session && AppState.session.isAuthenticated);
 }
 
+function isAdmin() {
+  return requireAuth() && AppState.session.roleName === 'Administrador';
+}
+
+function isReseller() {
+  return requireAuth() && AppState.session.roleName === 'Revendedor';
+}
+
 window.sha256Hex = sha256Hex;
 window.authenticateUser = authenticateUser;
 window.restoreSession = restoreSession;
 window.logoutSession = logoutSession;
 window.hasPermission = hasPermission;
 window.requireAuth = requireAuth;
+window.isAdmin = isAdmin;
+window.isReseller = isReseller;

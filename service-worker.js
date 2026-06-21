@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v2-fase2-auth-ui';
+const CACHE_NAME = 'natura-vida-v4-distribuidores-catalogo-pdf';
 const ASSETS = [
   './',
   './index.html',
@@ -15,7 +15,11 @@ const ASSETS = [
   './js/receipt.js',
   './js/backup.js',
   './js/settings.js',
+  './js/supabase-config.js',
+  './js/supabase-sync.js',
   './js/auth.js',
+  './js/catalog-pdf.js',
+  './js/smart-packages.js',
   './js/app.js',
   './icons/icon-48.png',
   './icons/icon-72.png',
@@ -49,7 +53,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request).then((response) => {
-        if (response && response.status === 200 && response.type === 'basic') {
+        if (response && response.status === 200 && (response.type === 'basic' || response.type === 'cors')) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }

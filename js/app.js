@@ -38,11 +38,11 @@ function renderLoginScreen() {
       <div class="loginCard">
         <div class="loginBadge">Acceso seguro</div>
         <h1>Ingresar a Natura Vida</h1>
-        <p>Accede con tu usuario y contraseña para administrar ventas, inventario, clientes y cotizaciones.</p>
+        <p>Accede con tu cuenta. En modo online usa el correo creado en Supabase; en modo local puedes usar el usuario demo.</p>
         <form id="loginForm" class="loginForm">
           <div class="field">
             <label>Usuario</label>
-            <input type="text" id="loginUser" autocomplete="username" placeholder="Ej.: admin" required>
+            <input type="text" id="loginUser" autocomplete="username" placeholder="admin o correo online" required>
           </div>
           <div class="field">
             <label>Contraseña</label>
@@ -52,8 +52,9 @@ function renderLoginScreen() {
         </form>
         <div class="loginHint">
           <strong>Credenciales iniciales:</strong><br>
-          admin / NaturaVida2026!<br>
-          revendedor1 / Revende2026!
+          Modo local: admin / NaturaVida2026!<br>
+          Modo local: revendedor1 / Revende2026!<br>
+          Modo online: usa el correo y contraseña creados en Supabase.
         </div>
       </div>
     </section>
@@ -67,6 +68,12 @@ function renderLoginScreen() {
       showToast(result.message || 'No se pudo iniciar sesión.', 'error');
       return;
     }
+    if (window.syncAfterLogin) {
+      const sync = await syncAfterLogin();
+      if (sync && sync.ok && sync.count !== undefined) showToast(`Precios actualizados: ${sync.count} producto(s).`);
+      if (sync && !sync.ok) showToast('Entraste, pero no se pudo sincronizar: ' + sync.message, 'error');
+    }
+    await loadAllState();
     showToast('Sesión iniciada correctamente.');
     renderTopHeader();
     renderBottomNav();
@@ -152,18 +159,22 @@ function render() {
 }
 
 function getTodaySales() {
-  return AppState.sales.filter(s => fmtDate(s.date) === fmtDate(Date.now()));
+  return AppState.sales.filter(s => (!sellerMode || !sellerMode() || s.sellerId === AppState.session.userId) && fmtDate(s.date) === fmtDate(Date.now()));
 }
 
 function getMonthSales() {
   const now = new Date();
   return AppState.sales.filter(s => {
+    if (sellerMode && sellerMode() && s.sellerId !== AppState.session.userId) return false;
     const d = new Date(s.date);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
 }
 
 function saleProfit(sale) {
+  if ((sale.type === 'reseller' || sale.role === 'Revendedor') && Number.isFinite(Number(sale.sellerProfit))) {
+    return Number(sale.sellerProfit) || 0;
+  }
   return (sale.items || []).reduce((sum, item) => {
     const product = AppState.products.find(p => p.id === item.productId);
     const cost = Number(item.unitCost ?? (product ? grossCost(product) : 0)) || 0;
@@ -175,7 +186,7 @@ function saleProfit(sale) {
 
 function topProducts(limit = 4) {
   const map = new Map();
-  AppState.sales.forEach(sale => {
+  AppState.sales.filter(s => !sellerMode || !sellerMode() || s.sellerId === AppState.session.userId).forEach(sale => {
     (sale.items || []).forEach(item => {
       const current = map.get(item.productId) || { name: item.productName, qty: 0, total: 0 };
       current.qty += Number(item.qty) || 0;
@@ -206,6 +217,7 @@ function renderInicio() {
       <div class="dashActions">
         <button class="btn" id="qbSell">Registrar venta</button>
         <button class="btn outline" id="qbInv">Inventario</button>
+        <button class="btn outline" id="qbSync">${isAdmin && isAdmin() ? 'Publicar catálogo' : 'Actualizar precios'}</button>
       </div>
     </section>
 
@@ -256,6 +268,19 @@ function renderInicio() {
 
   $('#qbSell').addEventListener('click', () => navigateTo('vender'));
   $('#qbInv').addEventListener('click', () => navigateTo('inventario'));
+  $('#qbSync').addEventListener('click', async () => {
+    if (!isOnlineConfigured()) { showToast('Servidor online no configurado todavía.', 'error'); return; }
+    let res;
+    if (isAdmin && isAdmin() && window.pushLocalProductsToCloud) {
+      res = await pushLocalProductsToCloud();
+      if (res.ok) showToast(`Catálogo publicado: ${res.count} producto(s).`);
+      else showToast('No se pudo publicar: ' + res.message, 'error');
+    } else if (window.syncCloudProductsToLocal) {
+      res = await syncCloudProductsToLocal();
+      if (res.ok) { showToast(`Precios actualizados: ${res.count} producto(s).`); render(); }
+      else showToast('No se pudo sincronizar: ' + res.message, 'error');
+    }
+  });
   $('#goInventory').addEventListener('click', () => navigateTo('inventario'));
   $('#goReports').addEventListener('click', () => navigateTo('resumen'));
   $('#qbQuote').addEventListener('click', () => navigateTo('cotizar'));
@@ -278,6 +303,8 @@ function renderMas() {
     <div class="moreList proMore">
       <div class="moreItem" id="moreClients"><span class="ic svgic">${icon('clients')}</span><span>Directorio de clientes</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreGroups"><span class="ic svgic">${icon('tag')}</span><span>Grupos de precio</span><span class="arrow">›</span></div>
+      <div class="moreItem" id="moreCatalogPdf"><span class="ic svgic">${icon('quote')}</span><span>Catálogo PDF para WhatsApp</span><span class="tagSoon">PDF</span><span class="arrow">›</span></div>
+      <div class="moreItem" id="moreSmartPackages"><span class="ic svgic">${icon('reports')}</span><span>Intercambio inteligente</span><span class="tagSoon">V4</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreUsers"><span class="ic svgic">${icon('users')}</span><span>Usuarios, roles y permisos</span><span class="tagSoon">Activo</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreCommissions"><span class="ic svgic">${icon('commission')}</span><span>Comisiones revendedor</span><span class="tagSoon">Base</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreReports"><span class="ic svgic">${icon('reports')}</span><span>Reportes comerciales</span><span class="tagSoon">Base</span><span class="arrow">›</span></div>
@@ -288,6 +315,8 @@ function renderMas() {
   `;
   $('#moreClients').addEventListener('click', () => navigateTo('clientes'));
   $('#moreGroups').addEventListener('click', () => navigateTo('grupos'));
+  $('#moreCatalogPdf').addEventListener('click', () => openCatalogPdfOptions());
+  $('#moreSmartPackages').addEventListener('click', () => openSmartPackagesPanel());
   $('#moreUsers').addEventListener('click', () => navigateTo('usuarios'));
   $('#moreCommissions').addEventListener('click', () => navigateTo('comisiones'));
   $('#moreReports').addEventListener('click', () => navigateTo('reportes-pro'));
@@ -302,14 +331,24 @@ function renderMas() {
 }
 
 let _histFilterType = 'all';
+function saleTypeLabel(type) {
+  return {
+    unit: 'Venta unitaria',
+    wholesale: 'Venta revendedor',
+    market: 'Mayorista mercado',
+    representative_transfer: 'Despacho a representante',
+    reseller: 'Venta representante'
+  }[type] || 'Venta';
+}
 function renderResumen() {
   $('#fabAdd').classList.add('hidden');
   const main = $('#mainArea');
   const metrics = productMetrics();
-  const totalVendidoMonto = AppState.sales.reduce((s, v) => s + (Number(v.total) || 0), 0);
-  const ganancia = AppState.sales.reduce((s, v) => s + saleProfit(v), 0);
+  const visibleSales = AppState.sales.filter(s => !sellerMode || !sellerMode() || s.sellerId === AppState.session.userId);
+  const totalVendidoMonto = visibleSales.reduce((s, v) => s + (Number(v.total) || 0), 0);
+  const ganancia = visibleSales.reduce((s, v) => s + saleProfit(v), 0);
 
-  const filteredSales = AppState.sales
+  const filteredSales = visibleSales
     .filter(v => _histFilterType === 'all' || v.type === _histFilterType)
     .slice().reverse();
 
@@ -321,7 +360,7 @@ function renderResumen() {
         <div class="kpiCard"><span class="lbl">Unidades stock</span><strong>${metrics.units}</strong></div>
         <div class="kpiCard"><span class="lbl">Capital invertido</span><strong>${fmtMoney(metrics.costValue)}</strong></div>
         <div class="kpiCard ${metrics.lowStock ? 'dangerSoft' : ''}"><span class="lbl">Stock bajo</span><strong>${metrics.lowStock}</strong></div>
-        <div class="kpiCard wide accent"><span class="lbl">Total vendido</span><strong>${fmtMoney(totalVendidoMonto)}</strong><small>${AppState.sales.length} venta(s)</small></div>
+        <div class="kpiCard wide accent"><span class="lbl">Total vendido</span><strong>${fmtMoney(totalVendidoMonto)}</strong><small>${visibleSales.length} venta(s)</small></div>
         <div class="kpiCard wide"><span class="lbl">Ganancia estimada</span><strong>${fmtMoney(ganancia)}</strong><small>usa costo histórico si la venta lo tiene</small></div>
       </div>
     </section>
@@ -329,8 +368,10 @@ function renderResumen() {
     <div class="sectiontitle">Historial de ventas</div>
     <div class="saletoggle">
       <button data-f="all" class="${_histFilterType === 'all' ? 'active' : ''}">Todas</button>
-      <button data-f="unit" class="${_histFilterType === 'unit' ? 'active' : ''}">Público</button>
-      <button data-f="wholesale" class="${_histFilterType === 'wholesale' ? 'active' : ''}">Revendedor</button>
+      <button data-f="unit" class="${_histFilterType === 'unit' ? 'active' : ''}">Unitaria</button>
+      <button data-f="market" class="${_histFilterType === 'market' ? 'active' : ''}">Mercado</button>
+      <button data-f="representative_transfer" class="${_histFilterType === 'representative_transfer' ? 'active' : ''}">Representante</button>
+      <button data-f="reseller" class="${_histFilterType === 'reseller' ? 'active' : ''}">Propia rep.</button>
     </div>
   `;
 
@@ -346,7 +387,7 @@ function renderResumen() {
       <div class="histitem histitem-clickable" data-saleid="${v.id}">
         <div class="l">
           <div class="pname">${escapeHtml(summary)} ${v.groupName ? `<span class="tinytag">${escapeHtml(v.groupName)}</span>` : ''}</div>
-          <div class="meta">${escapeHtml(v.clientName || '—')} · ${v.type === 'unit' ? 'Público' : 'Revendedor'} · ${totalUnits} unid. · ${fmtDate(v.date)}</div>
+          <div class="meta">${escapeHtml(v.clientName || '—')} · ${saleTypeLabel(v.type)} · ${totalUnits} unid. · ${fmtDate(v.date)}</div>
         </div>
         <div class="r">
           <div>+${fmtMoney(v.total)}</div>
@@ -417,6 +458,9 @@ async function initApp() {
   await restoreSession();
   renderTopHeader();
   if (requireAuth()) {
+    if (window.syncAfterLogin) await syncAfterLogin().catch(() => {});
+    await loadAllState();
+    renderTopHeader();
     renderBottomNav();
     render();
     offerRestoreIfEmpty();

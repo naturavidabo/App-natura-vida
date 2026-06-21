@@ -2,7 +2,7 @@
    Mantiene funcionamiento offline, amplía el modelo comercial y prepara sincronización futura. */
 
 const DB_NAME = 'natura_vida_db';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 const STORES = [
   'products',
   'priceGroups',
@@ -18,7 +18,11 @@ const STORES = [
   'commissions',
   'reportsCache',
   'syncQueue',
-  'auditLog'
+  'auditLog',
+  'representatives',
+  'dispatches',
+  'representativeReports',
+  'importedPackages'
 ];
 
 const DB_SCHEMA = {
@@ -45,7 +49,11 @@ const DB_SCHEMA = {
   commissions: { keyPath: 'id', indexes: [['bySeller', 'sellerId'], ['bySale', 'saleId'], ['byDate', 'date'], ['byStatus', 'status']] },
   reportsCache: { keyPath: 'id', indexes: [['byType', 'type'], ['byPeriod', 'period'], ['byGeneratedAt', 'generatedAt']] },
   syncQueue: { keyPath: 'id', indexes: [['byStore', 'storeName'], ['byStatus', 'status'], ['byCreatedAt', 'createdAt']] },
-  auditLog: { keyPath: 'id', indexes: [['byUser', 'userId'], ['byAction', 'action'], ['byCreatedAt', 'createdAt']] }
+  auditLog: { keyPath: 'id', indexes: [['byUser', 'userId'], ['byAction', 'action'], ['byCreatedAt', 'createdAt']] },
+  representatives: { keyPath: 'id', indexes: [['byName', 'name'], ['byStatus', 'status'], ['byRegion', 'region']] },
+  dispatches: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byDate', 'date'], ['byStatus', 'status']] },
+  representativeReports: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byImportedAt', 'importedAt']] },
+  importedPackages: { keyPath: 'id', indexes: [['byPackageType', 'packageType'], ['byImportedAt', 'importedAt']] }
 };
 
 let _db = null;
@@ -228,6 +236,7 @@ const DB = {
     await transactionPromise(transaction);
     if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions'].includes(storeName)) {
       queueSync(storeName, prepared.id, 'put', prepared).catch(() => {});
+      if (window.cloudAfterPut) window.cloudAfterPut(storeName, prepared).catch(() => {});
     }
     return prepared;
   },
@@ -251,6 +260,7 @@ const DB = {
     await transactionPromise(transaction);
     if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions'].includes(storeName)) {
       queueSync(storeName, id, 'delete', null).catch(() => {});
+      if (window.cloudAfterDelete) window.cloudAfterDelete(storeName, id).catch(() => {});
     }
     return true;
   },

@@ -97,8 +97,9 @@ function productMetrics(products = AppState.products) {
 }
 
 function renderInventario() {
-  $('#fabAdd').classList.remove('hidden');
-  $('#fabAdd').onclick = () => openProductForm(null);
+  const adminMode = !window.isAdmin || isAdmin();
+  $('#fabAdd').classList.toggle('hidden', !adminMode);
+  $('#fabAdd').onclick = adminMode ? () => openProductForm(null) : null;
   const main = $('#mainArea');
   const lowThreshold = AppState.settings.lowStockThreshold;
   const metrics = productMetrics();
@@ -108,9 +109,9 @@ function renderInventario() {
       <div>
         <div class="eyebrow">Inventario comercial</div>
         <h1>Productos Natura Vida</h1>
-        <p>Costo, precio revendedor, precio público, stock, fotografía y trazabilidad offline.</p>
+        <p>${adminMode ? 'Costo, precio revendedor, precio público, stock, fotografía y trazabilidad online/offline.' : 'Catálogo actualizado por el administrador. Usa estos precios para negociar y vender.'}</p>
       </div>
-      <button class="btn sm" id="quickAddProduct">+ Producto</button>
+      ${adminMode ? '<button class="btn sm" id="quickAddProduct">+ Producto</button>' : '<button class="btn sm outline" id="quickRefreshProducts">Actualizar</button>'}
     </section>
 
     <div class="kpiGrid inventoryKpis">
@@ -163,20 +164,31 @@ function renderInventario() {
             <div><span>Público</span><strong>${fmtMoney(pPrice)}</strong><small>${pMargin >= 0 ? '+' : ''}${pMargin.toFixed(0)}%</small></div>
           </div>
         </div>
-        <div class="invActions">
-          <button class="editBtn" data-id="${p.id}">✏️ Editar</button>
-          <button class="danger delBtn" data-id="${p.id}">🗑️</button>
-        </div>
+        ${adminMode ? `<div class="invActions">
+          <button class="editBtn" data-id="${p.id}">Editar</button>
+          <button class="danger delBtn" data-id="${p.id}">Eliminar</button>
+        </div>` : `<div class="invActions">
+          <button class="sellThisBtn" data-id="${p.id}">Vender este producto</button>
+        </div>`}
       </article>`;
     });
     html += `</div>`;
   }
 
   main.innerHTML = html;
-  $('#quickAddProduct').addEventListener('click', () => openProductForm(null));
+  const quickAdd = $('#quickAddProduct');
+  if (quickAdd) quickAdd.addEventListener('click', () => openProductForm(null));
+  const quickRefresh = $('#quickRefreshProducts');
+  if (quickRefresh) quickRefresh.addEventListener('click', async () => {
+    if (!window.syncCloudProductsToLocal || !isOnlineConfigured()) { showToast('Servidor online no configurado.', 'error'); return; }
+    const res = await syncCloudProductsToLocal();
+    if (res.ok) { showToast(`Catálogo actualizado: ${res.count} producto(s).`); renderInventario(); }
+    else showToast('No se pudo actualizar: ' + res.message, 'error');
+  });
   $('#searchInput').addEventListener('input', e => { _prodSearch = e.target.value; renderInventario(); });
   $all('.editBtn').forEach(b => b.addEventListener('click', () => openProductForm(b.dataset.id)));
   $all('.delBtn').forEach(b => b.addEventListener('click', () => confirmDeleteProduct(b.dataset.id)));
+  $all('.sellThisBtn').forEach(b => b.addEventListener('click', () => { window.startSaleWithProduct ? startSaleWithProduct(b.dataset.id) : navigateTo('vender'); }));
 }
 
 async function confirmDeleteProduct(id) {
@@ -192,6 +204,7 @@ async function confirmDeleteProduct(id) {
 }
 
 function openProductForm(id) {
+  if (window.isAdmin && !isAdmin()) { showToast('Solo el administrador puede modificar productos.', 'error'); return; }
   const p = id ? AppState.products.find(x => x.id === id) : null;
   const baseCost = p ? productCost(p) : 0;
   let insumos = p ? JSON.parse(JSON.stringify(p.insumos || [])) : [];
