@@ -1,6 +1,9 @@
 /* sales.js — Venta con catálogo/carrito. Para revendedores permite precio negociado.
    Ejemplo: precio revendedor Bs 100, precio sugerido público Bs 150; el revendedor puede vender a Bs 140, 150, 160, etc. y la app calcula su margen. */
 
+const SALES_PROMO_BEAUTY = 'img/brand/natura-vida-coco-belleza.jpg';
+const SALES_PROMO_BENEFITS = 'img/brand/natura-vida-coco-benefits.jpg';
+
 let _saleType = 'unit';
 let _saleSelectedGroup = null;
 let _saleSearch = '';
@@ -52,13 +55,40 @@ function renderVender() {
         <h1>Vender con precio negociado</h1>
         <p>El administrador define tu precio base. Tú decides el precio final de venta y la app calcula tu margen automáticamente.</p>
       </section>` : `
+      <section class="salesShowcaseHero premiumSalesHero">
+        <div class="eyebrow">Catálogo de venta rápida</div>
+        <h1>Mostrar, vender y registrar</h1>
+        <p>Presenta los productos con una vista más comercial y registra ventas unitarias, mayoristas o a representantes.</p>
+      </section>
+      <section class="salesPromoPanel">
+        <div class="salesPromoVisual">
+          <img src="${SALES_PROMO_BEAUTY}" alt="Natura Vida promoción">
+          <div class="salesPromoOverlay">
+            <div class="salesPromoBrand">NATURA VIDA</div>
+            <h3>Belleza y bienestar natural</h3>
+            <p>Muestra tus productos con una imagen más comercial y usa esta vista como apoyo para vender directamente desde el celular.</p>
+          </div>
+        </div>
+        <div class="salesPromoMiniGrid">
+          <div class="salesMiniCard"><img src="${SALES_PROMO_BENEFITS}" alt="Beneficios Natura Vida"></div>
+          <div class="salesMiniInfo">
+            <div class="eyebrow">Venta asistida</div>
+            <h3>Apoyo visual para cerrar ventas</h3>
+            <ul>
+              <li>Productos más presentables</li>
+              <li>Precios visibles y claros</li>
+              <li>Ideal para mostrar al cliente en persona</li>
+            </ul>
+          </div>
+        </div>
+      </section>
       <div class="saletoggle salesChannelToggle">
         <button data-type="unit" class="${_saleType === 'unit' ? 'active' : ''}">Unitaria</button>
-        <button data-type="market" class="${_saleType === 'market' ? 'active' : ''}">Mayorista mercado</button>
-        <button data-type="representative_transfer" class="${_saleType === 'representative_transfer' ? 'active' : ''}">A representante</button>
+        <button data-type="market" class="${_saleType === 'market' ? 'active' : ''}">Mayorista</button>
+        <button data-type="representative_transfer" class="${_saleType === 'representative_transfer' ? 'active' : ''}">Representantes</button>
       </div>
       <div class="formNotice salesChannelNotice">
-        ${_saleType === 'unit' ? 'Venta directa a cliente final.' : (_saleType === 'market' ? 'Venta al por mayor a mercados o tiendas que no usan la app.' : 'Despacho/venta a representante regional. En V4 se complementa con archivo de despacho inteligente.')}
+        ${_saleType === 'unit' ? 'Venta directa a cliente final.' : (_saleType === 'market' ? 'Venta al por mayor a tiendas, clientes mayoristas o compradores que no usan la app.' : 'Despacho/venta a representante regional. En V4 se complementa con archivo de despacho inteligente.')}
       </div>`}
 
     ${(_saleType === 'market' || _saleType === 'representative_transfer') && groupsEnabled ? `
@@ -106,10 +136,13 @@ function renderCatalogGrid() {
     const margin = sellerUnitMargin(p);
     return `
     <div class="catalogCard ${sellerMode() ? 'resellerCatalogCard' : ''}" data-id="${p.id}">
-      <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="invPhotoFallback">🌿</span>'}</div>
+      <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
       <div class="catalogBody">
+        <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span><label class="catalogPromoTag">Natural</label></div>
         <div class="catalogName">${escapeHtml(p.name)}</div>
+        ${p.description ? `<div class="catalogDesc">${escapeHtml(p.description)}</div>` : ''}
         ${sellerMode() ? `
+          <div class="productFocusLine">Catálogo revendedor · margen configurable</div>
           <div class="sellerPriceBox">
             <div><span>Tu base</span><strong>${fmtMoney(base)}</strong></div>
             <div><span>Sugerido</span><strong>${fmtMoney(suggested)}</strong></div>
@@ -120,9 +153,10 @@ function renderCatalogGrid() {
           </div>
           <div class="sellerMargin ${margin < 0 ? 'negative' : ''}">Margen por unidad: ${fmtMoney(margin)}</div>
         ` : `
+          <div class="productFocusLine">Producto destacado para venta rápida</div>
           <div class="catalogPrice">${fmtMoney(price)}</div>
         `}
-        <div class="catalogStock ${low ? 'low' : ''}">stock referencial: ${p.stock}</div>
+        <div class="catalogStock ${low ? 'low' : ''}">Stock referencial: ${p.stock}</div>
         <div class="qtyStepper">
           <button class="qtyMinus" data-id="${p.id}">−</button>
           <span class="qtyVal" data-id="${p.id}">${qty}</span>

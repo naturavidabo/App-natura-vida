@@ -54,7 +54,7 @@ La app detecta si un paquete ya fue importado para evitar duplicados.
 En el panel de venta del administrador se reemplazó la lógica simple por canales:
 
 - Venta unitaria.
-- Venta mayorista mercado.
+- Venta mayorista.
 - A representante.
 
 El canal “A representante” ya queda registrado como tipo separado para continuar con la generación de despacho inteligente.

@@ -9,7 +9,7 @@ const AppState = {
   settings: {
     businessName: 'NATURA VIDA',
     businessSlogan: 'Te cuida por dentro y por fuera',
-    logo: null,
+    logo: 'img/brand/natura-vida-logo.jpeg',
     lowStockThreshold: 5,
     priceGroupsEnabled: true,
     currency: 'Bs',
@@ -49,8 +49,12 @@ async function loadAllState() {
   const savedSettings = settingsRows.find(r => r.key === 'main');
   if (savedSettings && savedSettings.value) {
     AppState.settings = Object.assign({}, AppState.settings, savedSettings.value);
+    if (!AppState.settings.logo || AppState.settings.logo === 'icons/icon-192.png') {
+      AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
+      await saveSettings();
+    }
   } else {
-    AppState.settings.logo = 'icons/icon-192.png';
+    AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
     await saveSettings();
   }
 }

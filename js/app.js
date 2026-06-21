@@ -335,7 +335,7 @@ function saleTypeLabel(type) {
   return {
     unit: 'Venta unitaria',
     wholesale: 'Venta revendedor',
-    market: 'Mayorista mercado',
+    market: 'Mayorista',
     representative_transfer: 'Despacho a representante',
     reseller: 'Venta representante'
   }[type] || 'Venta';
@@ -369,7 +369,7 @@ function renderResumen() {
     <div class="saletoggle">
       <button data-f="all" class="${_histFilterType === 'all' ? 'active' : ''}">Todas</button>
       <button data-f="unit" class="${_histFilterType === 'unit' ? 'active' : ''}">Unitaria</button>
-      <button data-f="market" class="${_histFilterType === 'market' ? 'active' : ''}">Mercado</button>
+      <button data-f="market" class="${_histFilterType === 'market' ? 'active' : ''}">Mayorista</button>
       <button data-f="representative_transfer" class="${_histFilterType === 'representative_transfer' ? 'active' : ''}">Representante</button>
       <button data-f="reseller" class="${_histFilterType === 'reseller' ? 'active' : ''}">Propia rep.</button>
     </div>

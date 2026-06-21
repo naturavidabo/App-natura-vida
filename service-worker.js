@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v4-distribuidores-catalogo-pdf';
+const CACHE_NAME = 'natura-vida-v4-2-catalogo-premium-plus';
 const ASSETS = [
   './',
   './index.html',
@@ -27,12 +27,16 @@ const ASSETS = [
   './icons/icon-144.png',
   './icons/icon-180.png',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './img/brand/natura-vida-logo.jpeg',
+  './img/brand/natura-vida-perfil-hojas.jpeg',
+  './img/brand/natura-vida-coco-benefits.jpg',
+  './img/brand/natura-vida-coco-belleza.jpg'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).catch(()=>{})
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).catch(() => {})
   );
   self.skipWaiting();
 });
@@ -46,7 +50,6 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Cache-first strategy: la app funciona offline después de instalarse y actualiza caché al cambiar versión.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
