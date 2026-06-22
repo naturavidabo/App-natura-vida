@@ -4,8 +4,39 @@
 let _supabaseClient = null;
 let _lastCloudSync = null;
 
+function getSavedOnlineConfig() {
+  try {
+    const raw = localStorage.getItem('natura_vida_online_config');
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+
+function effectiveOnlineConfig() {
+  const base = window.NATURA_ONLINE_CONFIG || {};
+  const saved = getSavedOnlineConfig() || {};
+  return Object.assign({}, base, saved);
+}
+
+function getOnlineConfigValue(key) {
+  const cfg = effectiveOnlineConfig();
+  const value = cfg[key] || '';
+  if (String(value).includes('PEGAR_AQUI')) return '';
+  return value;
+}
+
+function saveOnlineConfig(cfg) {
+  const clean = {
+    enabled: !!cfg.enabled,
+    supabaseUrl: String(cfg.supabaseUrl || '').trim(),
+    supabaseAnonKey: String(cfg.supabaseAnonKey || '').trim()
+  };
+  localStorage.setItem('natura_vida_online_config', JSON.stringify(clean));
+  _supabaseClient = null;
+  return clean;
+}
+
 function isOnlineConfigured() {
-  const cfg = window.NATURA_ONLINE_CONFIG || {};
+  const cfg = effectiveOnlineConfig();
   return !!(cfg.enabled && cfg.supabaseUrl && cfg.supabaseAnonKey && !String(cfg.supabaseUrl).includes('PEGAR_AQUI'));
 }
 
@@ -16,7 +47,7 @@ function getSupabaseClient() {
     console.warn('Supabase JS no está cargado. Revisa el CDN en index.html.');
     return null;
   }
-  const cfg = window.NATURA_ONLINE_CONFIG;
+  const cfg = effectiveOnlineConfig();
   _supabaseClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
     auth: {
       persistSession: true,
@@ -194,6 +225,23 @@ async function cloudAfterDelete(storeName, id) {
   }
 }
 
+
+async function testOnlineConnection() {
+  try {
+    const sb = getSupabaseClient();
+    if (!sb) return { ok: false, message: 'Configura URL y anon key.' };
+    const { error } = await sb.from('products').select('id').limit(1);
+    if (error) return { ok: false, message: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err.message || 'Error desconocido.' };
+  }
+}
+
+window.getSavedOnlineConfig = getSavedOnlineConfig;
+window.effectiveOnlineConfig = effectiveOnlineConfig;
+window.getOnlineConfigValue = getOnlineConfigValue;
+window.saveOnlineConfig = saveOnlineConfig;
 window.isOnlineConfigured = isOnlineConfigured;
 window.getSupabaseClient = getSupabaseClient;
 window.onlineSignIn = onlineSignIn;
@@ -204,3 +252,4 @@ window.pushLocalProductsToCloud = pushLocalProductsToCloud;
 window.syncAfterLogin = syncAfterLogin;
 window.cloudAfterPut = cloudAfterPut;
 window.cloudAfterDelete = cloudAfterDelete;
+window.testOnlineConnection = testOnlineConnection;

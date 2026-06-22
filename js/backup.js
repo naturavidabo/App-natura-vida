@@ -4,13 +4,20 @@
    Este mismo archivo permite restaurar todos los datos en cualquier dispositivo, incluso
    uno nuevo que nunca abrió la app antes. */
 
-async function generateBackupFile() {
-  const data = await DB.exportAll();
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+async function shareOrDownloadBackup(blob, filename) {
+  const file = new File([blob], filename, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Copia Natura Vida', text: 'Copia de seguridad Natura Vida.' });
+      return true;
+    } catch (_) { return false; }
+  }
+  showToast('Este navegador no permite compartir directo. Usa Descargar.', 'error');
+  return false;
+}
+
+function downloadBackupBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  const filename = `naturavida_backup_${stamp}.json`;
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
@@ -18,7 +25,33 @@ async function generateBackupFile() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  showToast('Copia de seguridad descargada: ' + filename);
+}
+
+async function generateBackupFile() {
+  const data = await DB.exportAll();
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const filename = `naturavida_backup_${stamp}.json`;
+  openSheet(`
+    <h2>Copia generada <span class="x" id="closeSheet">✕</span></h2>
+    <div class="catalogReadyHero">
+      <div class="readyMark">✓</div>
+      <div><div class="eyebrow">Respaldo completo</div><h3>${escapeHtml(filename)}</h3><p>Comparte o descarga el archivo para conservarlo fuera del celular.</p></div>
+    </div>
+    <div class="exportRow catalogExportRow">
+      <div class="exportBtn primaryShare" id="shareBackup"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / Drive</span></div>
+      <div class="exportBtn" id="downloadBackup"><span class="ic">↓</span><span class="lbl">Descargar</span><span class="sub">Guardar archivo</span></div>
+    </div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#shareBackup', overlay).addEventListener('click', () => shareOrDownloadBackup(blob, filename));
+    $('#downloadBackup', overlay).addEventListener('click', () => { downloadBackupBlob(blob, filename); showToast('Copia descargada.'); });
+    if (navigator.canShare) {
+      const file = new File([blob], filename, { type: 'application/json' });
+      if (navigator.canShare({ files: [file] })) setTimeout(() => shareOrDownloadBackup(blob, filename), 450);
+    }
+  });
 }
 
 function restoreBackupFromFile(file) {

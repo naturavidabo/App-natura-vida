@@ -1,10 +1,6 @@
-/* catalog-pdf.js — Catálogo comercial premium PDF + previsualización + compartir.
-   Diseñado para WhatsApp: genera PDF, muestra vista previa, permite compartir/descargar. */
+/* catalog-pdf.js — Catálogo comercial PDF para clientes: diseño limpio, sin imágenes de referencia distorsionadas, con compartir inmediato. */
 
 const NATURA_BRAND_LOGO = 'img/brand/natura-vida-logo.jpeg';
-const NATURA_PROFILE_LEAVES = 'img/brand/natura-vida-perfil-hojas.jpeg';
-const NATURA_PROMO_BENEFITS = 'img/brand/natura-vida-coco-benefits.jpg';
-const NATURA_PROMO_BEAUTY = 'img/brand/natura-vida-coco-belleza.jpg';
 let _lastCatalogPdf = null;
 
 function catalogVisibleProducts() {
@@ -43,6 +39,32 @@ async function imageForPdf(src) {
   }
 }
 
+async function imageInfoForPdf(src) {
+  const data = await imageForPdf(src);
+  if (!data) return null;
+  return await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+    img.onerror = () => resolve({ data, type: pdfImageType(data), width: 1, height: 1 });
+    img.src = data;
+  });
+}
+
+function drawImageContain(doc, img, x, y, w, h) {
+  if (!img || !img.data) return false;
+  const ratio = Math.min(w / img.width, h / img.height);
+  const nw = img.width * ratio;
+  const nh = img.height * ratio;
+  const nx = x + (w - nw) / 2;
+  const ny = y + (h - nh) / 2;
+  try {
+    doc.addImage(img.data, img.type, nx, ny, nw, nh, undefined, 'FAST');
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function addWrappedText(doc, text, x, y, maxWidth, lineHeight, maxLines) {
   const lines = doc.splitTextToSize(cleanPdfText(text), maxWidth);
   const visible = lines.slice(0, maxLines);
@@ -61,13 +83,40 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 2500);
 }
 
-function drawLeafMotif(doc, x, y, scale = 1) {
-  doc.setFillColor(132, 178, 65);
-  doc.ellipse(x, y, 14 * scale, 7 * scale, 'F');
-  doc.setFillColor(1, 119, 59);
-  doc.ellipse(x + 22 * scale, y + 10 * scale, 12 * scale, 6 * scale, 'F');
-  doc.setFillColor(168, 199, 36);
-  doc.ellipse(x - 20 * scale, y + 16 * scale, 11 * scale, 5.5 * scale, 'F');
+function drawLeaf(doc, cx, cy, w, h, rotate = 0, color = [132, 178, 65]) {
+  doc.setFillColor(...color);
+  doc.ellipse(cx, cy, w, h, 'F');
+  doc.setDrawColor(255, 255, 255);
+  doc.setLineWidth(1.1);
+  doc.line(cx - w * .55, cy + h * .08, cx + w * .48, cy - h * .12);
+}
+
+function drawLeafCluster(doc, x, y, scale = 1) {
+  drawLeaf(doc, x, y, 16 * scale, 8 * scale, 0, [132, 178, 65]);
+  drawLeaf(doc, x + 30 * scale, y + 12 * scale, 14 * scale, 7 * scale, 0, [1, 119, 59]);
+  drawLeaf(doc, x - 22 * scale, y + 20 * scale, 12 * scale, 6 * scale, 0, [168, 199, 36]);
+  drawLeaf(doc, x + 4 * scale, y + 33 * scale, 11 * scale, 5 * scale, 0, [216, 142, 30]);
+}
+
+function drawBenefitIcon(doc, kind, x, y, color) {
+  doc.setDrawColor(...color);
+  doc.setFillColor(...color);
+  doc.setLineWidth(2);
+  if (kind === 'energy') {
+    doc.circle(x, y, 16, 'S');
+    doc.line(x - 2, y - 11, x - 9, y + 1); doc.line(x - 9, y + 1, x + 2, y + 1); doc.line(x + 2, y + 1, x - 2, y + 12); doc.line(x - 2, y + 12, x + 10, y - 3);
+  } else if (kind === 'skin') {
+    doc.circle(x, y, 16, 'S');
+    doc.circle(x - 5, y - 3, 1.5, 'F'); doc.circle(x + 5, y - 3, 1.5, 'F');
+    doc.arc(x, y + 3, 8, 5, 20, 160);
+  } else if (kind === 'hair') {
+    doc.circle(x, y, 16, 'S');
+    doc.arc(x, y + 2, 12, 14, 195, 345);
+    doc.line(x - 8, y + 4, x - 8, y + 13); doc.line(x + 8, y + 4, x + 8, y + 13);
+  } else {
+    doc.circle(x, y, 16, 'S');
+    doc.line(x - 8, y - 1, x + 8, y - 1); doc.arc(x, y + 1, 10, 10, 20, 160);
+  }
 }
 
 function drawProductPlaceholder(doc, x, y, w, h) {
@@ -76,18 +125,28 @@ function drawProductPlaceholder(doc, x, y, w, h) {
   doc.setDrawColor(215, 231, 220);
   doc.roundedRect(x + 7, y + 7, w - 14, h - 14, 14, 14, 'S');
   doc.setFillColor(1, 119, 59);
-  doc.circle(x + w / 2, y + h / 2 - 5, 18, 'F');
-  doc.setFillColor(132, 178, 65);
-  doc.ellipse(x + w / 2 + 20, y + h / 2 - 24, 18, 9, 'F');
+  doc.circle(x + w / 2, y + h / 2 - 6, 19, 'F');
+  drawLeaf(doc, x + w / 2 + 20, y + h / 2 - 27, 17, 8, 0, [132, 178, 65]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(255, 255, 255);
-  doc.text('NV', x + w / 2, y + h / 2, { align: 'center' });
+  doc.text('NV', x + w / 2, y + h / 2 - 1, { align: 'center' });
 }
 
 function catalogFileName() {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   return `NVB_CATALOGO_PRODUCTOS_${stamp}.pdf`;
+}
+
+function catalogContactLine(custom = '') {
+  if (custom) return custom;
+  const pieces = [];
+  if (AppState.settings.contactName) pieces.push(AppState.settings.contactName);
+  if (AppState.settings.contactPhone) pieces.push(`WhatsApp ${AppState.settings.contactPhone}`);
+  if (AppState.settings.contactCity) pieces.push(AppState.settings.contactCity);
+  if (pieces.length) return pieces.join(' · ');
+  if (AppState.session && AppState.session.fullName) return AppState.session.fullName;
+  return '';
 }
 
 async function shareCatalogPdf() {
@@ -103,12 +162,10 @@ async function shareCatalogPdf() {
         title: 'Catálogo Natura Vida',
         text: 'Catálogo de productos Natura Vida - Te cuida por dentro y por fuera.'
       });
-    } catch (_) {
-      // Usuario canceló el menú de compartir.
-    }
-  } else {
-    showToast('Este navegador no permite compartir PDF directo. Usa Descargar y envíalo por WhatsApp como documento.', 'error');
+      return;
+    } catch (_) {}
   }
+  showToast('Tu navegador no permite compartir PDF directo. Usa Descargar y envíalo como documento.', 'error');
 }
 
 function openCatalogResultSheet(blob, filename, productsCount) {
@@ -123,7 +180,7 @@ function openCatalogResultSheet(blob, filename, productsCount) {
       <div>
         <div class="eyebrow">PDF generado correctamente</div>
         <h3>${escapeHtml(filename)}</h3>
-        <p>${productsCount} producto(s) incluidos. Puedes compartirlo directamente o previsualizarlo antes de enviarlo.</p>
+        <p>${productsCount} producto(s) incluidos. Comparte de inmediato o revisa la vista previa.</p>
       </div>
     </div>
     <div class="pdfPreviewBox">
@@ -135,13 +192,12 @@ function openCatalogResultSheet(blob, filename, productsCount) {
     </div>
     <div class="exportRow catalogExportRow">
       <div class="exportBtn" id="btnDownloadCatalog"><span class="ic">↓</span><span class="lbl">Descargar</span><span class="sub">Guardar archivo</span></div>
-      <div class="exportBtn" id="btnCloseCatalog"><span class="ic">×</span><span class="lbl">Cerrar</span><span class="sub">Volver a opciones</span></div>
+      <div class="exportBtn" id="btnCloseCatalog"><span class="ic">×</span><span class="lbl">Cerrar</span><span class="sub">Volver</span></div>
     </div>
-    <div class="banner catalogShareNote">En celular, el botón <strong>Compartir</strong> abrirá el menú del sistema para elegir WhatsApp. En computadora, si no aparece WhatsApp, descarga el PDF y envíalo manualmente.</div>
+    <div class="banner catalogShareNote">En celular, <strong>Compartir</strong> abre el menú para WhatsApp. Si tu navegador no lo permite, descarga el PDF y envíalo como documento.</div>
   `, (overlay, close) => {
-    const closeAndKeep = () => close();
-    $('#closeSheet', overlay).addEventListener('click', closeAndKeep);
-    $('#btnCloseCatalog', overlay).addEventListener('click', closeAndKeep);
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#btnCloseCatalog', overlay).addEventListener('click', close);
     $('#btnShareCatalog', overlay).addEventListener('click', shareCatalogPdf);
     $('#btnOpenCatalog', overlay).addEventListener('click', () => window.open(url, '_blank'));
     $('#btnDownloadCatalog', overlay).addEventListener('click', () => {
@@ -150,9 +206,7 @@ function openCatalogResultSheet(blob, filename, productsCount) {
     });
     if (navigator.canShare) {
       const shareFile = new File([blob], filename, { type: 'application/pdf' });
-      if (navigator.canShare({ files: [shareFile] })) {
-        setTimeout(() => { shareCatalogPdf().catch?.(() => {}); }, 450);
-      }
+      if (navigator.canShare({ files: [shareFile] })) setTimeout(() => shareCatalogPdf(), 500);
     }
   });
 }
@@ -174,327 +228,299 @@ async function generateCatalogPdf(options = {}) {
   const includeResellerPrice = !!options.includeResellerPrice && isAdmin();
   const title = cleanPdfText(options.title || `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`, 120);
   const subtitle = cleanPdfText(options.subtitle || AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 160);
-  const contact = cleanPdfText(options.contact || AppState.settings.catalogContact || '', 180);
-  const note = cleanPdfText(options.note || 'Consulta disponibilidad, presentaciones y forma de entrega. Productos naturales para bienestar, belleza y cuidado integral.', 240);
+  const contact = cleanPdfText(catalogContactLine(options.contact || AppState.settings.catalogContact || ''), 180);
+  const note = cleanPdfText(options.note || 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.', 240);
 
   const doc = new jsPDFCtor({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 32;
+  const margin = 34;
   const green = [1, 119, 59];
   const deepGreen = [0, 91, 48];
   const leaf = [132, 178, 65];
   const orange = [216, 142, 30];
   const dark = [22, 34, 27];
-  const gray = [99, 110, 104];
-  const soft = [245, 250, 246];
-  const line = [221, 233, 224];
-
-  const brandLogo = await imageForPdf(NATURA_BRAND_LOGO) || await imageForPdf(AppState.settings.logo);
-  const leafFrame = await imageForPdf(NATURA_PROFILE_LEAVES);
-  const promoBenefits = await imageForPdf(NATURA_PROMO_BENEFITS);
-  const promoBeauty = await imageForPdf(NATURA_PROMO_BEAUTY);
+  const gray = [96, 108, 100];
+  const soft = [246, 251, 247];
+  const line = [222, 234, 225];
+  const brandLogo = await imageInfoForPdf(NATURA_BRAND_LOGO) || await imageInfoForPdf(AppState.settings.logo);
 
   function footer(pageNo) {
     doc.setDrawColor(...line);
-    doc.line(margin, pageH - 32, pageW - margin, pageH - 32);
+    doc.line(margin, pageH - 34, pageW - margin, pageH - 34);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.2);
     doc.setTextColor(95, 108, 100);
-    doc.text(`${AppState.settings.businessName || 'NATURA VIDA'} · ${subtitle}`, margin, pageH - 16, { maxWidth: pageW - 145 });
-    doc.text(String(pageNo), pageW - margin, pageH - 16, { align: 'right' });
+    doc.text(`${AppState.settings.businessName || 'NATURA VIDA'} · ${subtitle}`, margin, pageH - 18, { maxWidth: pageW - 145 });
+    doc.text(String(pageNo), pageW - margin, pageH - 18, { align: 'right' });
   }
 
   function header(label) {
     doc.setFillColor(...soft);
-    doc.roundedRect(margin, 20, pageW - margin * 2, 54, 18, 18, 'F');
-    if (brandLogo) {
-      try { doc.addImage(brandLogo, pdfImageType(brandLogo), margin + 12, 27, 58, 40, undefined, 'FAST'); } catch (_) {}
-    }
+    doc.roundedRect(margin, 22, pageW - margin * 2, 54, 18, 18, 'F');
+    if (brandLogo) drawImageContain(doc, brandLogo, margin + 12, 29, 62, 38);
     doc.setTextColor(...deepGreen);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(AppState.settings.businessName || 'NATURA VIDA', margin + 80, 43);
+    doc.text(AppState.settings.businessName || 'NATURA VIDA', margin + 84, 44);
     doc.setTextColor(...orange);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.7);
-    doc.text(label, margin + 80, 59);
-    drawLeafMotif(doc, pageW - margin - 54, 41, 0.84);
+    doc.setFontSize(8.8);
+    doc.text(label, margin + 84, 60);
+    drawLeafCluster(doc, pageW - margin - 55, 40, .82);
   }
 
   function chip(x, y, w, txt, fillRgb, textRgb) {
     doc.setFillColor(...fillRgb);
-    doc.roundedRect(x, y, w, 22, 11, 11, 'F');
+    doc.roundedRect(x, y, w, 24, 12, 12, 'F');
     doc.setTextColor(...textRgb);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(txt, x + w / 2, y + 14, { align: 'center' });
+    doc.setFontSize(9.3);
+    doc.text(txt, x + w / 2, y + 15.5, { align: 'center' });
   }
 
-  // ===== PORTADA PREMIUM =====
+  // Portada sin usar fotos de referencia pegadas/distorsionadas.
   doc.setFillColor(255, 255, 255);
   doc.rect(0, 0, pageW, pageH, 'F');
-  doc.setFillColor(246, 251, 247);
+  doc.setFillColor(245, 251, 246);
   doc.rect(0, 0, pageW, pageH, 'F');
-  doc.setFillColor(234, 245, 236);
-  doc.circle(pageW + 30, 90, 120, 'F');
-  doc.setFillColor(250, 243, 228);
-  doc.circle(-30, pageH - 70, 130, 'F');
-
-  if (leafFrame) {
-    try { doc.addImage(leafFrame, pdfImageType(leafFrame), 28, 36, 112, 112, undefined, 'FAST'); } catch (_) {}
+  doc.setFillColor(233, 245, 237);
+  doc.circle(pageW + 18, 92, 132, 'F');
+  doc.setFillColor(255, 247, 232);
+  doc.circle(-24, pageH - 70, 142, 'F');
+  for (let i = 0; i < 20; i++) {
+    const lx = 55 + (i % 5) * 100 + (i % 2) * 20;
+    const ly = 35 + Math.floor(i / 5) * 38;
+    drawLeaf(doc, lx, ly, 11 + (i % 3), 5.5, 0, i % 2 ? leaf : green);
   }
+  drawLeafCluster(doc, pageW - 90, 78, 1.4);
+  drawLeafCluster(doc, 80, pageH - 120, 1.25);
 
+  doc.setFillColor(255,255,255);
   doc.setDrawColor(...line);
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(38, 60, pageW - 76, 288, 28, 28, 'FD');
+  doc.roundedRect(46, 80, pageW - 92, 422, 30, 30, 'FD');
+  if (brandLogo) drawImageContain(doc, brandLogo, pageW / 2 - 138, 112, 276, 136);
 
-  if (promoBeauty) {
-    try { doc.addImage(promoBeauty, pdfImageType(promoBeauty), 50, 74, pageW - 100, 206, undefined, 'FAST'); } catch (_) {}
-  } else if (promoBenefits) {
-    try { doc.addImage(promoBenefits, pdfImageType(promoBenefits), 50, 74, pageW - 100, 206, undefined, 'FAST'); } catch (_) {}
-  }
-
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(58, 84, 140, 56, 18, 18, 'F');
-  if (brandLogo) {
-    try { doc.addImage(brandLogo, pdfImageType(brandLogo), 68, 92, 120, 39, undefined, 'FAST'); } catch (_) {}
-  }
-
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(58, 214, 248, 108, 22, 22, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(26);
   doc.setTextColor(...deepGreen);
-  doc.text('Catálogo de', 74, 244);
+  doc.setFontSize(30);
+  doc.text('Catálogo de Productos', pageW / 2, 305, { align: 'center' });
+  doc.setFont('helvetica', 'italic');
   doc.setTextColor(...orange);
-  doc.text('Productos', 74, 274);
-  doc.setTextColor(...dark);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11.5);
-  doc.text(subtitle, 74, 298, { maxWidth: 210 });
+  doc.setFontSize(15);
+  doc.text(subtitle, pageW / 2, 333, { align: 'center', maxWidth: pageW - 120 });
 
-  chip(58, 332, 126, 'Natural y premium', [1,119,59], [255,255,255]);
-  chip(192, 332, 96, 'WhatsApp listo', [216,142,30], [255,255,255]);
-  chip(296, 332, 112, `${products.length} producto(s)`, [235,245,238], [0,91,48]);
+  chip(pageW / 2 - 190, 370, 120, '100% natural', [235, 245, 238], [0, 91, 48]);
+  chip(pageW / 2 - 60, 370, 100, 'Orgánico', [1, 119, 59], [255, 255, 255]);
+  chip(pageW / 2 + 50, 370, 140, `${products.length} producto(s)`, [255, 248, 235], [216, 142, 30]);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(27);
-  doc.setTextColor(...deepGreen);
-  doc.text(title, 50, 400, { maxWidth: pageW - 100 });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11.2);
   doc.setTextColor(...gray);
-  addWrappedText(doc, note, 50, 425, pageW - 100, 13.2, 4);
+  addWrappedText(doc, note, 86, 425, pageW - 172, 14, 4);
 
-  const featY = 496;
+  const featY = 540;
   const featW = (pageW - 116) / 3;
-  [['Belleza natural', 'Ideal para cuidado personal, bienestar y uso diario.'], ['Presentaciones', 'Muestra productos, fotos y descripciones de forma atractiva.'], ['Pedidos rápidos', 'Compártelo por WhatsApp y responde consultas al momento.']].forEach((f, idx) => {
+  const feats = [
+    ['Belleza natural', 'Ideal para cuidado de piel, cabello y rutina diaria.'],
+    ['Bienestar integral', 'Productos pensados para acompañar tu salud y energía.'],
+    ['Presentaciones', 'Consulta tamaños, disponibilidad y recomendaciones.']
+  ];
+  feats.forEach((f, idx) => {
     const fx = 50 + idx * (featW + 8);
     doc.setFillColor(255,255,255);
     doc.setDrawColor(...line);
-    doc.roundedRect(fx, featY, featW, 84, 18, 18, 'FD');
+    doc.roundedRect(fx, featY, featW, 88, 18, 18, 'FD');
+    drawBenefitIcon(doc, idx === 0 ? 'skin' : idx === 1 ? 'energy' : 'hair', fx + 30, featY + 32, idx === 2 ? orange : green);
     doc.setFont('helvetica','bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(...green);
-    doc.text(f[0], fx + 12, featY + 22);
+    doc.setFontSize(10.4);
+    doc.setTextColor(...deepGreen);
+    doc.text(f[0], fx + 56, featY + 26, { maxWidth: featW - 64 });
     doc.setFont('helvetica','normal');
-    doc.setFontSize(8.8);
+    doc.setFontSize(8.5);
     doc.setTextColor(...gray);
-    addWrappedText(doc, f[1], fx + 12, featY + 38, featW - 24, 11, 4);
+    addWrappedText(doc, f[1], fx + 56, featY + 43, featW - 68, 10.5, 4);
   });
 
   if (contact) {
     doc.setFillColor(255, 248, 235);
     doc.setDrawColor(244, 217, 169);
-    doc.roundedRect(50, 604, pageW - 100, 56, 18, 18, 'FD');
+    doc.roundedRect(78, 668, pageW - 156, 50, 16, 16, 'FD');
     doc.setTextColor(...orange);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('Contacto para pedidos', pageW / 2, 626, { align: 'center' });
+    doc.setFontSize(11.4);
+    doc.text('Pedidos y consultas', pageW / 2, 688, { align: 'center' });
     doc.setTextColor(...dark);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11.2);
-    doc.text(contact, pageW / 2, 646, { align: 'center', maxWidth: pageW - 170 });
+    doc.setFontSize(10.5);
+    doc.text(contact, pageW / 2, 706, { align: 'center', maxWidth: pageW - 190 });
   }
-
-  doc.setTextColor(...gray);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.8);
-  doc.text(`Generado: ${new Date().toLocaleDateString('es-BO')}`, pageW / 2, pageH - 48, { align: 'center' });
   footer(1);
 
-  // ===== PÁGINA DE ESTILO / BENEFICIOS =====
+  // Página de beneficios para cliente.
   doc.addPage();
   let pageNo = 2;
-  header('Estilo de marca y beneficios');
-
-  if (promoBenefits) {
-    try { doc.addImage(promoBenefits, pdfImageType(promoBenefits), margin, 94, pageW - margin * 2, 270, undefined, 'FAST'); } catch (_) {}
-  }
-  doc.setFillColor(255,255,255);
-  doc.roundedRect(margin, 378, pageW - margin * 2, 120, 22, 22, 'F');
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(18);
+  header('Beneficios y usos');
   doc.setTextColor(...deepGreen);
-  doc.text('Una presentación pensada para vender mejor', margin + 18, 408);
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(24);
+  doc.text('Beneficios que se sienten', margin, 116);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
   doc.setTextColor(...gray);
-  addWrappedText(doc, 'Natura Vida proyecta bienestar, naturalidad y belleza. Este catálogo está pensado para despertar interés, facilitar la explicación de beneficios y convertirse en una pieza lista para compartir con clientes por WhatsApp.', margin + 18, 430, pageW - margin * 2 - 36, 13, 5);
-  [['Imagen natural','Diseño visual con identidad vegetal y aspecto premium.'],['Comunicación clara','Productos ordenados con precio, descripción y categoría visibles.'],['Venta práctica','Ideal para mostrar en persona o enviar como documento PDF.']].forEach((f, idx) => {
-    const bx = margin + 18 + idx * 176;
-    doc.setFillColor(239,247,241);
-    doc.roundedRect(bx, 515, 162, 86, 16, 16, 'F');
+  addWrappedText(doc, 'Elige productos naturales para complementar tu bienestar, tu belleza y tu cuidado diario. Consulta siempre disponibilidad y recomendaciones de uso.', margin, 140, pageW - margin * 2, 14, 3);
+
+  const benefitRows = [
+    ['Fuente de energía natural', 'Acompaña tu rutina diaria con alternativas naturales y prácticas.', 'energy'],
+    ['Piel hidratada y radiante', 'Ayuda al cuidado de la piel y aporta sensación de suavidad.', 'skin'],
+    ['Cabello fuerte y brillante', 'Ideal para rutinas de cuidado personal y bienestar capilar.', 'hair'],
+    ['Apoyo al bienestar digestivo', 'Productos seleccionados para acompañar hábitos saludables.', 'digest']
+  ];
+  let by = 204;
+  benefitRows.forEach((b, idx) => {
+    doc.setFillColor(idx % 2 ? 255 : 248, idx % 2 ? 255 : 252, idx % 2 ? 255 : 249);
+    doc.setDrawColor(...line);
+    doc.roundedRect(margin, by, pageW - margin * 2, 74, 18, 18, 'FD');
+    drawBenefitIcon(doc, b[2], margin + 36, by + 37, idx === 3 ? orange : green);
     doc.setFont('helvetica','bold');
-    doc.setFontSize(10);
-    doc.setTextColor(...green);
-    doc.text(f[0], bx + 12, 536);
+    doc.setFontSize(13);
+    doc.setTextColor(...deepGreen);
+    doc.text(b[0], margin + 72, by + 27);
     doc.setFont('helvetica','normal');
-    doc.setFontSize(8.8);
+    doc.setFontSize(9.5);
     doc.setTextColor(...gray);
-    addWrappedText(doc, f[1], bx + 12, 553, 138, 10.8, 4);
+    addWrappedText(doc, b[1], margin + 72, by + 45, pageW - margin * 2 - 92, 11.5, 2);
+    by += 88;
   });
+
+  doc.setFillColor(...green);
+  doc.roundedRect(margin, 592, pageW - margin * 2, 54, 20, 20, 'F');
+  doc.setTextColor(255,255,255);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(14);
+  doc.text('Sin químicos · Sin conservantes · Natural', pageW / 2, 624, { align: 'center' });
+  doc.setFont('helvetica','italic');
+  doc.setFontSize(12);
+  doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 690, { align: 'center' });
   footer(pageNo++);
 
-  // ===== PRODUCTOS =====
+  // Productos.
   doc.addPage();
-  header('Productos seleccionados para venta');
+  header('Productos disponibles');
+  const cardW = (pageW - (margin * 2) - 14) / 2;
+  const cardH = 258;
   let x = margin;
   let y = 94;
-  let cardW = (pageW - margin * 2 - 14) / 2;
-  let cardH = 274;
 
   for (let i = 0; i < products.length; i++) {
     const p = products[i];
-    if (y + cardH > pageH - 44) {
+    if (y + cardH > pageH - 48) {
       footer(pageNo++);
       doc.addPage();
-      header('Productos seleccionados para venta');
-      x = margin;
-      y = 94;
+      header('Productos disponibles');
+      x = margin; y = 94;
     }
-
     doc.setFillColor(255,255,255);
     doc.setDrawColor(...line);
     doc.roundedRect(x, y, cardW, cardH, 20, 20, 'FD');
     doc.setFillColor(...green);
-    doc.roundedRect(x, y, cardW, 7, 7, 7, 'F');
+    doc.roundedRect(x, y, cardW, 6, 6, 6, 'F');
 
-    const imgX = x + 12;
-    const imgY = y + 16;
-    const imgW = cardW - 24;
-    const imgH = 110;
-    doc.setFillColor(247,251,248);
+    const imgX = x + 12, imgY = y + 15, imgW = cardW - 24, imgH = 96;
+    doc.setFillColor(248, 252, 249);
     doc.roundedRect(imgX, imgY, imgW, imgH, 16, 16, 'F');
-    const imgData = await imageForPdf(p.photo);
-    if (imgData) {
-      try { doc.addImage(imgData, pdfImageType(imgData), imgX, imgY, imgW, imgH, undefined, 'FAST'); } catch (_) { drawProductPlaceholder(doc, imgX, imgY, imgW, imgH); }
-    } else {
-      drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
-    }
+    const img = await imageInfoForPdf(p.photo);
+    if (!drawImageContain(doc, img, imgX + 3, imgY + 3, imgW - 6, imgH - 6)) drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
 
-    let ty = y + 146;
+    let ty = y + 131;
     doc.setFillColor(232,244,236);
-    doc.roundedRect(x + 14, ty - 12, Math.min(112, cardW - 28), 18, 9, 9, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.6);
+    doc.roundedRect(x + 14, ty - 12, Math.min(120, cardW - 28), 18, 9, 9, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
     doc.setTextColor(...green);
-    doc.text(cleanPdfText(p.category || 'General', 24).toUpperCase(), x + 22, ty);
+    doc.text(cleanPdfText(p.category || 'General', 26).toUpperCase(), x + 22, ty);
 
-    ty += 20;
+    ty += 21;
     doc.setFont('helvetica','bold');
-    doc.setFontSize(11.7);
+    doc.setFontSize(11.8);
     doc.setTextColor(...dark);
-    ty = addWrappedText(doc, cleanPdfText(p.name, 82), x + 14, ty, cardW - 28, 13.2, 2) + 4;
+    ty = addWrappedText(doc, cleanPdfText(p.name, 86), x + 14, ty, cardW - 28, 13, 2) + 5;
 
     doc.setFont('helvetica','normal');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8.4);
     doc.setTextColor(...gray);
-    ty = addWrappedText(doc, cleanPdfText(p.description || 'Producto natural disponible. Consulta presentación, disponibilidad y forma de entrega.', 220), x + 14, ty, cardW - 28, 10.8, 4) + 6;
+    ty = addWrappedText(doc, cleanPdfText(p.description || 'Producto natural disponible. Consulta presentación y recomendaciones de uso.', 220), x + 14, ty, cardW - 28, 10.5, 4);
 
-    doc.setFillColor(245,250,246);
-    doc.roundedRect(x + 14, ty, cardW - 28, 34, 14, 14, 'F');
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(8.2);
-    doc.setTextColor(...gray);
-    doc.text('Presentación comercial Natura Vida', x + 24, ty + 14);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(...deepGreen);
-    doc.text('Calidad natural · Bienestar · Belleza', x + 24, ty + 27);
-
-    const priceY = y + cardH - 62;
+    const priceY = y + cardH - 54;
     if (includePrices) {
       doc.setFillColor(...green);
-      doc.roundedRect(x + 14, priceY, cardW - 28, 34, 16, 16, 'F');
+      doc.roundedRect(x + 14, priceY, cardW - 28, 32, 16, 16, 'F');
       doc.setTextColor(255,255,255);
       doc.setFont('helvetica','bold');
-      doc.setFontSize(12.3);
-      doc.text(`Precio: ${safePdfMoney(publicPrice(p))}`, x + cardW / 2, priceY + 22, { align: 'center' });
+      doc.setFontSize(12.2);
+      doc.text(`Precio: ${safePdfMoney(publicPrice(p))}`, x + cardW / 2, priceY + 21, { align: 'center' });
       if (includeResellerPrice) {
         doc.setTextColor(...orange);
-        doc.setFont('helvetica', 'bold');
+        doc.setFont('helvetica','bold');
         doc.setFontSize(7.4);
-        doc.text(`Revendedor: ${safePdfMoney(wholesalePrice(p))}`, x + 14, y + cardH - 10);
+        doc.text(`Revendedor: ${safePdfMoney(wholesalePrice(p))}`, x + 14, y + cardH - 8);
       }
     } else {
       doc.setFillColor(255,248,235);
-      doc.roundedRect(x + 14, priceY, cardW - 28, 34, 16, 16, 'F');
+      doc.roundedRect(x + 14, priceY, cardW - 28, 32, 16, 16, 'F');
       doc.setTextColor(...orange);
       doc.setFont('helvetica','bold');
       doc.setFontSize(10.5);
-      doc.text('Consultar precio', x + cardW / 2, priceY + 22, { align: 'center' });
+      doc.text('Consultar precio', x + cardW / 2, priceY + 21, { align: 'center' });
     }
     if (includeStock) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.4);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7.3);
       doc.setTextColor(...gray);
-      doc.text(`Stock ref.: ${Number(p.stock || 0)}`, x + cardW - 14, y + cardH - 10, { align: 'right' });
+      doc.text(`Stock ref.: ${Number(p.stock || 0)}`, x + cardW - 14, y + cardH - 8, { align: 'right' });
     }
-
-    if (x === margin) { x = margin + cardW + 14; }
+    if (x === margin) x = margin + cardW + 14;
     else { x = margin; y += cardH + 14; }
   }
   footer(pageNo++);
 
-  // ===== CIERRE =====
+  // Cierre.
   doc.addPage();
-  header('Cierre y contacto');
-  if (promoBeauty) {
-    try { doc.addImage(promoBeauty, pdfImageType(promoBeauty), margin, 92, pageW - margin * 2, 246, undefined, 'FAST'); } catch (_) {}
-  }
+  header('Contacto');
   doc.setFillColor(255,255,255);
-  doc.roundedRect(margin, 358, pageW - margin * 2, 250, 24, 24, 'FD');
+  doc.setDrawColor(...line);
+  doc.roundedRect(margin, 112, pageW - margin * 2, 380, 28, 28, 'FD');
+  drawLeafCluster(doc, margin + 55, 155, 1.5);
+  drawLeafCluster(doc, pageW - margin - 70, 392, 1.4);
+  if (brandLogo) drawImageContain(doc, brandLogo, pageW / 2 - 126, 150, 252, 112);
   doc.setFont('helvetica','bold');
-  doc.setFontSize(21);
+  doc.setFontSize(22);
   doc.setTextColor(...deepGreen);
-  doc.text('Gracias por elegir Natura Vida', pageW / 2, 390, { align: 'center' });
+  doc.text('Gracias por elegir Natura Vida', pageW / 2, 302, { align: 'center' });
   doc.setFont('helvetica','normal');
-  doc.setFontSize(11);
+  doc.setFontSize(11.2);
   doc.setTextColor(...gray);
-  addWrappedText(doc, 'Nuestros productos están pensados para acompañar tu bienestar y tu rutina de belleza de manera natural. Escríbenos para conocer disponibilidad, presentaciones y recomendaciones de uso.', margin + 34, 416, pageW - margin * 2 - 68, 14, 5);
-  chip(pageW / 2 - 164, 492, 98, 'Sin químicos', [235,245,238], [0,91,48]);
-  chip(pageW / 2 - 54, 492, 112, 'Prensado en frío', [235,245,238], [0,91,48]);
-  chip(pageW / 2 + 70, 492, 92, 'Bienestar', [235,245,238], [0,91,48]);
-
+  addWrappedText(doc, 'Nuestros productos están pensados para acompañar tu bienestar y tu rutina de belleza de manera natural. Escríbenos para conocer disponibilidad, presentaciones y recomendaciones.', margin + 42, 332, pageW - margin * 2 - 84, 14, 5);
+  chip(pageW / 2 - 156, 420, 92, 'Orgánico', [235,245,238], [0,91,48]);
+  chip(pageW / 2 - 54, 420, 108, 'Sin químicos', [235,245,238], [0,91,48]);
+  chip(pageW / 2 + 64, 420, 92, 'Bienestar', [235,245,238], [0,91,48]);
   if (contact) {
     doc.setFillColor(255,248,235);
     doc.setDrawColor(244,217,169);
-    doc.roundedRect(margin + 28, 538, pageW - margin * 2 - 56, 52, 16, 16, 'FD');
+    doc.roundedRect(margin + 28, 532, pageW - margin * 2 - 56, 58, 18, 18, 'FD');
     doc.setTextColor(...orange);
     doc.setFont('helvetica','bold');
-    doc.setFontSize(11);
-    doc.text('Pide más información o realiza tu pedido', pageW / 2, 558, { align: 'center' });
+    doc.setFontSize(11.5);
+    doc.text('Pide más información o realiza tu pedido', pageW / 2, 554, { align: 'center' });
     doc.setTextColor(...dark);
     doc.setFont('helvetica','normal');
-    doc.setFontSize(10.5);
-    doc.text(contact, pageW / 2, 576, { align: 'center', maxWidth: pageW - 160 });
+    doc.setFontSize(10.8);
+    doc.text(contact, pageW / 2, 574, { align: 'center', maxWidth: pageW - 170 });
   }
   doc.setFont('helvetica','italic');
   doc.setFontSize(14);
   doc.setTextColor(...green);
-  doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 622, { align: 'center' });
+  doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 656, { align: 'center' });
   footer(pageNo);
 
   const filename = catalogFileName();
@@ -508,17 +534,13 @@ function openCatalogPdfOptions() {
   const defaultTitle = `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`;
   openSheet(`
     <h2>Catálogo PDF para WhatsApp <span class="x" id="closeSheet">✕</span></h2>
-    <div class="catalogOptionsHero premiumCatalogOptionsHero">
+    <div class="catalogOptionsHero">
       <img src="${NATURA_BRAND_LOGO}" alt="Natura Vida">
       <div>
         <div class="eyebrow">Pieza comercial</div>
         <h3>Genera un catálogo listo para enviar</h3>
-        <p>Se creará un PDF con identidad Natura Vida, estética comercial inspirada en belleza, bienestar y naturaleza. Al finalizar tendrás opción de previsualizar, compartir o descargar.</p>
+        <p>PDF con identidad Natura Vida, beneficios, fotos reales de tus productos, descripción y precio público. Sin textos internos ni explicación técnica.</p>
       </div>
-    </div>
-    <div class="catalogMoodboard">
-      <img src="${NATURA_PROMO_BENEFITS}" alt="Referencia catálogo Natura Vida">
-      <img src="${NATURA_PROMO_BEAUTY}" alt="Referencia visual belleza Natura Vida">
     </div>
     <div class="field">
       <label>Título del catálogo</label>
@@ -530,11 +552,11 @@ function openCatalogPdfOptions() {
     </div>
     <div class="field">
       <label>Contacto o WhatsApp para pedidos</label>
-      <input type="text" id="cat_contact" placeholder="Ej.: Pedidos WhatsApp 7xxxxxxx" value="${escapeHtml(AppState.settings.catalogContact || '')}">
+      <input type="text" id="cat_contact" placeholder="Ej.: WhatsApp 7xxxxxxx" value="${escapeHtml(catalogContactLine(AppState.settings.catalogContact || ''))}">
     </div>
     <div class="field">
-      <label>Mensaje breve de cierre</label>
-      <textarea id="cat_note" placeholder="Ej.: Consulta disponibilidad y forma de entrega.">${escapeHtml(AppState.settings.catalogNote || 'Consulta disponibilidad y forma de entrega. Productos naturales para el cuidado integral.')}</textarea>
+      <label>Mensaje breve de presentación</label>
+      <textarea id="cat_note" placeholder="Ej.: Productos naturales para bienestar y belleza.">${escapeHtml(AppState.settings.catalogNote || 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.')}</textarea>
     </div>
     <div class="catalogOptionRow">
       <label><input type="checkbox" id="cat_prices" checked> Mostrar precio público</label>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v4-2-catalogo-premium-plus';
+const CACHE_NAME = 'natura-vida-v4-3-correccion-catalogo-seguridad-online';
 const ASSETS = [
   './',
   './index.html',
@@ -29,9 +29,7 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './img/brand/natura-vida-logo.jpeg',
-  './img/brand/natura-vida-perfil-hojas.jpeg',
-  './img/brand/natura-vida-coco-benefits.jpg',
-  './img/brand/natura-vida-coco-belleza.jpg'
+  './img/brand/natura-vida-perfil-hojas.jpeg'
 ];
 
 self.addEventListener('install', (event) => {

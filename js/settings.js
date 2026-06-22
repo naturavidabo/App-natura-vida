@@ -22,8 +22,22 @@ function renderSettings() {
         <input type="text" id="f_bizname" value="${escapeHtml(AppState.settings.businessName)}">
       </div>
       <div class="field">
-        <label>Eslogan (aparece en el recibo)</label>
+        <label>Eslogan (aparece en recibos y catálogos)</label>
         <input type="text" id="f_bizslogan" value="${escapeHtml(AppState.settings.businessSlogan)}">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Nombre de contacto</label>
+          <input type="text" id="f_contactname" value="${escapeHtml(AppState.settings.contactName || '')}" placeholder="Ej.: Diego Lazo">
+        </div>
+        <div class="field">
+          <label>WhatsApp</label>
+          <input type="tel" id="f_contactphone" value="${escapeHtml(AppState.settings.contactPhone || '')}" placeholder="Ej.: 70700000">
+        </div>
+      </div>
+      <div class="field">
+        <label>Ciudad / zona</label>
+        <input type="text" id="f_contactcity" value="${escapeHtml(AppState.settings.contactCity || '')}" placeholder="Ej.: Santa Cruz, Bolivia">
       </div>
       <button class="btn block" id="saveBizBtn">Guardar perfil</button>
     </div>
@@ -64,10 +78,28 @@ function renderSettings() {
       </label>
     </div>
 
+    <div class="sectiontitle">Servidor online</div>
+    <div class="card onlineConfigCard" style="padding:14px;">
+      <p style="font-size:11.5px; color:var(--gray); margin:0 0 12px; line-height:1.6;">
+        Configura Supabase para publicar productos y permitir que los representantes actualicen precios desde internet. Si no lo configuras, la app sigue funcionando offline.
+      </p>
+      <label class="switchRow">
+        <span>Activar servidor online</span>
+        <label class="switch"><input type="checkbox" id="online_enabled" ${isOnlineConfigured && isOnlineConfigured() ? 'checked' : ''}><span class="slider"></span></label>
+      </label>
+      <div class="field"><label>Supabase Project URL</label><input type="url" id="online_url" placeholder="https://xxxx.supabase.co" value="${escapeHtml(getOnlineConfigValue ? getOnlineConfigValue('supabaseUrl') : '')}"></div>
+      <div class="field"><label>Supabase anon public key</label><input type="password" id="online_key" placeholder="eyJ..." value="${escapeHtml(getOnlineConfigValue ? getOnlineConfigValue('supabaseAnonKey') : '')}"></div>
+      <div class="field-row">
+        <button class="btn block" id="saveOnlineBtn">Guardar online</button>
+        <button class="btn outline block" id="testOnlineBtn">Probar conexión</button>
+      </div>
+      <div class="formNotice" style="margin-top:10px;">Después de guardar, vuelve a iniciar sesión con el correo creado en Supabase. El botón “Publicar catálogo” usará estos datos.</div>
+    </div>
+
     <div class="sectiontitle">Acerca de</div>
     <div class="card" style="padding:14px;">
-      <div class="costline">NATURA VIDA — App de gestión v1.0</div>
-      <div class="costline">Funciona completamente sin conexión a internet.</div>
+      <div class="costline">NATURA VIDA — App de gestión v4.3</div>
+      <div class="costline">Funciona offline y puede sincronizar con servidor online configurado.</div>
     </div>
   `;
 
@@ -86,6 +118,9 @@ function renderSettings() {
   $('#saveBizBtn').addEventListener('click', async () => {
     AppState.settings.businessName = $('#f_bizname').value.trim() || 'Mi negocio';
     AppState.settings.businessSlogan = $('#f_bizslogan').value.trim();
+    AppState.settings.contactName = $('#f_contactname').value.trim();
+    AppState.settings.contactPhone = $('#f_contactphone').value.trim();
+    AppState.settings.contactCity = $('#f_contactcity').value.trim();
     AppState.settings.logo = newLogo;
     await saveSettings();
     renderTopHeader();
@@ -103,6 +138,28 @@ function renderSettings() {
     await saveSettings();
     showToast(e.target.checked ? 'Grupos de precio activados' : 'Grupos de precio desactivados');
     renderBottomNav();
+  });
+
+
+  $('#saveOnlineBtn').addEventListener('click', async () => {
+    if (!window.saveOnlineConfig) { showToast('Módulo online no disponible.', 'error'); return; }
+    saveOnlineConfig({
+      enabled: $('#online_enabled').checked,
+      supabaseUrl: $('#online_url').value.trim(),
+      supabaseAnonKey: $('#online_key').value.trim()
+    });
+    showToast('Configuración online guardada.');
+  });
+
+  $('#testOnlineBtn').addEventListener('click', async () => {
+    if (!window.saveOnlineConfig || !window.testOnlineConnection) { showToast('Módulo online no disponible.', 'error'); return; }
+    saveOnlineConfig({
+      enabled: $('#online_enabled').checked,
+      supabaseUrl: $('#online_url').value.trim(),
+      supabaseAnonKey: $('#online_key').value.trim()
+    });
+    const res = await testOnlineConnection();
+    showToast(res.ok ? 'Conexión online correcta.' : ('No se pudo conectar: ' + res.message), res.ok ? undefined : 'error');
   });
 
   $('#exportBtn').addEventListener('click', generateBackupFile);

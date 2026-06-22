@@ -27,6 +27,11 @@ function basePackageMeta(type, targetRole = 'all', targetId = 'all') {
 function downloadJsonPackage(data, filename) {
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
+  openPackageReadySheet(blob, filename, data._meta || {});
+  return { blob, filename };
+}
+
+function saveJsonPackage(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -35,6 +40,49 @@ function downloadJsonPackage(data, filename) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2500);
+}
+
+async function shareJsonPackage(blob, filename, meta = {}) {
+  const file = new File([blob], filename, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: 'Archivo Natura Vida',
+        text: `Archivo ${meta.packageType || ''} de Natura Vida`
+      });
+      return true;
+    } catch (_) { return false; }
+  }
+  showToast('Este navegador no permite compartir archivo directo. Descárgalo y envíalo por WhatsApp como documento.', 'error');
+  return false;
+}
+
+function openPackageReadySheet(blob, filename, meta = {}) {
+  openSheet(`
+    <h2>Archivo listo <span class="x" id="closeSheet">✕</span></h2>
+    <div class="catalogReadyHero">
+      <div class="readyMark">✓</div>
+      <div>
+        <div class="eyebrow">Paquete inteligente generado</div>
+        <h3>${escapeHtml(filename)}</h3>
+        <p>Tipo: ${escapeHtml(meta.packageType || 'archivo')} · Fecha: ${new Date().toLocaleString('es-BO')}</p>
+      </div>
+    </div>
+    <div class="exportRow catalogExportRow">
+      <div class="exportBtn primaryShare" id="sharePkg"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / sistema</span></div>
+      <div class="exportBtn" id="downloadPkg"><span class="ic">↓</span><span class="lbl">Descargar</span><span class="sub">Guardar archivo</span></div>
+    </div>
+    <div class="banner catalogShareNote">Usa <strong>Compartir</strong> para enviarlo por WhatsApp. Si tu celular no permite compartir directo, usa Descargar y adjúntalo como documento.</div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#sharePkg', overlay).addEventListener('click', () => shareJsonPackage(blob, filename, meta));
+    $('#downloadPkg', overlay).addEventListener('click', () => { saveJsonPackage(blob, filename); showToast('Archivo descargado.'); });
+    if (navigator.canShare) {
+      const file = new File([blob], filename, { type: 'application/json' });
+      if (navigator.canShare({ files: [file] })) setTimeout(() => shareJsonPackage(blob, filename, meta), 450);
+    }
+  });
 }
 
 function safeCatalogProduct(p) {
@@ -66,7 +114,7 @@ async function exportCatalogUpdatePackage() {
   };
   const filename = `NVB_CATALOGO_GENERAL_${packageStamp()}.json`;
   downloadJsonPackage(payload, filename);
-  showToast('Actualización de catálogo generada: ' + filename);
+  showToast('Actualización de catálogo generada. Usa Compartir para enviarla.');
 }
 
 async function exportRepresentativeReportPackage() {
@@ -96,7 +144,7 @@ async function exportRepresentativeReportPackage() {
   };
   const filename = `NVB_REPORTE_${(AppState.session.username || 'REP').toUpperCase()}_${packageStamp()}.json`;
   downloadJsonPackage(payload, filename);
-  showToast('Reporte parcial generado: ' + filename);
+  showToast('Reporte parcial generado. Usa Compartir para enviarlo.');
 }
 
 async function markImportedPackage(meta, summary) {

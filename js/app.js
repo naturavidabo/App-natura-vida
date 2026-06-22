@@ -38,23 +38,20 @@ function renderLoginScreen() {
       <div class="loginCard">
         <div class="loginBadge">Acceso seguro</div>
         <h1>Ingresar a Natura Vida</h1>
-        <p>Accede con tu cuenta. En modo online usa el correo creado en Supabase; en modo local puedes usar el usuario demo.</p>
+        <p>Accede con tu usuario local o con tu correo online. Por seguridad, las credenciales ya no se muestran dentro de la pantalla.</p>
         <form id="loginForm" class="loginForm">
           <div class="field">
-            <label>Usuario</label>
-            <input type="text" id="loginUser" autocomplete="username" placeholder="admin o correo online" required>
+            <label>Usuario o correo</label>
+            <input type="text" id="loginUser" autocomplete="username" placeholder="Usuario asignado" required>
           </div>
           <div class="field">
             <label>Contraseña</label>
-            <input type="password" id="loginPass" autocomplete="current-password" placeholder="Ingresa tu contraseña" required>
+            <input type="password" id="loginPass" autocomplete="current-password" placeholder="Contraseña asignada" required>
           </div>
           <button class="btn block" type="submit">Ingresar</button>
         </form>
-        <div class="loginHint">
-          <strong>Credenciales iniciales:</strong><br>
-          Modo local: admin / NaturaVida2026!<br>
-          Modo local: revendedor1 / Revende2026!<br>
-          Modo online: usa el correo y contraseña creados en Supabase.
+        <div class="loginHint secureHint">
+          Si es el primer ingreso en modo local, el sistema pedirá cambiar contraseña y completar datos de contacto.
         </div>
       </div>
     </section>
@@ -74,7 +71,53 @@ function renderLoginScreen() {
       if (sync && !sync.ok) showToast('Entraste, pero no se pudo sincronizar: ' + sync.message, 'error');
     }
     await loadAllState();
+    renderTopHeader();
+    if (AppState.session.mustChangePassword) {
+      renderMandatoryPasswordChange();
+      return;
+    }
     showToast('Sesión iniciada correctamente.');
+    renderBottomNav();
+    AppState.currentTab = 'inicio';
+    render();
+  });
+}
+
+function renderMandatoryPasswordChange() {
+  $('#bottomNav').innerHTML = '';
+  $('#fabAdd').classList.add('hidden');
+  $('#mainArea').innerHTML = `
+    <section class="loginShell">
+      <div class="loginCard">
+        <div class="loginBadge">Primer ingreso</div>
+        <h1>Actualiza tu acceso</h1>
+        <p>Completa tus datos y crea una nueva contraseña. Esta información saldrá en recibos, reportes y catálogos generados desde este dispositivo.</p>
+        <form id="changePassForm" class="loginForm">
+          <div class="field"><label>Nombre completo</label><input type="text" id="cp_name" value="${escapeHtml(AppState.session.fullName || '')}" required></div>
+          <div class="field"><label>Teléfono / WhatsApp</label><input type="tel" id="cp_phone" placeholder="Ej.: 70700000" required></div>
+          <div class="field"><label>C.I. / Documento</label><input type="text" id="cp_doc" placeholder="Opcional"></div>
+          <div class="field"><label>Nueva contraseña</label><input type="password" id="cp_pass1" minlength="6" required></div>
+          <div class="field"><label>Confirmar contraseña</label><input type="password" id="cp_pass2" minlength="6" required></div>
+          <button class="btn block" type="submit">Guardar y continuar</button>
+        </form>
+      </div>
+    </section>
+  `;
+  $('#changePassForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const p1 = $('#cp_pass1').value;
+    const p2 = $('#cp_pass2').value;
+    if (p1 !== p2) { showToast('Las contraseñas no coinciden.', 'error'); return; }
+    const result = await updateLocalPassword(AppState.session.userId, p1, {
+      fullName: $('#cp_name').value.trim(),
+      phone: $('#cp_phone').value.trim(),
+      documentId: $('#cp_doc').value.trim()
+    });
+    if (!result.ok) { showToast(result.message, 'error'); return; }
+    AppState.settings.contactName = $('#cp_name').value.trim();
+    AppState.settings.contactPhone = $('#cp_phone').value.trim();
+    await saveSettings();
+    showToast('Acceso actualizado correctamente.');
     renderTopHeader();
     renderBottomNav();
     AppState.currentTab = 'inicio';
@@ -133,6 +176,10 @@ function navigateTo(tab) {
 function render() {
   if (!requireAuth()) {
     renderLoginScreen();
+    return;
+  }
+  if (AppState.session.mustChangePassword) {
+    renderMandatoryPasswordChange();
     return;
   }
   $('#fabAdd').classList.add('hidden');
@@ -269,7 +316,7 @@ function renderInicio() {
   $('#qbSell').addEventListener('click', () => navigateTo('vender'));
   $('#qbInv').addEventListener('click', () => navigateTo('inventario'));
   $('#qbSync').addEventListener('click', async () => {
-    if (!isOnlineConfigured()) { showToast('Servidor online no configurado todavía.', 'error'); return; }
+    if (!isOnlineConfigured()) { showToast('Configura el servidor online en Ajustes.', 'error'); navigateTo('ajustes'); return; }
     let res;
     if (isAdmin && isAdmin() && window.pushLocalProductsToCloud) {
       res = await pushLocalProductsToCloud();
@@ -297,7 +344,7 @@ function renderMas() {
       <div class="miniStats">
         <div><span>Usuario</span><strong>${escapeHtml(AppState.session.username || '')}</strong></div>
         <div><span>Rol</span><strong>${escapeHtml(AppState.session.roleName || '')}</strong></div>
-        <div><span>Modo</span><strong>Offline</strong></div>
+        <div><span>Modo</span><strong>${AppState.session.online ? 'Online' : 'Offline'}</strong></div>
       </div>
     </section>
     <div class="moreList proMore">

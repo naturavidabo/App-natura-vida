@@ -16,7 +16,12 @@ const AppState = {
     setupRequired: true,
     cloudSyncPrepared: true,
     apkPrepared: true,
-    businessModel: 'Administrador → Revendedores → Clientes Finales'
+    businessModel: 'Administrador → Revendedores → Clientes Finales',
+    contactName: '',
+    contactPhone: '',
+    contactCity: '',
+    catalogContact: '',
+    catalogNote: 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.'
   },
   currentTab: 'inicio',
   lastClient: null,

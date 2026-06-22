@@ -23,7 +23,8 @@ function applyOnlineSession(user, profile) {
     fullName: profile.full_name || profile.username || user.email,
     roleId: profile.role_id || roleName.toLowerCase(),
     roleName,
-    permissions: permissionsForRole(roleName)
+    permissions: permissionsForRole(roleName),
+    mustChangePassword: false
   };
 }
 
@@ -55,7 +56,8 @@ async function authenticateUser(username, password) {
     fullName: user.fullName || user.username,
     roleId: user.roleId,
     roleName: user.role || 'Usuario',
-    permissions
+    permissions,
+    mustChangePassword: !!user.mustChangePassword
   };
   localStorage.setItem('natura_vida_session', JSON.stringify({ userId: user.id }));
   await writeAudit('login:local', 'user', user.id, null, { username: user.username }).catch(() => {});
@@ -88,7 +90,8 @@ async function restoreSession() {
       fullName: user.fullName || user.username,
       roleId: user.roleId,
       roleName: user.role || 'Usuario',
-      permissions
+      permissions,
+      mustChangePassword: !!user.mustChangePassword
     };
     return true;
   } catch (_) {
@@ -107,7 +110,8 @@ async function logoutSession() {
     fullName: null,
     roleId: null,
     roleName: null,
-    permissions: []
+    permissions: [],
+    mustChangePassword: false
   };
 }
 
@@ -137,3 +141,23 @@ window.hasPermission = hasPermission;
 window.requireAuth = requireAuth;
 window.isAdmin = isAdmin;
 window.isReseller = isReseller;
+window.updateLocalPassword = updateLocalPassword;
+
+
+async function updateLocalPassword(userId, newPassword, profileData = {}) {
+  if (!userId || !newPassword || newPassword.length < 6) {
+    return { ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
+  }
+  const user = await DB.get('users', userId);
+  if (!user) return { ok: false, message: 'Usuario local no encontrado.' };
+  user.passwordHash = await sha256Hex(newPassword);
+  user.mustChangePassword = false;
+  user.fullName = profileData.fullName || user.fullName;
+  user.phone = profileData.phone || user.phone || '';
+  user.documentId = profileData.documentId || user.documentId || '';
+  user.updatedAt = Date.now();
+  await DB.put('users', user, { silent: true });
+  AppState.session.fullName = user.fullName || AppState.session.fullName;
+  AppState.session.mustChangePassword = false;
+  return { ok: true, user };
+}

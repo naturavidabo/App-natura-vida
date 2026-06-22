@@ -354,6 +354,7 @@ async function ensureBootstrapData() {
         roleId: 'role_admin',
         role: 'Administrador',
         passwordHash: adminPasswordHash,
+        mustChangePassword: true,
         status: 'active',
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -365,11 +366,22 @@ async function ensureBootstrapData() {
         roleId: 'role_reseller',
         role: 'Revendedor',
         passwordHash: resellerPasswordHash,
+        mustChangePassword: true,
         status: 'active',
         createdAt: Date.now(),
         updatedAt: Date.now()
       }
     ], { silent: true });
+  }
+
+
+  const localUsersForSecurity = await DB.getAll('users');
+  for (const u of localUsersForSecurity) {
+    if ((u.username === 'admin' || u.username === 'revendedor1') && u.mustChangePassword === undefined) {
+      u.mustChangePassword = true;
+      u.updatedAt = Date.now();
+      await DB.put('users', u, { silent: true });
+    }
   }
 
   const savedSettings = await DB.get('settings', 'main');
