@@ -38,20 +38,20 @@ function renderLoginScreen() {
       <div class="loginCard">
         <div class="loginBadge">Acceso seguro</div>
         <h1>Ingresar a Natura Vida</h1>
-        <p>Accede con tu usuario local o con tu correo online. Por seguridad, las credenciales ya no se muestran dentro de la pantalla.</p>
+        <p>Ingresa con tu usuario asignado. Después del primer acceso, usarás tu número de celular como usuario personal.</p>
         <form id="loginForm" class="loginForm">
           <div class="field">
-            <label>Usuario o correo</label>
-            <input type="text" id="loginUser" autocomplete="username" placeholder="Usuario asignado" required>
+            <label>Usuario</label>
+            <input type="text" id="loginUser" autocomplete="username" placeholder="admin / vendedor1 / tu celular" required>
           </div>
           <div class="field">
             <label>Contraseña</label>
-            <input type="password" id="loginPass" autocomplete="current-password" placeholder="Contraseña asignada" required>
+            <input type="password" id="loginPass" autocomplete="current-password" placeholder="Contraseña" required>
           </div>
           <button class="btn block" type="submit">Ingresar</button>
         </form>
         <div class="loginHint secureHint">
-          Si es el primer ingreso en modo local, el sistema pedirá cambiar contraseña y completar datos de contacto.
+          Primer ingreso: usa el usuario inicial asignado por el administrador. Luego el sistema pedirá tus datos básicos y una contraseña personal.
         </div>
       </div>
     </section>
@@ -86,36 +86,50 @@ function renderLoginScreen() {
 function renderMandatoryPasswordChange() {
   $('#bottomNav').innerHTML = '';
   $('#fabAdd').classList.add('hidden');
+  const roleLabel = AppState.session.roleName === 'Administrador' ? 'Administrador' : 'Vendedor / Representante';
   $('#mainArea').innerHTML = `
     <section class="loginShell">
       <div class="loginCard">
-        <div class="loginBadge">Primer ingreso</div>
-        <h1>Actualiza tu acceso</h1>
-        <p>Completa tus datos y crea una nueva contraseña. Esta información saldrá en recibos, reportes y catálogos generados desde este dispositivo.</p>
+        <div class="loginBadge">Activación inicial</div>
+        <h1>Configura tu acceso</h1>
+        <p>Completa datos básicos. Desde ahora tu usuario será tu número de celular y tendrás tu propia contraseña.</p>
+        <div class="activationRoleBox">
+          <span>Tipo de acceso</span>
+          <strong>${escapeHtml(roleLabel)}</strong>
+        </div>
         <form id="changePassForm" class="loginForm">
           <div class="field"><label>Nombre completo</label><input type="text" id="cp_name" value="${escapeHtml(AppState.session.fullName || '')}" required></div>
-          <div class="field"><label>Teléfono / WhatsApp</label><input type="tel" id="cp_phone" placeholder="Ej.: 70700000" required></div>
+          <div class="field"><label>Celular / WhatsApp — será tu usuario</label><input type="tel" id="cp_phone" inputmode="numeric" placeholder="Ej.: 70700000" required></div>
+          <div class="field"><label>Ciudad / Departamento</label><input type="text" id="cp_city" placeholder="Ej.: La Paz, Santa Cruz, Beni"></div>
           <div class="field"><label>C.I. / Documento</label><input type="text" id="cp_doc" placeholder="Opcional"></div>
-          <div class="field"><label>Nueva contraseña</label><input type="password" id="cp_pass1" minlength="6" required></div>
-          <div class="field"><label>Confirmar contraseña</label><input type="password" id="cp_pass2" minlength="6" required></div>
+          <div class="field"><label>Código de activación</label><input type="password" id="cp_activation" inputmode="numeric" placeholder="Código entregado por administrador" required></div>
+          <div class="field"><label>Nueva contraseña personal</label><input type="password" id="cp_pass1" minlength="4" required></div>
+          <div class="field"><label>Confirmar contraseña</label><input type="password" id="cp_pass2" minlength="4" required></div>
           <button class="btn block" type="submit">Guardar y continuar</button>
         </form>
+        <div class="loginHint secureHint">Después de guardar, ya no usarás el usuario inicial. Entrarás con tu celular y tu nueva contraseña.</div>
       </div>
     </section>
   `;
   $('#changePassForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const phone = $('#cp_phone').value.trim().replace(/\s+/g, '');
     const p1 = $('#cp_pass1').value;
     const p2 = $('#cp_pass2').value;
+    if (!/^\d{6,12}$/.test(phone)) { showToast('Ingresa un número de celular válido.', 'error'); return; }
     if (p1 !== p2) { showToast('Las contraseñas no coinciden.', 'error'); return; }
     const result = await updateLocalPassword(AppState.session.userId, p1, {
+      username: phone,
       fullName: $('#cp_name').value.trim(),
-      phone: $('#cp_phone').value.trim(),
-      documentId: $('#cp_doc').value.trim()
+      phone,
+      city: $('#cp_city').value.trim(),
+      documentId: $('#cp_doc').value.trim(),
+      activationCode: $('#cp_activation').value.trim()
     });
     if (!result.ok) { showToast(result.message, 'error'); return; }
     AppState.settings.contactName = $('#cp_name').value.trim();
-    AppState.settings.contactPhone = $('#cp_phone').value.trim();
+    AppState.settings.contactPhone = phone;
+    AppState.settings.contactCity = $('#cp_city').value.trim();
     await saveSettings();
     showToast('Acceso actualizado correctamente.');
     renderTopHeader();
@@ -151,10 +165,11 @@ function canAccessTab(tab) {
     vender: hasPermission('sales:create'),
     cotizar: hasPermission('quotes:manage'),
     clientes: hasPermission('clients:manage') || hasPermission('clients:read'),
-    grupos: false,
+    grupos: true,
     inventario: hasPermission('products:read'),
     resumen: hasPermission('own_reports:read') || hasPermission('team_reports:read'),
-    ajustes: false,
+    ajustes: true,
+    pedido: true,
     usuarios: false,
     comisiones: false,
     'reportes-pro': false,
@@ -194,6 +209,7 @@ function render() {
     case 'vender': renderVender(); break;
     case 'cotizar': renderQuotes(); break;
     case 'grupos': renderPriceGroups(); break;
+    case 'pedido': renderOrderRequest(); break;
     case 'clientes': renderClients(); break;
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
@@ -219,7 +235,7 @@ function getMonthSales() {
 }
 
 function saleProfit(sale) {
-  if ((sale.type === 'reseller' || sale.role === 'Revendedor') && Number.isFinite(Number(sale.sellerProfit))) {
+  if ((sale.type === 'reseller' || sale.type === 'reseller_unit' || sale.type === 'reseller_wholesale' || sale.role === 'Revendedor') && Number.isFinite(Number(sale.sellerProfit))) {
     return Number(sale.sellerProfit) || 0;
   }
   return (sale.items || []).reduce((sum, item) => {
@@ -264,7 +280,7 @@ function renderInicio() {
       <div class="dashActions">
         <button class="btn" id="qbSell">Registrar venta</button>
         <button class="btn outline" id="qbInv">Inventario</button>
-        <button class="btn outline" id="qbSync">${isAdmin && isAdmin() ? 'Publicar catálogo' : 'Actualizar precios'}</button>
+        <button class="btn outline" id="qbSync">${isAdmin && isAdmin() ? 'Publicar catálogo' : 'Actualizar catálogo'}</button>
       </div>
     </section>
 
@@ -298,6 +314,7 @@ function renderInicio() {
         <div class="quickBtn" id="qbClients"><span class="ic svgic">${icon('clients')}</span><span>Clientes (${AppState.clients.length})</span></div>
         <div class="quickBtn" id="qbUsers"><span class="ic svgic">${icon('users')}</span><span>Usuarios y roles</span></div>
         <div class="quickBtn" id="qbCommissions"><span class="ic svgic">${icon('commission')}</span><span>Comisiones</span></div>
+        ${isReseller && isReseller() ? `<div class="quickBtn" id="qbOrder"><span class="ic svgic">${icon('box')}</span><span>Pedido al administrador</span></div>` : ''}
       </div>
       <div class="systemBadges">
         <span>Offline IndexedDB</span><span>PWA</span><span>Preparada nube</span><span>APK futuro</span><span>${pendingQuotes} cotización(es)</span>
@@ -334,6 +351,8 @@ function renderInicio() {
   $('#qbClients').addEventListener('click', () => navigateTo('clientes'));
   $('#qbUsers').addEventListener('click', () => navigateTo('usuarios'));
   $('#qbCommissions').addEventListener('click', () => navigateTo('comisiones'));
+  const qbOrder = $('#qbOrder');
+  if (qbOrder) qbOrder.addEventListener('click', () => navigateTo('pedido'));
 }
 
 function renderMas() {
@@ -352,6 +371,7 @@ function renderMas() {
       <div class="moreItem" id="moreGroups"><span class="ic svgic">${icon('tag')}</span><span>Grupos de precio</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreCatalogPdf"><span class="ic svgic">${icon('quote')}</span><span>Catálogo PDF para WhatsApp</span><span class="tagSoon">PDF</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreSmartPackages"><span class="ic svgic">${icon('reports')}</span><span>Intercambio inteligente</span><span class="tagSoon">V4</span><span class="arrow">›</span></div>
+      ${isReseller && isReseller() ? `<div class="moreItem" id="moreOrder"><span class="ic svgic">${icon('box')}</span><span>Pedido online al administrador</span><span class="tagSoon">Nuevo</span><span class="arrow">›</span></div>` : ''}
       <div class="moreItem" id="moreUsers"><span class="ic svgic">${icon('users')}</span><span>Usuarios, roles y permisos</span><span class="tagSoon">Activo</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreCommissions"><span class="ic svgic">${icon('commission')}</span><span>Comisiones revendedor</span><span class="tagSoon">Base</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreReports"><span class="ic svgic">${icon('reports')}</span><span>Reportes comerciales</span><span class="tagSoon">Base</span><span class="arrow">›</span></div>
@@ -364,6 +384,8 @@ function renderMas() {
   $('#moreGroups').addEventListener('click', () => navigateTo('grupos'));
   $('#moreCatalogPdf').addEventListener('click', () => openCatalogPdfOptions());
   $('#moreSmartPackages').addEventListener('click', () => openSmartPackagesPanel());
+  const moreOrder = $('#moreOrder');
+  if (moreOrder) moreOrder.addEventListener('click', () => navigateTo('pedido'));
   $('#moreUsers').addEventListener('click', () => navigateTo('usuarios'));
   $('#moreCommissions').addEventListener('click', () => navigateTo('comisiones'));
   $('#moreReports').addEventListener('click', () => navigateTo('reportes-pro'));
@@ -384,7 +406,9 @@ function saleTypeLabel(type) {
     wholesale: 'Venta revendedor',
     market: 'Mayorista',
     representative_transfer: 'Despacho a representante',
-    reseller: 'Venta representante'
+    reseller: 'Venta representante',
+    reseller_unit: 'Venta unitaria rep.',
+    reseller_wholesale: 'Venta mayorista rep.'
   }[type] || 'Venta';
 }
 function renderResumen() {
@@ -418,7 +442,8 @@ function renderResumen() {
       <button data-f="unit" class="${_histFilterType === 'unit' ? 'active' : ''}">Unitaria</button>
       <button data-f="market" class="${_histFilterType === 'market' ? 'active' : ''}">Mayorista</button>
       <button data-f="representative_transfer" class="${_histFilterType === 'representative_transfer' ? 'active' : ''}">Representante</button>
-      <button data-f="reseller" class="${_histFilterType === 'reseller' ? 'active' : ''}">Propia rep.</button>
+      <button data-f="reseller_unit" class="${_histFilterType === 'reseller_unit' ? 'active' : ''}">Rep. unitaria</button>
+      <button data-f="reseller_wholesale" class="${_histFilterType === 'reseller_wholesale' ? 'active' : ''}">Rep. mayorista</button>
     </div>
   `;
 

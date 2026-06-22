@@ -97,7 +97,7 @@ function renderSettings() {
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card" style="padding:14px;">
-      <div class="costline">NATURA VIDA — App de gestión v4.4</div>
+      <div class="costline">NATURA VIDA — App de gestión v4.5</div>
       <div class="costline">Funciona offline y puede sincronizar con servidor online configurado.</div>
     </div>
   `;

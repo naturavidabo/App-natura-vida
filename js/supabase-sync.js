@@ -147,7 +147,24 @@ async function syncCloudProductsToLocal() {
   if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
   const { data, error } = await sb.from('products').select('*').neq('status', 'archived').order('name', { ascending: true });
   if (error) return { ok: false, message: error.message };
-  const products = (data || []).map(mapProductFromCloud);
+  const existingById = new Map((AppState.products || []).map(p => [p.id, p]));
+  const products = (data || []).map(row => {
+    const cloud = mapProductFromCloud(row);
+    const existing = existingById.get(cloud.id);
+    if (isReseller && isReseller()) {
+      return normalizeLegacyProduct(Object.assign({}, cloud, {
+        // Preservar datos locales del representante.
+        stock: existing ? (Number(existing.stock) || 0) : 0,
+        adminStock: Number(cloud.stock || 0),
+        resellerAdditionalCost: existing ? (Number(existing.resellerAdditionalCost) || 0) : 0,
+        resellerLocalUnitPrice: existing ? (Number(existing.resellerLocalUnitPrice) || 0) : (publicPrice(cloud) || 0),
+        resellerLocalWholesalePrice: existing ? (Number(existing.resellerLocalWholesalePrice) || 0) : (marketPrice(cloud) || 0),
+        resellerLocalNote: existing ? (existing.resellerLocalNote || '') : '',
+        resellerLocalUpdatedAt: existing ? existing.resellerLocalUpdatedAt : null
+      }));
+    }
+    return cloud;
+  });
   await DB.bulkPut('products', products, { silent: true });
   AppState.products = products;
   _lastCloudSync = Date.now();
@@ -204,6 +221,29 @@ async function insertCloudSale(sale) {
   return { ok: true };
 }
 
+
+function mapPurchaseOrderToCloud(order) {
+  return {
+    id: order.id,
+    representative_user_id: AppState.session && AppState.session.onlineUserId ? AppState.session.onlineUserId : null,
+    representative_name: order.representativeName || (AppState.session ? AppState.session.fullName : ''),
+    status: order.status || 'pending',
+    total: Number(order.total || 0),
+    note: order.note || '',
+    payload: order,
+    created_at: order.createdAt ? new Date(order.createdAt).toISOString() : new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+}
+
+async function insertCloudPurchaseOrder(order) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { error } = await sb.from('purchase_orders').insert(mapPurchaseOrderToCloud(order));
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
 async function syncAfterLogin() {
   if (!isOnlineConfigured()) return { ok: true, mode: 'local' };
   const result = await syncCloudProductsToLocal();
@@ -215,6 +255,7 @@ async function cloudAfterPut(storeName, record) {
     if (!isOnlineConfigured()) return;
     if (storeName === 'products') await upsertCloudProduct(record);
     if (storeName === 'sales') await insertCloudSale(record);
+    if (storeName === 'purchaseOrders') await insertCloudPurchaseOrder(record);
   } catch (err) {
     console.warn('Sincronización diferida:', err.message);
   }
@@ -257,3 +298,4 @@ window.syncAfterLogin = syncAfterLogin;
 window.cloudAfterPut = cloudAfterPut;
 window.cloudAfterDelete = cloudAfterDelete;
 window.testOnlineConnection = testOnlineConnection;
+window.insertCloudPurchaseOrder = insertCloudPurchaseOrder;

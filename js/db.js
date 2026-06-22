@@ -2,7 +2,7 @@
    Mantiene funcionamiento offline, amplía el modelo comercial y prepara sincronización futura. */
 
 const DB_NAME = 'natura_vida_db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORES = [
   'products',
   'priceGroups',
@@ -22,7 +22,8 @@ const STORES = [
   'representatives',
   'dispatches',
   'representativeReports',
-  'importedPackages'
+  'importedPackages',
+  'purchaseOrders'
 ];
 
 const DB_SCHEMA = {
@@ -53,7 +54,8 @@ const DB_SCHEMA = {
   representatives: { keyPath: 'id', indexes: [['byName', 'name'], ['byStatus', 'status'], ['byRegion', 'region']] },
   dispatches: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byDate', 'date'], ['byStatus', 'status']] },
   representativeReports: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byImportedAt', 'importedAt']] },
-  importedPackages: { keyPath: 'id', indexes: [['byPackageType', 'packageType'], ['byImportedAt', 'importedAt']] }
+  importedPackages: { keyPath: 'id', indexes: [['byPackageType', 'packageType'], ['byImportedAt', 'importedAt']] },
+  purchaseOrders: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byCreatedAt', 'createdAt'], ['byStatus', 'status'], ['bySyncStatus', 'syncStatus']] }
 };
 
 let _db = null;
@@ -240,7 +242,7 @@ const DB = {
     const prepared = storeName === 'products' ? normalizeLegacyProduct(value) : value;
     store.put(prepared);
     await transactionPromise(transaction);
-    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions'].includes(storeName)) {
+    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions', 'purchaseOrders'].includes(storeName)) {
       queueSync(storeName, prepared.id, 'put', prepared).catch(() => {});
       if (window.cloudAfterPut) window.cloudAfterPut(storeName, prepared).catch(() => {});
     }
@@ -264,7 +266,7 @@ const DB = {
     const transaction = db.transaction(storeName, 'readwrite');
     transaction.objectStore(storeName).delete(id);
     await transactionPromise(transaction);
-    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions'].includes(storeName)) {
+    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions', 'purchaseOrders'].includes(storeName)) {
       queueSync(storeName, id, 'delete', null).catch(() => {});
       if (window.cloudAfterDelete) window.cloudAfterDelete(storeName, id).catch(() => {});
     }
@@ -310,6 +312,64 @@ async function simpleHash(text) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+async function ensureInitialAccessUsers() {
+  const users = await DB.getAll('users');
+  const now = Date.now();
+  const adminPasswordHash = await simpleHash('12345678');
+  const sellerPasswordHash = await simpleHash('23456');
+
+  async function upsertSeedUser(seed) {
+    const all = await DB.getAll('users');
+    const existing = all.find(u => u.seedSlot === seed.seedSlot || u.username === seed.username);
+    if (existing) {
+      const isStillInitial = existing.username === seed.username && existing.mustChangePassword !== false;
+      existing.seedSlot = existing.seedSlot || seed.seedSlot;
+      existing.roleId = existing.roleId || seed.roleId;
+      existing.role = existing.role || seed.role;
+      existing.status = existing.status || 'active';
+      if (isStillInitial) {
+        existing.passwordHash = seed.passwordHash;
+        existing.mustChangePassword = true;
+        existing.fullName = seed.fullName;
+      }
+      existing.updatedAt = now;
+      await DB.put('users', existing, { silent: true });
+      return;
+    }
+    await DB.put('users', seed, { silent: true });
+  }
+
+  await upsertSeedUser({
+    id: 'user_admin_1',
+    seedSlot: 'admin',
+    username: 'admin',
+    fullName: 'Administrador Natura Vida',
+    roleId: 'role_admin',
+    role: 'Administrador',
+    passwordHash: adminPasswordHash,
+    mustChangePassword: true,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now
+  });
+
+  for (let i = 1; i <= 20; i++) {
+    await upsertSeedUser({
+      id: `user_vendedor_${i}`,
+      seedSlot: `vendedor${i}`,
+      username: `vendedor${i}`,
+      fullName: `Vendedor ${i}`,
+      roleId: 'role_reseller',
+      role: 'Revendedor',
+      passwordHash: sellerPasswordHash,
+      mustChangePassword: true,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now
+    });
+  }
+}
+
 async function ensureBootstrapData() {
   if (_bootstrapDone) return true;
   await openDB();
@@ -348,42 +408,12 @@ async function ensureBootstrapData() {
   }
 
 
-  const users = await DB.getAll('users');
-  if (users.length === 0) {
-    const adminPasswordHash = await simpleHash('NaturaVida2026!');
-    const resellerPasswordHash = await simpleHash('Revende2026!');
-    await DB.bulkPut('users', [
-      {
-        id: 'user_admin_1',
-        username: 'admin',
-        fullName: 'Administrador Natura Vida',
-        roleId: 'role_admin',
-        role: 'Administrador',
-        passwordHash: adminPasswordHash,
-        mustChangePassword: true,
-        status: 'active',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      },
-      {
-        id: 'user_reseller_1',
-        username: 'revendedor1',
-        fullName: 'Revendedor Demo',
-        roleId: 'role_reseller',
-        role: 'Revendedor',
-        passwordHash: resellerPasswordHash,
-        mustChangePassword: true,
-        status: 'active',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      }
-    ], { silent: true });
-  }
+  await ensureInitialAccessUsers();
 
 
   const localUsersForSecurity = await DB.getAll('users');
   for (const u of localUsersForSecurity) {
-    if ((u.username === 'admin' || u.username === 'revendedor1') && u.mustChangePassword === undefined) {
+    if ((u.username === 'admin' || /^vendedor\d{1,2}$/.test(u.username || '') || u.username === 'revendedor1') && u.mustChangePassword === undefined) {
       u.mustChangePassword = true;
       u.updatedAt = Date.now();
       await DB.put('users', u, { silent: true });

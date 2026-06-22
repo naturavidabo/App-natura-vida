@@ -97,6 +97,7 @@ function safeCatalogProduct(p) {
     wholesalePriceFixed: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0) || 0,
     unitPriceFixed: Number(p.publicPrice ?? p.unitPriceFixed ?? 0) || 0,
     stock: Number(p.stock || 0),
+    adminStock: Number(p.stock || 0),
     description: p.description || '',
     photo: p.photo || null,
     status: p.status || 'active',
@@ -124,7 +125,7 @@ async function exportRepresentativeReportPackage() {
     return;
   }
   const sellerId = AppState.session.userId;
-  const sales = AppState.sales.filter(s => !s.exportedInReportId && (!s.sellerId || s.sellerId === sellerId || s.type === 'reseller'));
+  const sales = AppState.sales.filter(s => !s.exportedInReportId && (!s.sellerId || s.sellerId === sellerId || ['reseller','reseller_unit','reseller_wholesale'].includes(s.type)));
   const payload = {
     _meta: basePackageMeta('representative_report', 'admin', 'admin'),
     representative: {
@@ -140,7 +141,11 @@ async function exportRepresentativeReportPackage() {
       stock: Number(p.stock || 0),
       marketPrice: marketPrice(p),
       resellerPrice: representativePrice(p),
-      publicPrice: publicPrice(p)
+      publicPrice: publicPrice(p),
+      resellerAdditionalCost: resellerAdditionalCost(p),
+      resellerEffectiveCost: resellerEffectiveCost(p),
+      resellerLocalUnitPrice: resellerLocalUnitPrice(p),
+      resellerLocalWholesalePrice: resellerLocalWholesalePrice(p)
     })),
     clients: AppState.clients || []
   };
@@ -178,7 +183,12 @@ async function applyCatalogUpdatePackage(pkg) {
       Object.assign(existing, normalizeLegacyProduct(Object.assign({}, existing, raw, {
         // Para representantes, actualizar catálogo/precios/foto, pero no pisar su stock propio.
         stock: preservedStock,
+        adminStock: Number(raw.stock || raw.adminStock || 0),
         cost: existing.cost || 0,
+        resellerAdditionalCost: isReseller() ? (existing.resellerAdditionalCost || 0) : (raw.resellerAdditionalCost || 0),
+        resellerLocalUnitPrice: isReseller() ? (existing.resellerLocalUnitPrice || raw.publicPrice || raw.unitPriceFixed || 0) : (raw.resellerLocalUnitPrice || 0),
+        resellerLocalWholesalePrice: isReseller() ? (existing.resellerLocalWholesalePrice || raw.marketPrice || raw.wholesaleMarketPrice || 0) : (raw.resellerLocalWholesalePrice || 0),
+        resellerLocalNote: isReseller() ? (existing.resellerLocalNote || '') : '',
         updatedAt: Date.now()
       })));
       await DB.put('products', existing, { silent: true });
@@ -187,6 +197,10 @@ async function applyCatalogUpdatePackage(pkg) {
       const prepared = normalizeLegacyProduct(Object.assign({}, raw, {
         cost: 0,
         stock: isReseller() ? 0 : Number(raw.stock || 0),
+        adminStock: Number(raw.stock || raw.adminStock || 0),
+        resellerAdditionalCost: 0,
+        resellerLocalUnitPrice: isReseller() ? Number(raw.publicPrice || raw.unitPriceFixed || 0) : 0,
+        resellerLocalWholesalePrice: isReseller() ? Number(raw.marketPrice || raw.wholesaleMarketPrice || 0) : 0,
         createdAt: Date.now(),
         updatedAt: Date.now()
       }));
@@ -239,6 +253,22 @@ async function applyRepresentativeReportPackage(pkg) {
   await DB.put('representativeReports', report, { silent: true });
   await loadAllState();
   return { importedSales, salesCount: incomingSales.length, representativeName: report.representativeName };
+}
+
+
+async function applyPurchaseOrderPackage(pkg) {
+  if (!isAdmin()) throw new Error('Solo el administrador puede importar pedidos de representantes.');
+  const order = pkg.order || pkg.purchaseOrder || null;
+  if (!order || !Array.isArray(order.items)) throw new Error('El paquete no contiene un pedido válido.');
+  const exists = await DB.get('purchaseOrders', order.id).catch(() => null);
+  if (exists) throw new Error('Este pedido ya fue incorporado.');
+  const prepared = Object.assign({}, order, {
+    importedAt: Date.now(),
+    syncStatus: 'imported',
+    status: order.status || 'pending'
+  });
+  await DB.put('purchaseOrders', prepared, { silent: true });
+  return { orderId: prepared.id, items: prepared.items.length, total: prepared.total || 0, representativeName: prepared.representativeName || '' };
 }
 
 function readJsonFile(file) {
@@ -327,3 +357,7 @@ window.exportCatalogUpdatePackage = exportCatalogUpdatePackage;
 window.exportRepresentativeReportPackage = exportRepresentativeReportPackage;
 window.importSmartPackageFromFile = importSmartPackageFromFile;
 window.openSmartPackagesPanel = openSmartPackagesPanel;
+window.applyPurchaseOrderPackage = applyPurchaseOrderPackage;
+window.openPackageReadySheet = openPackageReadySheet;
+window.basePackageMeta = basePackageMeta;
+window.packageStamp = packageStamp;

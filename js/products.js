@@ -26,6 +26,22 @@ function resellerPrice(product) {
   return representativePrice(product);
 }
 
+function resellerAdditionalCost(product) {
+  return roundBs(safeNumber(product.resellerAdditionalCost ?? product.localAdditionalCost ?? 0, 0));
+}
+
+function resellerEffectiveCost(product) {
+  return roundBs(representativePrice(product) + resellerAdditionalCost(product));
+}
+
+function resellerLocalUnitPrice(product) {
+  return roundBs(safeNumber(product.resellerLocalUnitPrice ?? product.localUnitPrice ?? product.ownPublicPrice ?? publicPrice(product), 0));
+}
+
+function resellerLocalWholesalePrice(product) {
+  return roundBs(safeNumber(product.resellerLocalWholesalePrice ?? product.localWholesalePrice ?? product.ownWholesalePrice ?? marketPrice(product), 0));
+}
+
 function marketPrice(product) {
   return roundBs(safeNumber(product.marketPrice ?? product.wholesaleMarketPrice ?? product.marketPriceFixed ?? product.mayoristaPrice ?? product.wholesalePriceFixed ?? product.resellerPrice, 0));
 }
@@ -74,6 +90,9 @@ function normalizeProductInput(raw, previousProduct) {
     wholesalePriceFixed: reseller,
     unitPriceFixed: publico,
     stock,
+    resellerAdditionalCost: roundBs(safeNumber(raw.resellerAdditionalCost ?? (previousProduct && previousProduct.resellerAdditionalCost), 0)),
+    resellerLocalUnitPrice: roundBs(safeNumber(raw.resellerLocalUnitPrice ?? (previousProduct && previousProduct.resellerLocalUnitPrice) ?? publico, 0)),
+    resellerLocalWholesalePrice: roundBs(safeNumber(raw.resellerLocalWholesalePrice ?? (previousProduct && previousProduct.resellerLocalWholesalePrice) ?? market, 0)),
     photo: raw.photo || null,
     insumos: Array.isArray(raw.insumos) ? raw.insumos : [],
     finalQty: safeNumber(raw.finalQty, 0),
@@ -113,6 +132,7 @@ function productMetrics(products = AppState.products) {
 
 function renderInventario() {
   const adminMode = !window.isAdmin || isAdmin();
+  const seller = window.isReseller && isReseller();
   $('#fabAdd').classList.toggle('hidden', !adminMode);
   $('#fabAdd').onclick = adminMode ? () => openProductForm(null) : null;
   const main = $('#mainArea');
@@ -122,19 +142,21 @@ function renderInventario() {
   let html = `
     <section class="inventoryHero">
       <div>
-        <div class="eyebrow">Inventario comercial</div>
-        <h1>Productos Natura Vida</h1>
-        <p>${adminMode ? 'Costo, precio revendedor, precio público, stock, fotografía y trazabilidad online/offline.' : 'Catálogo actualizado por el administrador. Usa estos precios para negociar y vender.'}</p>
+        <div class="eyebrow">${seller ? 'Mi inventario regional' : 'Inventario comercial'}</div>
+        <h1>${seller ? 'Productos para vender' : 'Productos Natura Vida'}</h1>
+        <p>${adminMode ? 'Costo por insumos, precio mayorista, precio representantes, precio público, stock, fotografía y trazabilidad online/offline.' : 'Administra tu stock propio, costo de envío, precio unitario y precio mayorista según tu zona.'}</p>
       </div>
-      ${adminMode ? '<button class="btn sm" id="quickAddProduct">+ Producto</button>' : '<button class="btn sm outline" id="quickRefreshProducts">Actualizar</button>'}
+      ${adminMode ? '<button class="btn sm" id="quickAddProduct">+ Producto</button>' : '<button class="btn sm outline" id="quickRefreshProducts">Actualizar catálogo</button>'}
     </section>
 
     <div class="kpiGrid inventoryKpis">
       <div class="kpiCard"><span class="lbl">Productos</span><strong>${metrics.count}</strong></div>
       <div class="kpiCard"><span class="lbl">Unidades</span><strong>${metrics.units}</strong></div>
-      <div class="kpiCard"><span class="lbl">Costo stock</span><strong>${fmtMoney(metrics.costValue)}</strong></div>
+      <div class="kpiCard"><span class="lbl">${seller ? 'Inversión aprox.' : 'Costo stock'}</span><strong>${fmtMoney(seller ? AppState.products.filter(p=>p.status!=='archived').reduce((s,p)=>s+(resellerEffectiveCost(p)*(Number(p.stock)||0)),0) : metrics.costValue)}</strong></div>
       <div class="kpiCard ${metrics.lowStock ? 'dangerSoft' : ''}"><span class="lbl">Stock bajo</span><strong>${metrics.lowStock}</strong></div>
     </div>
+
+    ${seller ? `<div class="formNotice resellerInventoryNotice">Tu precio base es el precio representantes que te entrega el administrador. Agrega transporte/costos operativos, define tu precio unitario y tu precio mayorista, y actualiza tu stock local.</div>` : ''}
 
     <div class="toolrow enhancedSearch">
       <input type="text" id="searchInput" placeholder="Buscar por producto, categoría, SKU o descripción..." value="${escapeHtml(_prodSearch)}">
@@ -151,7 +173,7 @@ function renderInventario() {
       <div class="empty">
         <span class="ic">🌿</span>
         <h3>${AppState.products.length === 0 ? 'Aún no hay productos' : 'Sin resultados'}</h3>
-        <p>${AppState.products.length === 0 ? 'Toca + Producto para registrar tu primer producto con costo, precios, stock y fotografía.' : 'Intenta con otro término de búsqueda.'}</p>
+        <p>${AppState.products.length === 0 ? (seller ? 'Actualiza el catálogo desde el servidor o importa un catálogo del administrador.' : 'Toca + Producto para registrar tu primer producto con costo, precios, stock y fotografía.') : 'Intenta con otro término de búsqueda.'}</p>
       </div>`;
   } else {
     html += `<div class="invGrid v2Grid">`;
@@ -161,11 +183,16 @@ function renderInventario() {
       const mPrice = marketPrice(p);
       const rPrice = resellerPrice(p);
       const pPrice = publicPrice(p);
+      const localCost = resellerEffectiveCost(p);
+      const localUnit = resellerLocalUnitPrice(p);
+      const localWholesale = resellerLocalWholesalePrice(p);
       const mMargin = marginPct(mPrice, cost);
       const rMargin = marginPct(rPrice, cost);
       const pMargin = marginPct(pPrice, cost);
+      const localUnitMargin = marginAmount(localUnit, localCost);
+      const localWholesaleMargin = marginAmount(localWholesale, localCost);
       html += `
-      <article class="invCard v2ProductCard" data-id="${p.id}">
+      <article class="invCard v2ProductCard ${seller ? 'resellerInventoryCard' : ''}" data-id="${p.id}">
         <div class="invPhoto">${p.photo ? `<img src="${p.photo}" alt="${escapeHtml(p.name)}">` : '<span class="invPhotoFallback">🌿</span>'}</div>
         <div class="invBody">
           <div class="productLineTop">
@@ -175,18 +202,26 @@ function renderInventario() {
           <div class="invName">${escapeHtml(p.name)}</div>
           ${p.description ? `<div class="invDesc">${escapeHtml(p.description)}</div>` : ''}
           <span class="pill ${low ? 'low' : 'ok'} stockPill">${low ? '⚠ stock bajo' : 'stock'} · ${p.stock}</span>
+          ${seller ? `
+          <div class="priceMatrix priceMatrix4 resellerPriceMatrix">
+            <div><span>Base admin</span><strong>${fmtMoney(rPrice)}</strong></div>
+            <div><span>+ Envío/costos</span><strong>${fmtMoney(resellerAdditionalCost(p))}</strong></div>
+            <div><span>Mi unitario</span><strong>${fmtMoney(localUnit)}</strong><small>${fmtMoney(localUnitMargin)}</small></div>
+            <div><span>Mi mayorista</span><strong>${fmtMoney(localWholesale)}</strong><small>${fmtMoney(localWholesaleMargin)}</small></div>
+          </div>` : `
           <div class="priceMatrix priceMatrix4">
             <div><span>Costo</span><strong>${fmtMoney(cost)}</strong></div>
             <div><span>Mayorista</span><strong>${fmtMoney(mPrice)}</strong><small>${mMargin >= 0 ? '+' : ''}${mMargin.toFixed(0)}%</small></div>
             <div><span>Represent.</span><strong>${fmtMoney(rPrice)}</strong><small>${rMargin >= 0 ? '+' : ''}${rMargin.toFixed(0)}%</small></div>
             <div><span>Público</span><strong>${fmtMoney(pPrice)}</strong><small>${pMargin >= 0 ? '+' : ''}${pMargin.toFixed(0)}%</small></div>
-          </div>
+          </div>`}
         </div>
         ${adminMode ? `<div class="invActions">
           <button class="editBtn" data-id="${p.id}">Editar</button>
           <button class="danger delBtn" data-id="${p.id}">Eliminar</button>
         </div>` : `<div class="invActions">
-          <button class="sellThisBtn" data-id="${p.id}">Vender este producto</button>
+          <button class="editMyInvBtn" data-id="${p.id}">Editar mi inventario</button>
+          <button class="sellThisBtn" data-id="${p.id}">Vender</button>
         </div>`}
       </article>`;
     });
@@ -205,6 +240,7 @@ function renderInventario() {
   });
   $('#searchInput').addEventListener('input', e => { _prodSearch = e.target.value; renderInventario(); });
   $all('.editBtn').forEach(b => b.addEventListener('click', () => openProductForm(b.dataset.id)));
+  $all('.editMyInvBtn').forEach(b => b.addEventListener('click', () => openResellerProductForm(b.dataset.id)));
   $all('.delBtn').forEach(b => b.addEventListener('click', () => confirmDeleteProduct(b.dataset.id)));
   $all('.sellThisBtn').forEach(b => b.addEventListener('click', () => { window.startSaleWithProduct ? startSaleWithProduct(b.dataset.id) : navigateTo('vender'); }));
 }
@@ -497,11 +533,105 @@ function openProductForm(id) {
   });
 }
 
+
+function openResellerProductForm(id) {
+  if (!window.isReseller || !isReseller()) { showToast('Esta edición es solo para representantes.', 'error'); return; }
+  const p = AppState.products.find(x => x.id === id);
+  if (!p) return;
+  const base = representativePrice(p);
+  const extra = resellerAdditionalCost(p);
+  const localUnit = resellerLocalUnitPrice(p);
+  const localWholesale = resellerLocalWholesalePrice(p);
+  const stock = Number(p.stock) || 0;
+  const html = `
+    <h2>Mi inventario <span class="x" id="closeSheet">✕</span></h2>
+    <div class="formNotice">Edita únicamente tu información local: stock, transporte/costos operativos y tus precios de venta. El precio base del administrador no se modifica.</div>
+    <div class="resellerProductHeader">
+      <div class="thumb">${p.photo ? `<img src="${p.photo}" alt="">` : '🌿'}</div>
+      <div><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category || 'General')}</small></div>
+    </div>
+    <div class="field-row">
+      <div class="field money"><label>Precio base administrador</label><input type="number" value="${base}" readonly></div>
+      <div class="field money"><label>Transporte / costo adicional</label><input type="number" inputmode="decimal" step="0.01" id="ri_extra" value="${extra || ''}" placeholder="Ej: 5"></div>
+    </div>
+    <div class="costSummary resellerCostSummary"><span class="lbl">Mi costo real estimado</span><span class="val" id="ri_cost">${fmtMoney(base + extra)}</span></div>
+    <div class="field-row">
+      <div class="field"><label>Mi stock actual</label><input type="number" inputmode="numeric" step="1" id="ri_stock" value="${stock}"></div>
+      <div class="field money"><label>Mi precio unitario</label><input type="number" inputmode="decimal" step="0.01" id="ri_unit" value="${localUnit || ''}" placeholder="Ej: 150"></div>
+    </div>
+    <div class="field-row">
+      <div class="field money"><label>Mi precio mayorista</label><input type="number" inputmode="decimal" step="0.01" id="ri_wholesale" value="${localWholesale || ''}" placeholder="Ej: 135"></div>
+      <div class="field"><label>Observación local</label><input type="text" id="ri_note" value="${escapeHtml(p.resellerLocalNote || '')}" placeholder="Ej: envío La Paz incluido"></div>
+    </div>
+    <div class="profitPreview profitPreview2">
+      <div><span>Margen unitario</span><strong id="ri_unit_margin">Bs 0</strong></div>
+      <div><span>Margen mayorista</span><strong id="ri_wholesale_margin">Bs 0</strong></div>
+    </div>
+    <div class="actions stickyActions">
+      <button class="btn outline block" id="cancelForm">Cancelar</button>
+      <button class="btn block" id="saveResellerInv">Guardar mi inventario</button>
+    </div>
+  `;
+  openSheet(html, (overlay, close) => {
+    function calc() {
+      const ex = roundBs(parseFloat($('#ri_extra', overlay).value) || 0);
+      const cost = roundBs(base + ex);
+      const unit = roundBs(parseFloat($('#ri_unit', overlay).value) || 0);
+      const wh = roundBs(parseFloat($('#ri_wholesale', overlay).value) || 0);
+      $('#ri_cost', overlay).textContent = fmtMoney(cost);
+      $('#ri_unit_margin', overlay).textContent = fmtMoney(unit - cost);
+      $('#ri_wholesale_margin', overlay).textContent = fmtMoney(wh - cost);
+      $('#ri_unit_margin', overlay).classList.toggle('negative', unit > 0 && unit < cost);
+      $('#ri_wholesale_margin', overlay).classList.toggle('negative', wh > 0 && wh < cost);
+    }
+    ['ri_extra','ri_unit','ri_wholesale'].forEach(id => $('#' + id, overlay).addEventListener('input', calc));
+    calc();
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#cancelForm', overlay).addEventListener('click', close);
+    $('#saveResellerInv', overlay).addEventListener('click', async () => {
+      const previousStock = Number(p.stock) || 0;
+      const newStock = parseInt($('#ri_stock', overlay).value, 10);
+      if (!Number.isFinite(newStock) || newStock < 0) { showToast('El stock no puede ser negativo.', 'error'); return; }
+      const ex = roundBs(parseFloat($('#ri_extra', overlay).value) || 0);
+      const unit = roundBs(parseFloat($('#ri_unit', overlay).value) || 0);
+      const wh = roundBs(parseFloat($('#ri_wholesale', overlay).value) || 0);
+      const cost = roundBs(base + ex);
+      if (unit > 0 && unit < cost) { showToast('Tu precio unitario está por debajo de tu costo real.', 'error'); return; }
+      if (wh > 0 && wh < cost) { showToast('Tu precio mayorista está por debajo de tu costo real.', 'error'); return; }
+      p.stock = newStock;
+      p.resellerAdditionalCost = ex;
+      p.resellerLocalUnitPrice = unit || publicPrice(p);
+      p.resellerLocalWholesalePrice = wh || marketPrice(p);
+      p.resellerLocalNote = $('#ri_note', overlay).value.trim();
+      p.resellerLocalUpdatedAt = Date.now();
+      p.updatedAt = Date.now();
+      await DB.put('products', p, { silent: true });
+      if (previousStock !== newStock) {
+        await DB.put('inventoryMovements', {
+          id: uid('mov'), productId: p.id, productName: p.name,
+          type: 'reseller_stock_adjustment', qty: newStock - previousStock,
+          stockAfter: newStock, reason: 'Ajuste de inventario regional del representante',
+          date: Date.now(), sellerId: AppState.session.userId, syncStatus: 'local'
+        }, { silent: true });
+      }
+      const idx = AppState.products.findIndex(x => x.id === p.id);
+      if (idx >= 0) AppState.products[idx] = p;
+      close();
+      renderInventario();
+      showToast('Mi inventario actualizado');
+    });
+  });
+}
+
 window.DEFAULT_CATEGORIES = DEFAULT_CATEGORIES;
 window.productCost = productCost;
 window.marketPrice = marketPrice;
 window.representativePrice = representativePrice;
 window.resellerPrice = resellerPrice;
+window.resellerAdditionalCost = resellerAdditionalCost;
+window.resellerEffectiveCost = resellerEffectiveCost;
+window.resellerLocalUnitPrice = resellerLocalUnitPrice;
+window.resellerLocalWholesalePrice = resellerLocalWholesalePrice;
 window.publicPrice = publicPrice;
 window.marginPct = marginPct;
 window.unitPrice = unitPrice;
@@ -509,3 +639,4 @@ window.wholesalePrice = wholesalePrice;
 window.productMetrics = productMetrics;
 window.renderInventario = renderInventario;
 window.openProductForm = openProductForm;
+window.openResellerProductForm = openResellerProductForm;

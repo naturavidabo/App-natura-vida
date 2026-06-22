@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v4-4-precios-compartir-online';
+const CACHE_NAME = 'natura-vida-v4-6-acceso-simple';
 const ASSETS = [
   './',
   './index.html',
@@ -20,6 +20,7 @@ const ASSETS = [
   './js/auth.js',
   './js/catalog-pdf.js',
   './js/smart-packages.js',
+  './js/orders.js',
   './js/app.js',
   './icons/icon-48.png',
   './icons/icon-72.png',

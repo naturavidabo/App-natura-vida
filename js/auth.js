@@ -1,5 +1,7 @@
 /* auth.js — Autenticación offline local + autenticación online opcional Supabase. */
 
+const NATURA_ADMIN_ACTIVATION_CODE = '2721971';
+
 async function sha256Hex(text) {
   const enc = new TextEncoder().encode(String(text || ''));
   const buf = await crypto.subtle.digest('SHA-256', enc);
@@ -29,7 +31,7 @@ function applyOnlineSession(user, profile) {
 }
 
 async function authenticateUser(username, password) {
-  const cleanUser = String(username || '').trim();
+  const cleanUser = String(username || '').trim().toLowerCase().replace(/\s+/g, '');
 
   if (window.isOnlineConfigured && isOnlineConfigured()) {
     const online = await onlineSignIn(cleanUser, password);
@@ -145,19 +147,38 @@ window.updateLocalPassword = updateLocalPassword;
 
 
 async function updateLocalPassword(userId, newPassword, profileData = {}) {
-  if (!userId || !newPassword || newPassword.length < 6) {
-    return { ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
+  if (!userId || !newPassword || newPassword.length < 4) {
+    return { ok: false, message: 'La contraseña debe tener al menos 4 caracteres.' };
   }
   const user = await DB.get('users', userId);
   if (!user) return { ok: false, message: 'Usuario local no encontrado.' };
+
+  if (profileData.activationCode !== NATURA_ADMIN_ACTIVATION_CODE) {
+    return { ok: false, message: 'Código de activación incorrecto.' };
+  }
+
+  const requestedUsername = String(profileData.username || '').trim().toLowerCase();
+  if (requestedUsername) {
+    const existing = await DB.getByIndex('users', 'byUsername', requestedUsername);
+    const collision = existing.find(u => u.id !== user.id);
+    if (collision) return { ok: false, message: 'Ese número de celular ya está registrado como usuario.' };
+    user.username = requestedUsername;
+  }
+
   user.passwordHash = await sha256Hex(newPassword);
   user.mustChangePassword = false;
   user.fullName = profileData.fullName || user.fullName;
-  user.phone = profileData.phone || user.phone || '';
+  user.phone = profileData.phone || user.phone || requestedUsername || '';
   user.documentId = profileData.documentId || user.documentId || '';
+  user.city = profileData.city || user.city || '';
+  user.activatedAt = user.activatedAt || Date.now();
   user.updatedAt = Date.now();
   await DB.put('users', user, { silent: true });
+  AppState.session.username = user.username;
   AppState.session.fullName = user.fullName || AppState.session.fullName;
   AppState.session.mustChangePassword = false;
   return { ok: true, user };
 }
+
+
+window.NATURA_ADMIN_ACTIVATION_CODE = NATURA_ADMIN_ACTIVATION_CODE;
