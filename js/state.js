@@ -69,27 +69,30 @@ async function saveSettings() {
 }
 
 function roundBs(n) {
-  return Math.round(Number(n) || 0);
+  const value = Number(n) || 0;
+  return Math.round(value * 100) / 100;
 }
 
 function fmtMoney(n) {
   n = roundBs(n);
-  return AppState.settings.currency + ' ' + n.toLocaleString('es-BO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const decimals = Math.abs(n % 1) > 0.0001 ? 2 : 0;
+  return AppState.settings.currency + ' ' + n.toLocaleString('es-BO', { minimumFractionDigits: decimals, maximumFractionDigits: 2 });
 }
 
 function grossCost(product) {
   if (!product) return 0;
-  const directCost = Number(product.cost ?? product.baseCost);
-  if (Number.isFinite(directCost) && directCost > 0) return directCost;
-  return (product.insumos || []).reduce((sum, i) => {
+  const insumoCost = (product.insumos || []).reduce((sum, i) => {
     const qty = Number(i.qtyUsed) || 0;
     const unitCost = Number(i.unitCost) || 0;
     return sum + (qty * unitCost);
   }, 0);
+  if (insumoCost > 0) return roundBs(insumoCost);
+  const directCost = Number(product.cost ?? product.baseCost);
+  return Number.isFinite(directCost) ? roundBs(directCost) : 0;
 }
 
 function priceForGroup(product, groupId) {
-  const base = wholesalePrice(product);
+  const base = window.marketPrice ? marketPrice(product) : wholesalePrice(product);
   const g = AppState.priceGroups.find(pg => pg.id === groupId);
   if (!g) return base;
   if (g.mode === 'discount') return roundBs(Math.max(0, base - (base * (Number(g.percent) || 0) / 100)));

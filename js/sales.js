@@ -18,18 +18,19 @@ function sellerMode() {
 function priceForCurrentMode(p) {
   if (sellerMode()) return sellerSalePrice(p);
   if (_saleType === 'unit') return unitPrice(p);
+  if (_saleType === 'representative_transfer') return representativePrice(p);
   if (AppState.settings.priceGroupsEnabled && _saleSelectedGroup) return priceForGroup(p, _saleSelectedGroup);
-  return wholesalePrice(p);
+  return marketPrice(p);
 }
 
 function sellerSalePrice(p) {
   const custom = Number(_cartPrices[p.id]);
   if (Number.isFinite(custom) && custom > 0) return roundBs(custom);
-  return publicPrice(p) || wholesalePrice(p);
+  return publicPrice(p) || representativePrice(p);
 }
 
 function sellerUnitMargin(p) {
-  return roundBs(sellerSalePrice(p) - wholesalePrice(p));
+  return roundBs(sellerSalePrice(p) - representativePrice(p));
 }
 
 function renderVender() {
@@ -74,7 +75,7 @@ function renderVender() {
     <div class="field" style="margin-bottom:14px;">
       <label>Grupo / zona de venta (opcional, ajusta todos los precios)</label>
       <select id="s_group">
-        <option value="">Sin grupo (precio revendedor general)</option>
+        <option value="">Sin grupo (precio mayorista general)</option>
         ${AppState.priceGroups.map(g => `<option value="${g.id}" ${_saleSelectedGroup === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}
       </select>
     </div>` : ''}
@@ -110,7 +111,7 @@ function renderCatalogGrid() {
     const price = priceForCurrentMode(p);
     const qty = _cart[p.id] || 0;
     const low = p.stock <= AppState.settings.lowStockThreshold;
-    const base = wholesalePrice(p);
+    const base = representativePrice(p);
     const suggested = publicPrice(p);
     const margin = sellerUnitMargin(p);
     return `
@@ -210,7 +211,7 @@ function openCheckoutSheet() {
   }).filter(i => i.product);
 
   if (sellerMode()) {
-    const invalid = items.find(i => i.price < wholesalePrice(i.product));
+    const invalid = items.find(i => i.price < representativePrice(i.product));
     if (invalid) {
       showToast(`El precio de ${invalid.product.name} no puede ser menor a tu precio base.`, 'error');
       return;
@@ -218,7 +219,7 @@ function openCheckoutSheet() {
   }
 
   const total = items.reduce((s, i) => s + (i.price * i.qty), 0);
-  const sellerProfit = sellerMode() ? items.reduce((s, i) => s + ((i.price - wholesalePrice(i.product)) * i.qty), 0) : 0;
+  const sellerProfit = sellerMode() ? items.reduce((s, i) => s + ((i.price - representativePrice(i.product)) * i.qty), 0) : 0;
 
   const html = `
     <h2>Confirmar venta <span class="x" id="closeSheet">✕</span></h2>
@@ -226,7 +227,7 @@ function openCheckoutSheet() {
     <div class="sectiontitle2"><span>Productos (${items.length})</span></div>
     ${items.map(i => `
       <div class="histitem">
-        <div class="l"><div class="pname">${escapeHtml(i.product.name)}</div><div class="meta">${i.qty} × ${fmtMoney(i.price)}${sellerMode() ? ` · base ${fmtMoney(wholesalePrice(i.product))}` : ''}</div></div>
+        <div class="l"><div class="pname">${escapeHtml(i.product.name)}</div><div class="meta">${i.qty} × ${fmtMoney(i.price)}${sellerMode() ? ` · base ${fmtMoney(representativePrice(i.product))}` : ''}</div></div>
         <div class="r">${fmtMoney(i.price * i.qty)}</div>
       </div>
     `).join('')}
@@ -267,7 +268,7 @@ function openCheckoutSheet() {
       const saleItems = [];
 
       for (const it of items) {
-        const resellerBase = wholesalePrice(it.product);
+        const resellerBase = representativePrice(it.product);
         const unitCost = sellerMode() ? resellerBase : grossCost(it.product);
         const sellerUnitProfit = sellerMode() ? (it.price - resellerBase) : 0;
         if (!sellerMode()) {
@@ -285,6 +286,8 @@ function openCheckoutSheet() {
           unitCost,
           resellerBase,
           suggestedPublicPrice: publicPrice(it.product),
+          marketPrice: marketPrice(it.product),
+          representativePrice: representativePrice(it.product),
           unitPrice: it.price,
           subtotal: it.price * it.qty,
           profit: (it.price - unitCost) * it.qty,
@@ -340,7 +343,7 @@ function startSaleWithProduct(productId) {
   AppState.currentTab = 'vender';
   _cart = { [productId]: 1 };
   const p = AppState.products.find(x => x.id === productId);
-  if (p && sellerMode()) _cartPrices[productId] = publicPrice(p) || wholesalePrice(p);
+  if (p && sellerMode()) _cartPrices[productId] = publicPrice(p) || representativePrice(p);
   render();
 }
 

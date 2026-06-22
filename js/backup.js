@@ -5,14 +5,11 @@
    uno nuevo que nunca abrió la app antes. */
 
 async function shareOrDownloadBackup(blob, filename) {
-  const file = new File([blob], filename, { type: 'application/json' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: 'Copia Natura Vida', text: 'Copia de seguridad Natura Vida.' });
-      return true;
-    } catch (_) { return false; }
+  if (window.shareBlobFile) {
+    return shareBlobFile(blob, filename, 'text/plain', 'Copia Natura Vida', 'Copia de seguridad Natura Vida. Adjunta este archivo por WhatsApp o Drive.');
   }
-  showToast('Este navegador no permite compartir directo. Usa Descargar.', 'error');
+  downloadBackupBlob(blob, filename);
+  showToast('Archivo descargado. Adjunta el archivo en WhatsApp como documento.');
   return false;
 }
 
@@ -30,7 +27,7 @@ function downloadBackupBlob(blob, filename) {
 async function generateBackupFile() {
   const data = await DB.exportAll();
   const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = new Blob([json], { type: 'text/plain' });
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   const filename = `naturavida_backup_${stamp}.json`;
   openSheet(`
@@ -45,10 +42,10 @@ async function generateBackupFile() {
     </div>
   `, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close);
-    $('#shareBackup', overlay).addEventListener('click', () => shareOrDownloadBackup(blob, filename));
+    $('#shareBackup', overlay).addEventListener('click', async () => { await shareOrDownloadBackup(blob, filename); });
     $('#downloadBackup', overlay).addEventListener('click', () => { downloadBackupBlob(blob, filename); showToast('Copia descargada.'); });
     if (navigator.canShare) {
-      const file = new File([blob], filename, { type: 'application/json' });
+      const file = new File([blob], filename, { type: 'text/plain' });
       if (navigator.canShare({ files: [file] })) setTimeout(() => shareOrDownloadBackup(blob, filename), 450);
     }
   });

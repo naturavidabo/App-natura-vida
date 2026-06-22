@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v4-3-correccion-catalogo-seguridad-online';
+const CACHE_NAME = 'natura-vida-v4-4-precios-compartir-online';
 const ASSETS = [
   './',
   './index.html',

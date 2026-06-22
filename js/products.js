@@ -18,8 +18,16 @@ function productCost(product) {
   return roundBs(grossCost(product));
 }
 
+function representativePrice(product) {
+  return roundBs(safeNumber(product.resellerPrice ?? product.representativePrice ?? product.wholesalePriceFixed, 0));
+}
+
 function resellerPrice(product) {
-  return roundBs(safeNumber(product.resellerPrice ?? product.wholesalePriceFixed, 0));
+  return representativePrice(product);
+}
+
+function marketPrice(product) {
+  return roundBs(safeNumber(product.marketPrice ?? product.wholesaleMarketPrice ?? product.marketPriceFixed ?? product.mayoristaPrice ?? product.wholesalePriceFixed ?? product.resellerPrice, 0));
 }
 
 function publicPrice(product) {
@@ -31,7 +39,7 @@ function unitPrice(product) {
 }
 
 function wholesalePrice(product) {
-  return resellerPrice(product);
+  return marketPrice(product);
 }
 
 function marginPct(price, cost) {
@@ -46,6 +54,7 @@ function marginAmount(price, cost) {
 function normalizeProductInput(raw, previousProduct) {
   const now = Date.now();
   const cost = roundBs(safeNumber(raw.cost, 0));
+  const market = roundBs(safeNumber(raw.marketPrice, 0));
   const reseller = roundBs(safeNumber(raw.resellerPrice, 0));
   const publico = roundBs(safeNumber(raw.publicPrice, 0));
   const stock = Math.max(0, parseInt(raw.stock, 10) || 0);
@@ -56,7 +65,11 @@ function normalizeProductInput(raw, previousProduct) {
     sku: (raw.sku || '').trim(),
     description: (raw.description || '').trim(),
     cost,
+    marketPrice: market,
+    wholesaleMarketPrice: market,
+    marketPriceFixed: market,
     resellerPrice: reseller,
+    representativePrice: reseller,
     publicPrice: publico,
     wholesalePriceFixed: reseller,
     unitPriceFixed: publico,
@@ -84,16 +97,18 @@ function productMetrics(products = AppState.products) {
   return active.reduce((acc, p) => {
     const cost = productCost(p);
     const publico = publicPrice(p);
+    const mayorista = marketPrice(p);
     const revendedor = resellerPrice(p);
     const stock = Number(p.stock) || 0;
     acc.count += 1;
     acc.units += stock;
     acc.costValue += cost * stock;
     acc.publicValue += publico * stock;
+    acc.marketValue += mayorista * stock;
     acc.resellerValue += revendedor * stock;
     if (stock <= AppState.settings.lowStockThreshold) acc.lowStock += 1;
     return acc;
-  }, { count: 0, units: 0, costValue: 0, publicValue: 0, resellerValue: 0, lowStock: 0 });
+  }, { count: 0, units: 0, costValue: 0, publicValue: 0, marketValue: 0, resellerValue: 0, lowStock: 0 });
 }
 
 function renderInventario() {
@@ -143,8 +158,10 @@ function renderInventario() {
     filtered.forEach(p => {
       const low = p.stock <= lowThreshold;
       const cost = productCost(p);
+      const mPrice = marketPrice(p);
       const rPrice = resellerPrice(p);
       const pPrice = publicPrice(p);
+      const mMargin = marginPct(mPrice, cost);
       const rMargin = marginPct(rPrice, cost);
       const pMargin = marginPct(pPrice, cost);
       html += `
@@ -158,9 +175,10 @@ function renderInventario() {
           <div class="invName">${escapeHtml(p.name)}</div>
           ${p.description ? `<div class="invDesc">${escapeHtml(p.description)}</div>` : ''}
           <span class="pill ${low ? 'low' : 'ok'} stockPill">${low ? '⚠ stock bajo' : 'stock'} · ${p.stock}</span>
-          <div class="priceMatrix">
+          <div class="priceMatrix priceMatrix4">
             <div><span>Costo</span><strong>${fmtMoney(cost)}</strong></div>
-            <div><span>Revendedor</span><strong>${fmtMoney(rPrice)}</strong><small>${rMargin >= 0 ? '+' : ''}${rMargin.toFixed(0)}%</small></div>
+            <div><span>Mayorista</span><strong>${fmtMoney(mPrice)}</strong><small>${mMargin >= 0 ? '+' : ''}${mMargin.toFixed(0)}%</small></div>
+            <div><span>Represent.</span><strong>${fmtMoney(rPrice)}</strong><small>${rMargin >= 0 ? '+' : ''}${rMargin.toFixed(0)}%</small></div>
             <div><span>Público</span><strong>${fmtMoney(pPrice)}</strong><small>${pMargin >= 0 ? '+' : ''}${pMargin.toFixed(0)}%</small></div>
           </div>
         </div>
@@ -209,14 +227,14 @@ function openProductForm(id) {
   const baseCost = p ? productCost(p) : 0;
   let insumos = p ? JSON.parse(JSON.stringify(p.insumos || [])) : [];
   if (insumos.length === 0) insumos = [{ name: '', unit: 'u.', unitCost: '', qtyUsed: '' }];
-  let manualCostTouched = !!(p && Number(p.cost) > 0);
+  let manualCostTouched = false;
 
   const knownCategories = Array.from(new Set(DEFAULT_CATEGORIES.concat(AppState.products.map(x => x.category).filter(Boolean))));
   const html = `
     <h2>${p ? 'Editar producto' : 'Nuevo producto'} <span class="x" id="closeSheet">✕</span></h2>
 
     <div class="formNotice">
-      Producto comercial completo: costo, precio revendedor, precio público, stock, descripción y fotografía.
+      Producto comercial completo: costo por insumos, precio mayorista, precio para representantes, precio público, stock, descripción y fotografía.
     </div>
 
     <div class="field">
@@ -254,23 +272,28 @@ function openProductForm(id) {
     </div>
 
     <div class="sectiontitle2"><span>Costos y precios</span></div>
-    <div class="field-row priceFields">
+    <div class="field-row priceFields priceFields4">
       <div class="field money">
-        <label>Costo (Bs) *</label>
-        <input type="number" inputmode="decimal" step="0.01" id="f_cost" placeholder="Ej: 22" value="${baseCost || ''}">
+        <label>Costo calculado (Bs)</label>
+        <input type="number" inputmode="decimal" step="0.01" id="f_cost" placeholder="Calculado por insumos" value="${baseCost || ''}" readonly>
       </div>
       <div class="field money">
-        <label>Precio revendedor (Bs) *</label>
-        <input type="number" inputmode="decimal" step="0.01" id="f_resellerprice" placeholder="Ej: 34" value="${p ? resellerPrice(p) || '' : ''}">
+        <label>Precio mayorista (Bs) *</label>
+        <input type="number" inputmode="decimal" step="0.01" id="f_marketprice" placeholder="Ej: 120" value="${p ? marketPrice(p) || '' : ''}">
+      </div>
+      <div class="field money">
+        <label>Precio representantes (Bs) *</label>
+        <input type="number" inputmode="decimal" step="0.01" id="f_resellerprice" placeholder="Ej: 100" value="${p ? resellerPrice(p) || '' : ''}">
       </div>
       <div class="field money">
         <label>Precio público (Bs) *</label>
-        <input type="number" inputmode="decimal" step="0.01" id="f_publicprice" placeholder="Ej: 45" value="${p ? publicPrice(p) || '' : ''}">
+        <input type="number" inputmode="decimal" step="0.01" id="f_publicprice" placeholder="Ej: 150" value="${p ? publicPrice(p) || '' : ''}">
       </div>
     </div>
 
-    <div class="profitPreview">
-      <div><span>Utilidad revendedor</span><strong id="resellerProfitVal">Bs 0</strong><small id="resellerPctVal">0%</small></div>
+    <div class="profitPreview profitPreview3">
+      <div><span>Utilidad mayorista</span><strong id="marketProfitVal">Bs 0</strong><small id="marketPctVal">0%</small></div>
+      <div><span>Utilidad representantes</span><strong id="resellerProfitVal">Bs 0</strong><small id="resellerPctVal">0%</small></div>
       <div><span>Utilidad público</span><strong id="publicProfitVal">Bs 0</strong><small id="publicPctVal">0%</small></div>
     </div>
 
@@ -297,9 +320,9 @@ function openProductForm(id) {
       </div>
     </div>
 
-    <details class="advancedCostBox">
-      <summary>Costeo por insumos opcional</summary>
-      <p>Sirve para calcular el costo desde componentes. Si editas el campo Costo manualmente, ese valor tendrá prioridad.</p>
+    <details class="advancedCostBox" open>
+      <summary>Costeo por insumos</summary>
+      <p>El costo del producto se calcula desde los insumos registrados. Este valor alimenta la utilidad y los reportes.</p>
       <div id="insumosList"></div>
       <button type="button" class="addInsumoBtn" id="addInsumoBtn">+ Agregar insumo</button>
       <div class="costSummary"><span class="lbl">Costo calculado por insumos</span><span class="val" id="grossVal">Bs 0</span></div>
@@ -319,27 +342,31 @@ function openProductForm(id) {
     }
 
     function readCost() {
-      return roundBs(parseFloat($('#f_cost', overlay).value) || 0);
+      return roundBs(currentInsumoCost());
     }
 
     function setCostFromInsumosIfNeeded() {
-      if (manualCostTouched) return;
       const calculated = currentInsumoCost();
-      if (calculated > 0) $('#f_cost', overlay).value = roundBs(calculated);
+      $('#f_cost', overlay).value = calculated ? roundBs(calculated) : '';
     }
 
     function updateProfitPreview() {
       setCostFromInsumosIfNeeded();
       const cost = readCost();
+      const mPrice = roundBs(parseFloat($('#f_marketprice', overlay).value) || 0);
       const rPrice = roundBs(parseFloat($('#f_resellerprice', overlay).value) || 0);
       const pPrice = roundBs(parseFloat($('#f_publicprice', overlay).value) || 0);
+      const mPct = marginPct(mPrice, cost);
       const rPct = marginPct(rPrice, cost);
       const pPct = marginPct(pPrice, cost);
       $('#grossVal', overlay).textContent = fmtMoney(currentInsumoCost());
+      $('#marketProfitVal', overlay).textContent = fmtMoney(marginAmount(mPrice, cost));
       $('#resellerProfitVal', overlay).textContent = fmtMoney(marginAmount(rPrice, cost));
       $('#publicProfitVal', overlay).textContent = fmtMoney(marginAmount(pPrice, cost));
+      $('#marketPctVal', overlay).textContent = mPrice > 0 ? `${mPct >= 0 ? '+' : ''}${mPct.toFixed(0)}%` : '0%';
       $('#resellerPctVal', overlay).textContent = rPrice > 0 ? `${rPct >= 0 ? '+' : ''}${rPct.toFixed(0)}%` : '0%';
       $('#publicPctVal', overlay).textContent = pPrice > 0 ? `${pPct >= 0 ? '+' : ''}${pPct.toFixed(0)}%` : '0%';
+      $('#marketPctVal', overlay).classList.toggle('negative', mPrice > 0 && mPrice < cost);
       $('#resellerPctVal', overlay).classList.toggle('negative', rPrice > 0 && rPrice < cost);
       $('#publicPctVal', overlay).classList.toggle('negative', pPrice > 0 && pPrice < cost);
     }
@@ -356,14 +383,13 @@ function openProductForm(id) {
       `).join('');
       $all('.insumo-name', insumosListEl).forEach((inp, idx) => inp.addEventListener('input', () => { insumos[idx].name = inp.value; }));
       $all('.insumo-unit', insumosListEl).forEach((inp, idx) => inp.addEventListener('input', () => { insumos[idx].unit = inp.value; }));
-      $all('.insumo-cost', insumosListEl).forEach((inp, idx) => inp.addEventListener('input', () => { insumos[idx].unitCost = inp.value; manualCostTouched = false; updateProfitPreview(); }));
-      $all('.insumo-qty', insumosListEl).forEach((inp, idx) => inp.addEventListener('input', () => { insumos[idx].qtyUsed = inp.value; manualCostTouched = false; updateProfitPreview(); }));
+      $all('.insumo-cost', insumosListEl).forEach((inp, idx) => inp.addEventListener('input', () => { insumos[idx].unitCost = inp.value; updateProfitPreview(); }));
+      $all('.insumo-qty', insumosListEl).forEach((inp, idx) => inp.addEventListener('input', () => { insumos[idx].qtyUsed = inp.value; updateProfitPreview(); }));
       $all('.insumo-del', insumosListEl).forEach(btn => btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.idx, 10);
         if (insumos.length <= 1) insumos[0] = { name: '', unit: 'u.', unitCost: '', qtyUsed: '' };
         else insumos.splice(idx, 1);
         renderInsumos();
-        manualCostTouched = false;
         updateProfitPreview();
       }));
     }
@@ -371,11 +397,8 @@ function openProductForm(id) {
     renderInsumos();
     updateProfitPreview();
 
-    ['f_cost', 'f_resellerprice', 'f_publicprice'].forEach(id => {
-      $('#' + id, overlay).addEventListener('input', () => {
-        if (id === 'f_cost') manualCostTouched = true;
-        updateProfitPreview();
-      });
+    ['f_marketprice', 'f_resellerprice', 'f_publicprice'].forEach(id => {
+      $('#' + id, overlay).addEventListener('input', updateProfitPreview);
     });
 
     $('#addInsumoBtn', overlay).addEventListener('click', () => {
@@ -405,6 +428,7 @@ function openProductForm(id) {
       const name = $('#f_name', overlay).value.trim();
       const category = $('#f_category', overlay).value.trim() || 'General';
       const cost = readCost();
+      const mPrice = roundBs(parseFloat($('#f_marketprice', overlay).value) || 0);
       const rPrice = roundBs(parseFloat($('#f_resellerprice', overlay).value) || 0);
       const pPrice = roundBs(parseFloat($('#f_publicprice', overlay).value) || 0);
       const stock = parseInt($('#f_stock', overlay).value, 10);
@@ -412,8 +436,8 @@ function openProductForm(id) {
       if (!name) { showToast('⚠️ Ponle un nombre al producto', 'error'); return; }
       if (!category) { showToast('⚠️ Define una categoría', 'error'); return; }
       if (cost <= 0) { showToast('⚠️ Ingresa el costo del producto', 'error'); return; }
-      if (rPrice <= 0 || pPrice <= 0) { showToast('⚠️ Ingresa precio revendedor y precio público', 'error'); return; }
-      if (pPrice < rPrice) { showToast('⚠️ El precio público no debería ser menor al precio revendedor', 'error'); return; }
+      if (mPrice <= 0 || rPrice <= 0 || pPrice <= 0) { showToast('⚠️ Ingresa precio mayorista, representantes y público', 'error'); return; }
+      if (pPrice < rPrice || pPrice < mPrice) { showToast('⚠️ El precio público no debería ser menor a mayorista o representantes', 'error'); return; }
       if (!Number.isFinite(stock) || stock < 0) { showToast('⚠️ El stock no puede ser negativo', 'error'); return; }
 
       const cleanInsumos = insumos
@@ -432,6 +456,7 @@ function openProductForm(id) {
         sku: $('#f_sku', overlay).value,
         description: $('#f_desc', overlay).value,
         cost,
+        marketPrice: mPrice,
         resellerPrice: rPrice,
         publicPrice: pPrice,
         stock,
@@ -474,6 +499,8 @@ function openProductForm(id) {
 
 window.DEFAULT_CATEGORIES = DEFAULT_CATEGORIES;
 window.productCost = productCost;
+window.marketPrice = marketPrice;
+window.representativePrice = representativePrice;
 window.resellerPrice = resellerPrice;
 window.publicPrice = publicPrice;
 window.marginPct = marginPct;

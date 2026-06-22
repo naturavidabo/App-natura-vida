@@ -1386,3 +1386,27 @@ nav.bottom button .ic svg,
 .salesBenefitChips span{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:800;color:var(--pine-dark);background:rgba(255,255,255,.78);border:1px solid rgba(1,119,59,.10);border-radius:999px;padding:5px 8px;}
 .loginCard .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 @media(max-width:420px){.loginCard .field-row{grid-template-columns:1fr;}.salesHeroDecor{opacity:.35;}}
+
+/* ===== NATURA VIDA V4.4 — Costeo y precios por canal ===== */
+.priceMatrix4{grid-template-columns:1fr 1fr;}
+.priceFields4{grid-template-columns:1fr;}
+.profitPreview3{grid-template-columns:1fr;}
+.field input[readonly]{
+  background:#EEF6F1;
+  color:var(--pine-dark);
+  font-weight:800;
+  cursor:not-allowed;
+}
+.advancedCostBox[open]{
+  border-color:rgba(1,119,59,.18);
+  box-shadow:0 12px 26px rgba(21,23,26,.05);
+}
+@media (min-width:480px){
+  .priceFields4{grid-template-columns:1fr 1fr;}
+  .profitPreview3{grid-template-columns:1fr 1fr 1fr;}
+}
+/* Corrección contraste botones outline en dashboard */
+.dashActions .btn.outline,
+.quickGrid .quickBtn,
+.modernQuick .quickBtn{color:var(--ink);}
+.dashActions .btn.outline{font-weight:800;}

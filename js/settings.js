@@ -66,12 +66,11 @@ function renderSettings() {
     <div class="sectiontitle">Copia de seguridad</div>
     <div class="card" style="padding:14px;">
       <p style="font-size:11.5px; color:var(--gray); margin:0 0 12px; line-height:1.6;">
-        Descarga un archivo con todo tu negocio (productos, ventas, clientes, cotizaciones).
-        Guárdalo donde prefieras — Google Drive, Mega, WhatsApp — usando el botón
-        "Compartir" de tu celular sobre ese archivo. Para restaurarlo en otro dispositivo
+        Genera un archivo con todo tu negocio (productos, ventas, clientes, cotizaciones).
+        Al terminar, la app mostrará botones para compartirlo directamente, descargarlo o enviarlo manualmente por WhatsApp/Drive. Para restaurarlo en otro dispositivo
         (por ejemplo, el celular de un familiar), usa "Restaurar desde archivo" ahí.
       </p>
-      <button class="btn block" id="exportBtn" style="margin-bottom:10px;">⬇️ Descargar copia de seguridad</button>
+      <button class="btn block" id="exportBtn" style="margin-bottom:10px;">📤 Generar / compartir copia de seguridad</button>
       <label class="btn outline block" id="importLabel">
         ⬆️ Restaurar desde archivo
         <input type="file" id="importInput" accept=".json" style="display:none;">
@@ -98,7 +97,7 @@ function renderSettings() {
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card" style="padding:14px;">
-      <div class="costline">NATURA VIDA — App de gestión v4.3</div>
+      <div class="costline">NATURA VIDA — App de gestión v4.4</div>
       <div class="costline">Funciona offline y puede sincronizar con servidor online configurado.</div>
     </div>
   `;

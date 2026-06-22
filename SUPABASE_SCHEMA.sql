@@ -21,6 +21,7 @@ create table if not exists public.products (
   sku text default '',
   description text default '',
   cost numeric not null default 0,
+  market_price numeric not null default 0,
   reseller_price numeric not null default 0,
   public_price numeric not null default 0,
   stock integer not null default 0,
@@ -115,6 +116,9 @@ create index if not exists idx_products_status on public.products(status);
 create index if not exists idx_products_updated_at on public.products(updated_at desc);
 create index if not exists idx_sales_seller on public.sales(seller_user_id);
 create index if not exists idx_sales_created_at on public.sales(created_at desc);
+
+-- Si ya tenías creada la tabla products antes de esta versión, ejecuta además:
+-- alter table public.products add column if not exists market_price numeric not null default 0;
 
 -- Después de crear usuarios en Authentication, vincularlos así:
 -- insert into public.profiles (id, username, full_name, role, role_id, status)

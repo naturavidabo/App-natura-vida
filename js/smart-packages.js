@@ -26,7 +26,7 @@ function basePackageMeta(type, targetRole = 'all', targetId = 'all') {
 
 function downloadJsonPackage(data, filename) {
   const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = new Blob([json], { type: 'text/plain' });
   openPackageReadySheet(blob, filename, data._meta || {});
   return { blob, filename };
 }
@@ -43,18 +43,17 @@ function saveJsonPackage(blob, filename) {
 }
 
 async function shareJsonPackage(blob, filename, meta = {}) {
-  const file = new File([blob], filename, { type: 'application/json' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: 'Archivo Natura Vida',
-        text: `Archivo ${meta.packageType || ''} de Natura Vida`
-      });
-      return true;
-    } catch (_) { return false; }
+  if (window.shareBlobFile) {
+    return shareBlobFile(
+      blob,
+      filename,
+      'text/plain',
+      'Archivo Natura Vida',
+      `Archivo ${meta.packageType || 'inteligente'} de Natura Vida. Adjunta este archivo por WhatsApp como documento.`
+    );
   }
-  showToast('Este navegador no permite compartir archivo directo. Descárgalo y envíalo por WhatsApp como documento.', 'error');
+  saveJsonPackage(blob, filename);
+  showToast('Archivo descargado. Adjunta el archivo por WhatsApp como documento.');
   return false;
 }
 
@@ -79,7 +78,7 @@ function openPackageReadySheet(blob, filename, meta = {}) {
     $('#sharePkg', overlay).addEventListener('click', () => shareJsonPackage(blob, filename, meta));
     $('#downloadPkg', overlay).addEventListener('click', () => { saveJsonPackage(blob, filename); showToast('Archivo descargado.'); });
     if (navigator.canShare) {
-      const file = new File([blob], filename, { type: 'application/json' });
+      const file = new File([blob], filename, { type: 'text/plain' });
       if (navigator.canShare({ files: [file] })) setTimeout(() => shareJsonPackage(blob, filename, meta), 450);
     }
   });
@@ -91,8 +90,10 @@ function safeCatalogProduct(p) {
     name: p.name,
     category: p.category || 'General',
     sku: p.sku || '',
+    marketPrice: Number(p.marketPrice ?? p.wholesaleMarketPrice ?? p.marketPriceFixed ?? 0) || 0,
     resellerPrice: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0) || 0,
     publicPrice: Number(p.publicPrice ?? p.unitPriceFixed ?? 0) || 0,
+    wholesaleMarketPrice: Number(p.marketPrice ?? p.wholesaleMarketPrice ?? p.marketPriceFixed ?? 0) || 0,
     wholesalePriceFixed: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0) || 0,
     unitPriceFixed: Number(p.publicPrice ?? p.unitPriceFixed ?? 0) || 0,
     stock: Number(p.stock || 0),
@@ -137,7 +138,8 @@ async function exportRepresentativeReportPackage() {
       name: p.name,
       category: p.category || 'General',
       stock: Number(p.stock || 0),
-      resellerPrice: wholesalePrice(p),
+      marketPrice: marketPrice(p),
+      resellerPrice: representativePrice(p),
       publicPrice: publicPrice(p)
     })),
     clients: AppState.clients || []

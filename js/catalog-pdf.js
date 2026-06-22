@@ -102,20 +102,29 @@ function drawBenefitIcon(doc, kind, x, y, color) {
   doc.setDrawColor(...color);
   doc.setFillColor(...color);
   doc.setLineWidth(2);
+  doc.circle(x, y, 16, 'S');
   if (kind === 'energy') {
-    doc.circle(x, y, 16, 'S');
-    doc.line(x - 2, y - 11, x - 9, y + 1); doc.line(x - 9, y + 1, x + 2, y + 1); doc.line(x + 2, y + 1, x - 2, y + 12); doc.line(x - 2, y + 12, x + 10, y - 3);
+    doc.line(x - 2, y - 11, x - 9, y + 1);
+    doc.line(x - 9, y + 1, x + 2, y + 1);
+    doc.line(x + 2, y + 1, x - 2, y + 12);
+    doc.line(x - 2, y + 12, x + 10, y - 3);
   } else if (kind === 'skin') {
-    doc.circle(x, y, 16, 'S');
-    doc.circle(x - 5, y - 3, 1.5, 'F'); doc.circle(x + 5, y - 3, 1.5, 'F');
-    doc.arc(x, y + 3, 8, 5, 20, 160);
+    doc.circle(x - 5, y - 3, 1.4, 'F');
+    doc.circle(x + 5, y - 3, 1.4, 'F');
+    doc.line(x - 7, y + 6, x - 2, y + 9);
+    doc.line(x - 2, y + 9, x + 4, y + 9);
+    doc.line(x + 4, y + 9, x + 8, y + 6);
   } else if (kind === 'hair') {
-    doc.circle(x, y, 16, 'S');
-    doc.arc(x, y + 2, 12, 14, 195, 345);
-    doc.line(x - 8, y + 4, x - 8, y + 13); doc.line(x + 8, y + 4, x + 8, y + 13);
+    doc.line(x - 10, y - 6, x - 4, y - 13);
+    doc.line(x - 4, y - 13, x + 6, y - 11);
+    doc.line(x + 6, y - 11, x + 10, y - 4);
+    doc.line(x - 8, y + 2, x - 8, y + 13);
+    doc.line(x, y + 2, x, y + 13);
+    doc.line(x + 8, y + 2, x + 8, y + 13);
   } else {
-    doc.circle(x, y, 16, 'S');
-    doc.line(x - 8, y - 1, x + 8, y - 1); doc.arc(x, y + 1, 10, 10, 20, 160);
+    doc.line(x - 8, y - 1, x + 8, y - 1);
+    doc.line(x - 6, y + 5, x - 1, y + 9);
+    doc.line(x - 1, y + 9, x + 6, y + 5);
   }
 }
 
@@ -154,18 +163,24 @@ async function shareCatalogPdf() {
     showToast('Primero genera el catálogo PDF.', 'error');
     return;
   }
+  if (window.shareBlobFile) {
+    return shareBlobFile(
+      _lastCatalogPdf.blob,
+      _lastCatalogPdf.filename,
+      'application/pdf',
+      'Catálogo Natura Vida',
+      'Catálogo de productos Natura Vida - Te cuida por dentro y por fuera.'
+    );
+  }
   const file = new File([_lastCatalogPdf.blob], _lastCatalogPdf.filename, { type: 'application/pdf' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({
-        files: [file],
-        title: 'Catálogo Natura Vida',
-        text: 'Catálogo de productos Natura Vida - Te cuida por dentro y por fuera.'
-      });
+      await navigator.share({ files: [file], title: 'Catálogo Natura Vida', text: 'Catálogo de productos Natura Vida.' });
       return;
     } catch (_) {}
   }
-  showToast('Tu navegador no permite compartir PDF directo. Usa Descargar y envíalo como documento.', 'error');
+  downloadBlob(_lastCatalogPdf.blob, _lastCatalogPdf.filename);
+  showToast('Catálogo descargado. Adjunta el PDF por WhatsApp como documento.');
 }
 
 function openCatalogResultSheet(blob, filename, productsCount) {
@@ -463,7 +478,7 @@ async function generateCatalogPdf(options = {}) {
         doc.setTextColor(...orange);
         doc.setFont('helvetica','bold');
         doc.setFontSize(7.4);
-        doc.text(`Revendedor: ${safePdfMoney(wholesalePrice(p))}`, x + 14, y + cardH - 8);
+        doc.text(`Revendedor: ${safePdfMoney(representativePrice(p))}`, x + 14, y + cardH - 8);
       }
     } else {
       doc.setFillColor(255,248,235);

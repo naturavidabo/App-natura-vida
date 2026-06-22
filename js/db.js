@@ -84,15 +84,21 @@ function normalizeLegacyProduct(product) {
   const insumoCost = Array.isArray(product.insumos)
     ? product.insumos.reduce((sum, i) => sum + ((Number(i.qtyUsed) || 0) * (Number(i.unitCost) || 0)), 0)
     : 0;
-  const cost = Number(product.cost ?? product.baseCost ?? insumoCost) || 0;
-  const resellerPrice = Number(product.resellerPrice ?? product.wholesalePriceFixed ?? 0) || 0;
-  const publicPrice = Number(product.publicPrice ?? product.unitPriceFixed ?? 0) || 0;
+  const rawCost = insumoCost > 0 ? insumoCost : Number(product.cost ?? product.baseCost ?? 0);
+  const cost = Math.round((rawCost || 0) * 100) / 100;
+  const resellerPrice = Math.round((Number(product.resellerPrice ?? product.representativePrice ?? product.wholesalePriceFixed ?? 0) || 0) * 100) / 100;
+  const marketPrice = Math.round((Number(product.marketPrice ?? product.wholesaleMarketPrice ?? product.marketPriceFixed ?? product.mayoristaPrice ?? product.wholesalePriceFixed ?? resellerPrice) || 0) * 100) / 100;
+  const publicPrice = Math.round((Number(product.publicPrice ?? product.unitPriceFixed ?? 0) || 0) * 100) / 100;
   const now = Date.now();
   return Object.assign({}, product, {
     category: product.category || 'General',
     sku: product.sku || '',
     cost,
+    marketPrice,
+    wholesaleMarketPrice: marketPrice,
+    marketPriceFixed: marketPrice,
     resellerPrice,
+    representativePrice: resellerPrice,
     publicPrice,
     wholesalePriceFixed: resellerPrice,
     unitPriceFixed: publicPrice,

@@ -81,3 +81,62 @@ window.fmtDateTime = fmtDateTime;
 window.readImageFile = readImageFile;
 window.matchesSearch = matchesSearch;
 window.normalizeSearch = normalizeSearch;
+
+/* Comparte un Blob como archivo. Si el navegador no permite compartir archivos,
+   descarga el archivo y ofrece abrir WhatsApp para enviarlo manualmente como documento. */
+async function shareBlobFile(blob, filename, mimeType, title, text) {
+  const safeTitle = title || 'Archivo Natura Vida';
+  const safeText = text || 'Archivo generado desde Natura Vida.';
+  const file = new File([blob], filename, { type: mimeType || blob.type || 'application/octet-stream' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: safeTitle, text: safeText });
+      return { ok: true, method: 'fileshare' };
+    } catch (err) {
+      if (err && err.name === 'AbortError') return { ok: false, cancelled: true, method: 'fileshare' };
+    }
+  }
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: safeTitle, text: `${safeText}\n\nArchivo: ${filename}` });
+    } catch (_) {}
+  }
+
+  downloadGenericBlob(blob, filename);
+  openSheet(`
+    <h2>Archivo preparado <span class="x" id="closeSheet">✕</span></h2>
+    <div class="catalogReadyHero">
+      <div class="readyMark">✓</div>
+      <div>
+        <div class="eyebrow">Compartir manual</div>
+        <h3>${escapeHtml(filename)}</h3>
+        <p>Tu navegador no permitió adjuntar el archivo de forma automática. Ya se descargó; abre WhatsApp y adjúntalo como documento.</p>
+      </div>
+    </div>
+    <button class="btn block" id="openWhatsAppManual">Abrir WhatsApp</button>
+    <button class="btn outline block" id="closeManualShare" style="margin-top:10px;">Cerrar</button>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#closeManualShare', overlay).addEventListener('click', close);
+    $('#openWhatsAppManual', overlay).addEventListener('click', () => {
+      window.open(`https://wa.me/?text=${encodeURIComponent(safeText + '\nAdjunto el archivo: ' + filename)}`, '_blank');
+    });
+  });
+  return { ok: false, method: 'download_fallback' };
+}
+
+function downloadGenericBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2500);
+}
+
+window.shareBlobFile = shareBlobFile;
+window.downloadGenericBlob = downloadGenericBlob;
