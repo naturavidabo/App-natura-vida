@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v4-8-buzon-acceso-simple';
+const CACHE_NAME = 'natura-vida-v4-9-acceso-estable';
 const ASSETS = [
   './',
   './index.html',

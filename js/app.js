@@ -46,7 +46,7 @@ function renderLoginScreen() {
         <form id="loginForm" class="loginForm">
           <div class="field">
             <label>Usuario</label>
-            <input type="text" id="loginUser" autocomplete="username" placeholder="admin / vendedor1 / vendedor2..." required>
+            <input type="text" id="loginUser" autocomplete="username" placeholder="admin o vendedor1" required>
           </div>
           <div class="field">
             <label>Contraseña</label>
@@ -57,8 +57,8 @@ function renderLoginScreen() {
         <div class="loginAccessBox">
           <strong>Datos iniciales de ingreso</strong>
           <div><span>Administrador</span><b>admin / 12345678</b></div>
-          <div><span>Vendedores</span><b>vendedor1 al vendedor20 / 23456</b></div>
-          <small>Luego del primer ingreso se registran nombre, celular y contraseña personal. El código de activación solo se pide al administrador.</small>
+          <div><span>Vendedor</span><b>vendedor1 / 23456</b></div>
+          <small>Luego del primer ingreso se registran nombre, celular y contraseña personal. Solo el administrador usa código de activación.</small>
         </div>
       </div>
     </section>
@@ -72,11 +72,7 @@ function renderLoginScreen() {
       showToast(result.message || 'No se pudo iniciar sesión.', 'error');
       return;
     }
-    if (window.syncAfterLogin) {
-      const sync = await syncAfterLogin();
-      if (sync && sync.ok && sync.count !== undefined) showToast(`Precios actualizados: ${sync.count} producto(s).`);
-      if (sync && !sync.ok) showToast('Entraste, pero no se pudo sincronizar: ' + sync.message, 'error');
-    }
+    // La sincronización ya no se ejecuta al ingresar. Debe hacerse manualmente con Recibir novedades.
     await loadAllState();
     renderTopHeader();
     if (AppState.session.mustChangePassword) {
@@ -574,7 +570,7 @@ async function initApp() {
   await restoreSession();
   renderTopHeader();
   if (requireAuth()) {
-    if (window.syncAfterLogin) await syncAfterLogin().catch(() => {});
+    // No sincronizar automáticamente al restaurar sesión. Usar manualmente Recibir novedades.
     await loadAllState();
     renderTopHeader();
     renderBottomNav();

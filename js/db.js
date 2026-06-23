@@ -315,7 +315,6 @@ async function simpleHash(text) {
 }
 
 async function ensureInitialAccessUsers() {
-  const users = await DB.getAll('users');
   const now = Date.now();
   const adminPasswordHash = await simpleHash('12345678');
   const sellerPasswordHash = await simpleHash('23456');
@@ -331,18 +330,19 @@ async function ensureInitialAccessUsers() {
       existing.status = existing.status || 'active';
       if (isStillInitial) {
         existing.passwordHash = seed.passwordHash;
-        existing.mustChangePassword = true;
         existing.fullName = seed.fullName;
+        existing.mustChangePassword = true;
       }
       existing.updatedAt = now;
       await DB.put('users', existing, { silent: true });
-      return;
+      return existing;
     }
     await DB.put('users', seed, { silent: true });
+    return seed;
   }
 
   await upsertSeedUser({
-    id: 'user_admin_1',
+    id: 'user_admin_local',
     seedSlot: 'admin',
     username: 'admin',
     fullName: 'Administrador Natura Vida',
@@ -355,20 +355,30 @@ async function ensureInitialAccessUsers() {
     updatedAt: now
   });
 
-  for (let i = 1; i <= 20; i++) {
-    await upsertSeedUser({
-      id: `user_vendedor_${i}`,
-      seedSlot: `vendedor${i}`,
-      username: `vendedor${i}`,
-      fullName: `Vendedor ${i}`,
-      roleId: 'role_reseller',
-      role: 'Revendedor',
-      passwordHash: sellerPasswordHash,
-      mustChangePassword: true,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now
-    });
+  // Acceso simple: un solo vendedor genérico para explicar por teléfono.
+  await upsertSeedUser({
+    id: 'user_vendedor_1',
+    seedSlot: 'vendedor1',
+    username: 'vendedor1',
+    fullName: 'Vendedor 1',
+    roleId: 'role_reseller',
+    role: 'Revendedor',
+    passwordHash: sellerPasswordHash,
+    mustChangePassword: true,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now
+  });
+
+  // Limpieza segura de accesos genéricos antiguos vendedor2-vendedor20,
+  // solo si nunca fueron personalizados. Si alguien ya cambió a su celular, se conserva.
+  const users = await DB.getAll('users');
+  for (const user of users) {
+    const match = String(user.seedSlot || user.username || '').match(/^vendedor(\d+)$/i);
+    const slot = match ? Number(match[1]) : null;
+    if (slot && slot >= 2 && slot <= 20 && user.username === `vendedor${slot}` && user.mustChangePassword !== false) {
+      await DB.delete('users', user.id, { silent: true });
+    }
   }
 }
 
