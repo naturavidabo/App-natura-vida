@@ -88,11 +88,29 @@ async function renderAdminOrdersInbox() {
           ${o.note ? `<div class="catalogDesc">${escapeHtml(o.note)}</div>` : ''}
           ${(o.items || []).slice(0,4).map(it => `<div class="meta">• ${escapeHtml(it.productName)} × ${it.qty}</div>`).join('')}
         </div>
-        <div class="r"><strong>${fmtMoney(o.total || 0)}</strong></div>
+        <div class="r"><strong>${fmtMoney(o.total || 0)}</strong>
+          ${o.status === 'pending' ? `<button class="btn sm approveOrder" data-id="${o.id}">Aprobar</button><button class="btn sm outline rejectOrder" data-id="${o.id}">Rechazar</button>` : ''}
+        </div>
       </div>
     `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin pedidos recibidos</h3><p>Cuando un representante envíe pedido, aparecerá aquí.</p></div>`}
   `;
   $('#refreshAdminOrders').addEventListener('click', () => renderAdminOrdersInbox());
+  $all('.approveOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'approved')));
+  $all('.rejectOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'rejected')));
+}
+
+async function setOrderStatus(orderId, status) {
+  const order = await DB.get('purchaseOrders', orderId).catch(() => null);
+  if (!order) return;
+  order.status = status;
+  order.updatedAt = Date.now();
+  await DB.put('purchaseOrders', order, { silent: true });
+  if (window.updateCloudPurchaseOrderStatus) await updateCloudPurchaseOrderStatus(orderId, status).catch(() => {});
+  if (window.sendAdminMessage) {
+    await sendAdminMessage('order_status', `Pedido ${status === 'approved' ? 'aprobado' : 'rechazado'}`, `El administrador marcó un pedido como ${status}.`, { orderId, status }).catch(() => {});
+  }
+  showToast(status === 'approved' ? 'Pedido aprobado.' : 'Pedido rechazado.');
+  renderAdminOrdersInbox();
 }
 
 function changeOrderQty(productId, delta) {
@@ -151,3 +169,15 @@ async function submitOrderRequest() {
 window.renderOrderRequest = renderOrderRequest;
 window.renderAdminOrdersInbox = renderAdminOrdersInbox;
 window.submitOrderRequest = submitOrderRequest;
+window.setOrderStatus = setOrderStatus;
+
+async function fetchAndCachePurchaseOrders() {
+  if (!isOnlineConfigured() || !window.fetchCloudPurchaseOrders) return { ok: true, count: 0 };
+  const cloud = await fetchCloudPurchaseOrders().catch(err => ({ ok: false, message: err.message }));
+  if (cloud && cloud.ok && Array.isArray(cloud.orders) && cloud.orders.length) {
+    await DB.bulkPut('purchaseOrders', cloud.orders, { silent: true }).catch(() => {});
+    return { ok: true, count: cloud.orders.length };
+  }
+  return cloud || { ok: true, count: 0 };
+}
+window.fetchAndCachePurchaseOrders = fetchAndCachePurchaseOrders;

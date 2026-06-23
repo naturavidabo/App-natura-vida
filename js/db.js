@@ -2,7 +2,7 @@
    Mantiene funcionamiento offline, amplía el modelo comercial y prepara sincronización futura. */
 
 const DB_NAME = 'natura_vida_db';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 const STORES = [
   'products',
   'priceGroups',
@@ -24,7 +24,8 @@ const STORES = [
   'representativeReports',
   'importedPackages',
   'purchaseOrders',
-  'messages'
+  'messages',
+  'syncMeta'
 ];
 
 const DB_SCHEMA = {
@@ -57,7 +58,8 @@ const DB_SCHEMA = {
   representativeReports: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byImportedAt', 'importedAt']] },
   importedPackages: { keyPath: 'id', indexes: [['byPackageType', 'packageType'], ['byImportedAt', 'importedAt']] },
   purchaseOrders: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byCreatedAt', 'createdAt'], ['byStatus', 'status'], ['bySyncStatus', 'syncStatus']] },
-  messages: { keyPath: 'id', indexes: [['byCreatedAt', 'createdAt'], ['byStatus', 'status'], ['byRecipientRole', 'recipientRole'], ['byRecipientUser', 'recipientUserId'], ['bySenderUser', 'senderUserId'], ['byType', 'type']] }
+  messages: { keyPath: 'id', indexes: [['byCreatedAt', 'createdAt'], ['byStatus', 'status'], ['byRecipientRole', 'recipientRole'], ['byRecipientUser', 'recipientUserId'], ['bySenderUser', 'senderUserId'], ['byType', 'type']] },
+  syncMeta: { keyPath: 'id', indexes: [['byUpdatedAt', 'updatedAt']] }
 };
 
 let _db = null;
@@ -220,6 +222,48 @@ async function writeAudit(action, entity, entityId, beforeValue, afterValue) {
   return item;
 }
 
+
+function stripLargeBinaryFields(value) {
+  if (!value || typeof value !== 'object') return value;
+  const cloned = JSON.parse(JSON.stringify(value));
+  // Las imágenes base64 NO deben viajar en respaldos ni payloads pesados.
+  if (typeof cloned.photo === 'string' && cloned.photo.startsWith('data:image/')) {
+    cloned.photo = null;
+    cloned.photoStripped = true;
+  }
+  if (typeof cloned.logo === 'string' && cloned.logo.startsWith('data:image/')) {
+    cloned.logo = null;
+    cloned.logoStripped = true;
+  }
+  if (cloned.payload && typeof cloned.payload === 'object') {
+    cloned.payload = stripLargeBinaryFields(cloned.payload);
+  }
+  return cloned;
+}
+
+function compactStoreNameAllowed(storeName) {
+  return ['products','priceGroups','sales','clients','quotes','settings','users','purchaseOrders','messages','representatives'].includes(storeName);
+}
+
+async function exportCompactData() {
+  const data = {};
+  for (const s of STORES) {
+    if (!compactStoreNameAllowed(s)) continue;
+    const rows = await DB.getAll(s);
+    data[s] = rows.map(stripLargeBinaryFields);
+  }
+  data._meta = {
+    exportedAt: new Date().toISOString(),
+    version: DB_VERSION,
+    app: 'natura-vida',
+    model: 'NATURA_VIDA_V5_COMPACT_BACKUP',
+    compact: true,
+    imagesExcluded: true,
+    note: 'Las imágenes se manejan por URL/Supabase Storage y no se incluyen en el respaldo.'
+  };
+  return data;
+}
+
 const DB = {
   async getAll(storeName) {
     const store = await tx(storeName);
@@ -282,25 +326,22 @@ const DB = {
   },
 
   async exportAll() {
-    const data = {};
-    for (const s of STORES) data[s] = await DB.getAll(s);
-    data._meta = {
-      exportedAt: new Date().toISOString(),
-      version: DB_VERSION,
-      app: 'natura-vida',
-      model: 'NATURA_VIDA_PWA_V2_OFFLINE_FIRST'
-    };
-    return data;
+    return exportCompactData();
   },
 
-  async importAll(data) {
+  async exportCompact() {
+    return exportCompactData();
+  },
+
+  async importAll(data, options = {}) {
     if (!data || typeof data !== 'object') throw new Error('Archivo de respaldo inválido');
     const db = await openDB();
-    for (const s of STORES) {
-      if (!Array.isArray(data[s])) continue;
+    const replaceMode = !!(options.replace || (data._meta && data._meta.replace === true));
+    const allowed = STORES.filter(s => Array.isArray(data[s]));
+    for (const s of allowed) {
       const transaction = db.transaction(s, 'readwrite');
       const store = transaction.objectStore(s);
-      store.clear();
+      if (replaceMode) store.clear();
       data[s].forEach((item) => store.put(s === 'products' ? normalizeLegacyProduct(item) : item));
       await transactionPromise(transaction);
     }
@@ -463,5 +504,7 @@ window.uid = uid;
 window.openDB = openDB;
 window.ensureBootstrapData = ensureBootstrapData;
 window.normalizeLegacyProduct = normalizeLegacyProduct;
+window.stripLargeBinaryFields = stripLargeBinaryFields;
+window.exportCompactData = exportCompactData;
 window.queueSync = queueSync;
 window.writeAudit = writeAudit;

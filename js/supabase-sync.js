@@ -37,7 +37,10 @@ function saveOnlineConfig(cfg) {
 
 function isOnlineConfigured() {
   const cfg = effectiveOnlineConfig();
-  return !!(cfg.enabled && cfg.supabaseUrl && cfg.supabaseAnonKey && !String(cfg.supabaseUrl).includes('PEGAR_AQUI'));
+  const hasUrl = !!(cfg.supabaseUrl && !String(cfg.supabaseUrl).includes('PEGAR_AQUI'));
+  const hasKey = !!(cfg.supabaseAnonKey && !String(cfg.supabaseAnonKey).includes('PEGAR_AQUI'));
+  // Si el archivo trae URL/key reales, se considera conectado aunque el usuario no marque enabled en cada celular.
+  return !!(hasUrl && hasKey && (cfg.enabled || hasUrl));
 }
 
 function getSupabaseClient() {
@@ -58,8 +61,70 @@ function getSupabaseClient() {
   return _supabaseClient;
 }
 
+function isDataUrlImage(value) {
+  return typeof value === 'string' && value.startsWith('data:image/');
+}
+
+function dataUrlToBlob(dataUrl) {
+  const parts = String(dataUrl || '').split(',');
+  const meta = parts[0] || '';
+  const b64 = parts[1] || '';
+  const mime = (meta.match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function uploadProductPhotoIfNeeded(product) {
+  const sb = getSupabaseClient();
+  if (!sb || !product || !isDataUrlImage(product.photo)) return product && product.photo ? product.photo : null;
+  const cfg = effectiveOnlineConfig();
+  const bucket = cfg.productImagesBucket || 'product-images';
+  const ext = product.photo.includes('image/png') ? 'png' : 'jpg';
+  const safeId = String(product.id || uid('prod')).replace(/[^a-z0-9_-]/gi, '_');
+  const path = `${safeId}/${Date.now()}.${ext}`;
+  try {
+    const blob = dataUrlToBlob(product.photo);
+    const { error } = await sb.storage.from(bucket).upload(path, blob, { upsert: true, contentType: blob.type });
+    if (error) throw error;
+    const { data } = sb.storage.from(bucket).getPublicUrl(path);
+    return data && data.publicUrl ? data.publicUrl : null;
+  } catch (err) {
+    console.warn('No se pudo subir imagen a Storage:', err.message);
+    return null;
+  }
+}
+
+function removeEmbeddedImagesFromProduct(product) {
+  const p = Object.assign({}, product || {});
+  if (isDataUrlImage(p.photo)) {
+    p.photo = null;
+    p.photoStripped = true;
+  }
+  if (p.payload && typeof p.payload === 'object') p.payload = removeEmbeddedImagesFromProduct(p.payload);
+  return p;
+}
+
+async function getSyncMeta(key) {
+  try {
+    const row = window.DB ? await DB.get('syncMeta', key).catch(() => null) : null;
+    if (row) return row.value || null;
+  } catch (_) {}
+  try { return localStorage.getItem('nv_sync_' + key); } catch (_) { return null; }
+}
+
+async function setSyncMeta(key, value) {
+  try {
+    if (window.DB) await DB.put('syncMeta', { id: key, value, updatedAt: Date.now() }, { silent: true }).catch(() => {});
+  } catch (_) {}
+  try { localStorage.setItem('nv_sync_' + key, String(value || '')); } catch (_) {}
+}
+
+
 function mapProductToCloud(product) {
   const p = window.normalizeLegacyProduct ? normalizeLegacyProduct(product) : product;
+  const payload = removeEmbeddedImagesFromProduct(p);
   return {
     id: p.id,
     name: p.name,
@@ -71,11 +136,29 @@ function mapProductToCloud(product) {
     reseller_price: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0),
     public_price: Number(p.publicPrice ?? p.unitPriceFixed ?? 0),
     stock: Number(p.stock || 0),
-    photo: p.photo || null,
+    photo: isDataUrlImage(p.photo) ? null : (p.photo || null),
+    photo_url: isDataUrlImage(p.photo) ? null : (p.photo || null),
     status: p.status || 'active',
-    payload: p,
+    payload,
     updated_at: new Date().toISOString()
   };
+}
+
+async function mapProductToCloudAsync(product) {
+  const p = window.normalizeLegacyProduct ? normalizeLegacyProduct(product) : product;
+  let photoUrl = isDataUrlImage(p.photo) ? await uploadProductPhotoIfNeeded(p) : (p.photo || null);
+  if (photoUrl && photoUrl !== p.photo) {
+    // Actualiza caché local para que desde ahora sólo se use URL.
+    const local = Object.assign({}, p, { photo: photoUrl, updatedAt: Date.now() });
+    if (window.DB) await DB.put('products', local, { silent: true }).catch(() => {});
+    const idx = (AppState.products || []).findIndex(x => x.id === p.id);
+    if (idx >= 0) AppState.products[idx] = local;
+  }
+  const row = mapProductToCloud(Object.assign({}, p, { photo: photoUrl }));
+  row.photo = photoUrl;
+  row.photo_url = photoUrl;
+  row.payload = removeEmbeddedImagesFromProduct(Object.assign({}, p, { photo: photoUrl }));
+  return row;
 }
 
 function mapProductFromCloud(row) {
@@ -95,7 +178,7 @@ function mapProductFromCloud(row) {
     wholesalePriceFixed: Number(row.reseller_price || 0),
     unitPriceFixed: Number(row.public_price || 0),
     stock: Number(row.stock || 0),
-    photo: row.photo || null,
+    photo: row.photo_url || row.photo || null,
     status: row.status || 'active',
     syncStatus: 'cloud',
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
@@ -235,31 +318,49 @@ function buildSafeProductMerge(cloudRows) {
   return result;
 }
 
-async function fetchCloudProductRows() {
+async function fetchCloudProductRows(options = {}) {
   const sb = getSupabaseClient();
   if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
-  const { data, error } = await sb.from('products').select('*').neq('status', 'archived').order('name', { ascending: true });
+  let query = sb.from('products').select('*').order('updated_at', { ascending: true });
+  if (options.since) query = query.gt('updated_at', options.since);
+  if (!options.includeArchived) query = query.neq('status', 'archived');
+  const { data, error } = await query;
   if (error) return { ok: false, message: error.message };
   return { ok: true, rows: data || [] };
 }
 
 async function syncCloudProductsToLocal(options = {}) {
-  const fetched = await fetchCloudProductRows();
+  const last = options.full ? null : await getSyncMeta('products_last_sync');
+  const fetched = await fetchCloudProductRows({ since: last, includeArchived: true });
   if (!fetched.ok) return fetched;
-  const rows = fetched.rows || [];
+  let rows = fetched.rows || [];
+
+  // Primer uso o servidor recién configurado: si no hay cambios incrementales, intenta catálogo completo.
+  if (!last && rows.length === 0) {
+    const full = await fetchCloudProductRows({ includeArchived: true });
+    if (!full.ok) return full;
+    rows = full.rows || [];
+  }
+
   if (rows.length === 0) {
-    return { ok: false, blocked: true, message: 'El servidor no tiene productos publicados. No se modificó el inventario local.' };
+    return { ok: true, count: 0, localCount: (AppState.products || []).length, message: 'No hay novedades nuevas en el servidor.' };
+  }
+
+  const activeRows = rows.filter(r => (r.status || 'active') !== 'archived');
+  if (activeRows.length === 0 && (AppState.products || []).length === 0) {
+    return { ok: false, blocked: true, message: 'El servidor no tiene productos activos. No se modificó el inventario local.' };
   }
 
   await createPreSyncLocalSnapshot('before_cloud_products_sync');
   const beforeCount = (AppState.products || []).length;
-  const products = buildSafeProductMerge(rows);
+  const products = buildSafeProductMerge(activeRows);
   await DB.bulkPut('products', products, { silent: true });
   if (Array.isArray(products._obsoleteLocalIds)) {
     for (const oldId of products._obsoleteLocalIds) await DB.delete('products', oldId, { silent: true }).catch(() => {});
   }
   AppState.products = products;
   _lastCloudSync = Date.now();
+  await setSyncMeta('products_last_sync', new Date().toISOString());
   return {
     ok: true,
     count: rows.length,
@@ -337,7 +438,7 @@ async function pushLocalProductsToCloud() {
   if (!AppState.session || AppState.session.roleName !== 'Administrador') {
     return { ok: false, message: 'Solo el administrador puede publicar productos.' };
   }
-  const rows = AppState.products.filter(p => p.status !== 'archived').map(mapProductToCloud);
+  const rows = await Promise.all(AppState.products.filter(p => p.status !== 'archived').map(mapProductToCloudAsync));
   if (rows.length === 0) return { ok: true, count: 0 };
   const { error } = await sb.from('products').upsert(rows, { onConflict: 'id' });
   if (error) return { ok: false, message: error.message };
@@ -347,7 +448,7 @@ async function pushLocalProductsToCloud() {
 async function upsertCloudProduct(product) {
   const sb = getSupabaseClient();
   if (!sb || !AppState.session || AppState.session.roleName !== 'Administrador') return;
-  const { error } = await sb.from('products').upsert(mapProductToCloud(product), { onConflict: 'id' });
+  const { error } = await sb.from('products').upsert(await mapProductToCloudAsync(product), { onConflict: 'id' });
   if (error) console.warn('No se pudo subir producto:', error.message);
 }
 
@@ -421,6 +522,14 @@ async function fetchCloudPurchaseOrders() {
     syncStatus: 'cloud'
   }));
   return { ok: true, orders };
+}
+
+async function updateCloudPurchaseOrderStatus(orderId, status) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { error } = await sb.from('purchase_orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
 }
 
 
@@ -502,10 +611,74 @@ async function updateCloudProfileStatus(profileId, status) {
   return { ok: true };
 }
 
+
+async function pushQueuedItem(item) {
+  if (!item || !item.storeName) return { ok: true };
+  if (item.operation === 'delete') {
+    await cloudAfterDelete(item.storeName, item.recordId);
+    return { ok: true };
+  }
+  if (item.operation === 'put') {
+    await cloudAfterPut(item.storeName, item.payload);
+    return { ok: true };
+  }
+  return { ok: true };
+}
+
+async function flushPendingSyncQueue(limit = 25) {
+  if (!isOnlineConfigured() || !window.DB) return { ok: false, message: 'Servidor no configurado.' };
+  const items = (await DB.getAll('syncQueue').catch(() => []))
+    .filter(i => i.status === 'pending')
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    .slice(0, limit);
+  let sent = 0;
+  for (const item of items) {
+    try {
+      item.attempts = (item.attempts || 0) + 1;
+      await pushQueuedItem(item);
+      item.status = 'done';
+      item.updatedAt = Date.now();
+      await DB.put('syncQueue', item, { silent: true });
+      sent++;
+    } catch (err) {
+      item.status = 'pending';
+      item.lastError = err.message || 'Error desconocido';
+      item.updatedAt = Date.now();
+      await DB.put('syncQueue', item, { silent: true }).catch(() => {});
+      break;
+    }
+  }
+  return { ok: true, sent, pending: Math.max(0, items.length - sent) };
+}
+
+let _backgroundSyncStarted = false;
+async function runBackgroundSyncOnce(reason = 'background') {
+  if (!isOnlineConfigured()) return { ok: false, message: 'Servidor no configurado.' };
+  await flushPendingSyncQueue().catch(() => {});
+  const res = await syncCloudProductsToLocal({ reason }).catch(err => ({ ok: false, message: err.message }));
+  if (res && res.ok && res.count > 0) {
+    await loadAllState().catch(() => {});
+    if (window.render) render();
+    if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
+  }
+  if (window.fetchAndCacheInboxMessages) await fetchAndCacheInboxMessages().catch(() => {});
+  if (window.fetchAndCachePurchaseOrders && window.isAdmin && isAdmin()) await fetchAndCachePurchaseOrders().catch(() => {});
+  return res;
+}
+
+function startBackgroundSync() {
+  if (_backgroundSyncStarted) return;
+  _backgroundSyncStarted = true;
+  setTimeout(() => runBackgroundSyncOnce('startup').catch(() => {}), 2500);
+  window.addEventListener('online', () => runBackgroundSyncOnce('online').catch(() => {}));
+  setInterval(() => {
+    if (document.visibilityState !== 'hidden') runBackgroundSyncOnce('timer').catch(() => {});
+  }, 5 * 60 * 1000);
+}
+
 async function syncAfterLogin() {
-  // V4.7: no se sincroniza automáticamente al iniciar sesión.
-  // Esto protege el inventario local del representante; la actualización debe ser manual con vista previa.
-  return { ok: true, mode: isOnlineConfigured() ? 'online_ready_manual_sync' : 'local' };
+  if (isOnlineConfigured()) startBackgroundSync();
+  return { ok: true, mode: isOnlineConfigured() ? 'online_primary_cache_offline' : 'local' };
 }
 
 async function cloudAfterPut(storeName, record) {
@@ -559,6 +732,10 @@ window.syncAfterLogin = syncAfterLogin;
 window.cloudAfterPut = cloudAfterPut;
 window.cloudAfterDelete = cloudAfterDelete;
 window.testOnlineConnection = testOnlineConnection;
+window.flushPendingSyncQueue = flushPendingSyncQueue;
+window.runBackgroundSyncOnce = runBackgroundSyncOnce;
+window.startBackgroundSync = startBackgroundSync;
+window.uploadProductPhotoIfNeeded = uploadProductPhotoIfNeeded;
 window.insertCloudMessage = insertCloudMessage;
 window.fetchCloudInboxMessages = fetchCloudInboxMessages;
 window.markCloudMessageRead = markCloudMessageRead;
@@ -566,3 +743,4 @@ window.fetchCloudProfiles = fetchCloudProfiles;
 window.updateCloudProfileStatus = updateCloudProfileStatus;
 window.insertCloudPurchaseOrder = insertCloudPurchaseOrder;
 window.fetchCloudPurchaseOrders = fetchCloudPurchaseOrders;
+window.updateCloudPurchaseOrderStatus = updateCloudPurchaseOrderStatus;

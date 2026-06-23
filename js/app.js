@@ -72,7 +72,7 @@ function renderLoginScreen() {
       showToast(result.message || 'No se pudo iniciar sesión.', 'error');
       return;
     }
-    // La sincronización ya no se ejecuta al ingresar. Debe hacerse manualmente con Recibir novedades.
+    // V5: arranca sincronización segura en segundo plano; nunca borra inventario local.
     await loadAllState();
     renderTopHeader();
     if (AppState.session.mustChangePassword) {
@@ -81,6 +81,7 @@ function renderLoginScreen() {
     }
     showToast('Sesión iniciada correctamente.');
     renderBottomNav();
+    if (window.syncAfterLogin) syncAfterLogin().catch(() => {});
     AppState.currentTab = 'inicio';
     render();
   });
@@ -570,11 +571,11 @@ async function initApp() {
   await restoreSession();
   renderTopHeader();
   if (requireAuth()) {
-    // No sincronizar automáticamente al restaurar sesión. Usar manualmente Recibir novedades.
     await loadAllState();
     renderTopHeader();
     renderBottomNav();
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
+    if (window.syncAfterLogin) syncAfterLogin().catch(() => {});
     render();
     offerRestoreIfEmpty();
   } else {

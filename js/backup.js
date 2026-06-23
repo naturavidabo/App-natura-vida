@@ -25,7 +25,7 @@ function downloadBackupBlob(blob, filename) {
 }
 
 async function generateBackupFile() {
-  const data = await DB.exportAll();
+  const data = await DB.exportCompact ? await DB.exportCompact() : await DB.exportAll();
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: 'text/plain' });
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -34,7 +34,7 @@ async function generateBackupFile() {
     <h2>Copia generada <span class="x" id="closeSheet">✕</span></h2>
     <div class="catalogReadyHero">
       <div class="readyMark">✓</div>
-      <div><div class="eyebrow">Respaldo completo</div><h3>${escapeHtml(filename)}</h3><p>Comparte o descarga el archivo para conservarlo fuera del celular.</p></div>
+      <div><div class="eyebrow">Respaldo liviano</div><h3>${escapeHtml(filename)}</h3><p>Comparte o descarga el respaldo. No incluye imágenes base64; las fotos se conservan por URL/Storage para que el archivo sea liviano.</p></div>
     </div>
     <div class="exportRow catalogExportRow">
       <div class="exportBtn primaryShare" id="shareBackup"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / Drive</span></div>
@@ -62,7 +62,7 @@ function restoreBackupFromFile(file) {
             return reject(new Error('Cancelado'));
           }
         }
-        await DB.importAll(data);
+        await DB.importAll(data, { replace: false });
         await loadAllState();
         resolve(true);
       } catch (err) {

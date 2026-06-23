@@ -155,3 +155,5 @@ window.refreshInboxBadge = refreshInboxBadge;
 window.installInboxButton = installInboxButton;
 window.openInboxPanel = openInboxPanel;
 window.markLocalMessageRead = markLocalMessageRead;
+
+window.fetchAndCacheInboxMessages = syncInboxFromCloud;

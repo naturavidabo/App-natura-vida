@@ -66,7 +66,7 @@ function renderSettings() {
     <div class="sectiontitle">Copia de seguridad</div>
     <div class="card" style="padding:14px;">
       <p style="font-size:11.5px; color:var(--gray); margin:0 0 12px; line-height:1.6;">
-        Genera un archivo con todo tu negocio (productos, ventas, clientes, cotizaciones).
+        Genera un respaldo liviano con productos, ventas, clientes, cotizaciones y pedidos.
         Al terminar, la app mostrará botones para compartirlo directamente, descargarlo o enviarlo manualmente por WhatsApp/Drive. Para restaurarlo en otro dispositivo
         (por ejemplo, el celular de un familiar), usa "Restaurar desde archivo" ahí.
       </p>
@@ -92,12 +92,12 @@ function renderSettings() {
         <button class="btn block" id="saveOnlineBtn">Guardar online</button>
         <button class="btn outline block" id="testOnlineBtn">Probar conexión</button>
       </div>
-      <div class="formNotice" style="margin-top:10px;">Después de guardar, vuelve a iniciar sesión con el correo creado en Supabase. El botón “Publicar catálogo” usará estos datos.</div>
+      <div class="formNotice" style="margin-top:10px;">Si este ZIP ya trae URL/key en js/supabase-config.js, no tienes que llenar esto en cada celular. Aquí solo se modifica si cambias de proyecto Supabase.</div>
     </div>
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card" style="padding:14px;">
-      <div class="costline">NATURA VIDA — App de gestión v4.5</div>
+      <div class="costline">NATURA VIDA — App de gestión v5.0</div>
       <div class="costline">Funciona offline y puede sincronizar con servidor online configurado.</div>
     </div>
   `;
@@ -145,7 +145,8 @@ function renderSettings() {
     saveOnlineConfig({
       enabled: $('#online_enabled').checked,
       supabaseUrl: $('#online_url').value.trim(),
-      supabaseAnonKey: $('#online_key').value.trim()
+      supabaseAnonKey: $('#online_key').value.trim(),
+      productImagesBucket: 'product-images'
     });
     showToast('Configuración online guardada.');
   });
@@ -155,7 +156,8 @@ function renderSettings() {
     saveOnlineConfig({
       enabled: $('#online_enabled').checked,
       supabaseUrl: $('#online_url').value.trim(),
-      supabaseAnonKey: $('#online_key').value.trim()
+      supabaseAnonKey: $('#online_key').value.trim(),
+      productImagesBucket: 'product-images'
     });
     const res = await testOnlineConnection();
     showToast(res.ok ? 'Conexión online correcta.' : ('No se pudo conectar: ' + res.message), res.ok ? undefined : 'error');
@@ -166,7 +168,7 @@ function renderSettings() {
   $('#importInput').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    if (!confirmDialog('Restaurar reemplazará TODOS los datos actuales con los del archivo. ¿Continuar?')) return;
+    if (!confirmDialog('Restaurar combinará los datos del archivo con los datos actuales. No borra inventario local. ¿Continuar?')) return;
     try {
       await restoreBackupFromFile(file);
       renderTopHeader();

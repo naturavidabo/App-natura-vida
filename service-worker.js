@@ -1,8 +1,10 @@
-const CACHE_NAME = 'natura-vida-v4-9-acceso-estable';
+const CACHE_NAME = 'natura-vida-v5-0-supabase-cache-offline';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './SUPABASE_MIGRACION_V5_NO_BORRA_DATOS.sql',
+  './CAMBIOS_V5_0_SUPABASE_CACHE_OFFLINE.md',
   './css/app.css',
   './js/db.js',
   './js/state.js',
