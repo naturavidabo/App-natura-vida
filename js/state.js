@@ -6,6 +6,7 @@ const AppState = {
   sales: [],
   clients: [],
   quotes: [],
+  messages: [],
   settings: {
     businessName: 'NATURA VIDA',
     businessSlogan: 'Te cuida por dentro y por fuera',
@@ -37,12 +38,13 @@ const AppState = {
 };
 
 async function loadAllState() {
-  const [products, priceGroups, sales, clients, quotes, settingsRows] = await Promise.all([
+  const [products, priceGroups, sales, clients, quotes, messages, settingsRows] = await Promise.all([
     DB.getAll('products'),
     DB.getAll('priceGroups'),
     DB.getAll('sales'),
     DB.getAll('clients'),
     DB.getAll('quotes'),
+    DB.getAll('messages').catch(() => []),
     DB.getAll('settings')
   ]);
   AppState.products = products.map(p => window.normalizeLegacyProduct ? normalizeLegacyProduct(p) : p);
@@ -50,6 +52,7 @@ async function loadAllState() {
   AppState.sales = sales;
   AppState.clients = clients;
   AppState.quotes = quotes;
+  AppState.messages = messages || [];
 
   const savedSettings = settingsRows.find(r => r.key === 'main');
   if (savedSettings && savedSettings.value) {

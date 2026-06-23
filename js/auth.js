@@ -1,6 +1,7 @@
 /* auth.js — Autenticación offline local + autenticación online opcional Supabase. */
 
-const NATURA_ADMIN_ACTIVATION_CODE = '2721971';
+const NATURA_ADMIN_ACTIVATION_CODE = '1712601961';
+const NATURA_ADMIN_ACTIVATION_CODES = ['1712601961', '2712961', '2721971'];
 
 async function sha256Hex(text) {
   const enc = new TextEncoder().encode(String(text || ''));
@@ -11,7 +12,7 @@ async function sha256Hex(text) {
 function permissionsForRole(roleName) {
   if (roleName === 'Administrador') return ['*'];
   if (roleName === 'Supervisor') return ['products:read', 'clients:read', 'quotes:read', 'sales:read', 'team_reports:read'];
-  return ['products:read', 'clients:manage', 'quotes:manage', 'sales:create', 'own_reports:read'];
+  return ['products:read', 'products:local_edit', 'clients:manage', 'quotes:manage', 'sales:create', 'own_reports:read', 'orders:create'];
 }
 
 function applyOnlineSession(user, profile) {
@@ -153,8 +154,9 @@ async function updateLocalPassword(userId, newPassword, profileData = {}) {
   const user = await DB.get('users', userId);
   if (!user) return { ok: false, message: 'Usuario local no encontrado.' };
 
-  if (profileData.activationCode !== NATURA_ADMIN_ACTIVATION_CODE) {
-    return { ok: false, message: 'Código de activación incorrecto.' };
+  const isAdminUser = user.role === 'Administrador' || user.roleId === 'role_admin';
+  if (isAdminUser && !NATURA_ADMIN_ACTIVATION_CODES.includes(String(profileData.activationCode || '').trim())) {
+    return { ok: false, message: 'Código de activación de administrador incorrecto.' };
   }
 
   const requestedUsername = String(profileData.username || '').trim().toLowerCase();
@@ -182,3 +184,4 @@ async function updateLocalPassword(userId, newPassword, profileData = {}) {
 
 
 window.NATURA_ADMIN_ACTIVATION_CODE = NATURA_ADMIN_ACTIVATION_CODE;
+window.NATURA_ADMIN_ACTIVATION_CODES = NATURA_ADMIN_ACTIVATION_CODES;

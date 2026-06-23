@@ -302,6 +302,22 @@ async function importSmartPackageFromFile(file) {
     const msg = `Reporte parcial detectado\n\nRepresentante: ${(pkg.representative && pkg.representative.name) || meta.createdBy}\nFecha: ${new Date(meta.createdAt).toLocaleString('es-BO')}\nVentas reportadas: ${(pkg.sales || []).length}\n\n¿Incorporar al panel administrador?`;
     if (!confirmDialog(msg)) throw new Error('Cancelado');
     summary = await applyRepresentativeReportPackage(pkg);
+  } else if (meta.packageType === 'purchase_order') {
+    const order = pkg.order || pkg.purchaseOrder || {};
+    const msg = `Pedido detectado\n\nRepresentante: ${order.representativeName || meta.createdBy}\nFecha: ${new Date(meta.createdAt).toLocaleString('es-BO')}\nProductos: ${(order.items || []).length}\nTotal base: ${fmtMoney(order.total || 0)}\n\n¿Incorporar pedido al buzón/panel administrador?`;
+    if (!confirmDialog(msg)) throw new Error('Cancelado');
+    summary = await applyPurchaseOrderPackage(pkg);
+    if (window.saveLocalMessage) {
+      await saveLocalMessage({
+        type: 'purchase_order',
+        title: 'Pedido importado de representante',
+        body: `${order.representativeName || meta.createdBy} envió/importó un pedido por ${fmtMoney(order.total || 0)}.`,
+        senderName: order.representativeName || meta.createdBy || '',
+        senderRole: 'Revendedor',
+        recipientRole: 'Administrador',
+        payload: { orderId: order.id, total: order.total, items: order.items || [] }
+      }).catch(() => {});
+    }
   } else {
     throw new Error('Tipo de paquete no soportado todavía: ' + meta.packageType);
   }

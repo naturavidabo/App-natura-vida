@@ -1549,3 +1549,137 @@ nav.bottom button .ic svg,
   .salesCleanHeader small{text-align:left;max-width:none;}
   .cleanSaleLine{align-items:flex-start;flex-direction:column;}
 }
+
+
+/* ===== NATURA VIDA V4.8 — ingreso simple + buzón ===== */
+.loginAccessBox{
+  margin-top:14px;
+  padding:13px;
+  border-radius:18px;
+  background:linear-gradient(135deg,#fff7e8,#f3fbf5);
+  border:1px solid rgba(1,119,59,.12);
+  color:var(--ink);
+  font-size:12px;
+  line-height:1.45;
+}
+.loginAccessBox strong{display:block;margin-bottom:8px;color:var(--pine-dark);}
+.loginAccessBox div{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  padding:7px 0;
+  border-top:1px solid rgba(1,119,59,.08);
+}
+.loginAccessBox span{color:var(--gray);}
+.loginAccessBox b{font-family:'JetBrains Mono',monospace;color:var(--pine-dark);text-align:right;}
+.loginAccessBox small{display:block;margin-top:8px;color:var(--gray);}
+.activationInfoBox{
+  padding:12px;
+  border-radius:16px;
+  background:var(--green-bg);
+  color:var(--pine-dark);
+  border:1px solid rgba(1,119,59,.10);
+  font-size:12px;
+  font-weight:700;
+  line-height:1.45;
+  margin-bottom:10px;
+}
+.inboxFloatBtn{
+  position:relative;
+  width:38px;
+  height:38px;
+  border-radius:15px;
+  border:1px solid rgba(1,119,59,.14);
+  background:#fff;
+  color:var(--pine-dark);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-left:8px;
+  box-shadow:0 10px 22px rgba(21,23,26,.08);
+}
+.inboxFloatBtn.hidden{display:none;}
+.mailIcon{font-size:18px;line-height:1;}
+.inboxDot{
+  position:absolute;
+  right:6px;
+  top:6px;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#ef4444;
+  border:2px solid #fff;
+}
+.inboxDot.hidden{display:none;}
+.inboxCount{
+  position:absolute;
+  right:-5px;
+  bottom:-5px;
+  min-width:17px;
+  height:17px;
+  border-radius:999px;
+  background:var(--pine);
+  color:#fff;
+  font-size:9px;
+  font-weight:900;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 4px;
+}
+.inboxHero{
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  padding:14px;
+  border-radius:20px;
+  background:linear-gradient(135deg,#f2faf5,#fff);
+  border:1px solid rgba(1,119,59,.12);
+  margin-bottom:12px;
+}
+.mailBig{
+  width:46px;
+  height:46px;
+  border-radius:16px;
+  background:linear-gradient(135deg,var(--pine-dark),var(--pine));
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:22px;
+  flex-shrink:0;
+}
+.inboxHero h3{margin:3px 0 5px;color:var(--ink);}
+.inboxHero p{margin:0;color:var(--gray);font-size:11.5px;line-height:1.4;}
+.messageCard{
+  border:1px solid rgba(1,119,59,.10);
+  background:#fff;
+  border-radius:18px;
+  padding:12px;
+  margin-bottom:10px;
+  box-shadow:0 10px 22px rgba(21,23,26,.055);
+}
+.messageCard.unread{
+  border-color:rgba(216,142,30,.28);
+  background:linear-gradient(135deg,#fffaf0,#ffffff);
+}
+.messageTop{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+}
+.messageTop strong{font-size:13px;color:var(--ink);}
+.messageTop span{font-size:10px;color:var(--gray);white-space:nowrap;}
+.messageCard p{margin:8px 0;color:var(--gray);font-size:12px;line-height:1.45;}
+.messageMeta{
+  font-size:10px;
+  color:var(--pine-dark);
+  background:var(--green-bg);
+  border-radius:999px;
+  display:inline-flex;
+  padding:5px 8px;
+  font-family:'JetBrains Mono',monospace;
+}
+.messageActions{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap;}
+.userRow .r{min-width:88px;}

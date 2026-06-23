@@ -314,6 +314,9 @@ async function openSafeCloudSyncSheet() {
       btn.textContent = 'Actualizando…';
       const res = await syncCloudProductsToLocal();
       if (res.ok) {
+        if (window.sendAdminMessage && isReseller && isReseller()) {
+          await sendAdminMessage('catalog_update', 'Representante recibió novedades', `${AppState.session.fullName || AppState.session.username} actualizó catálogo desde servidor.`, { count: res.count }).catch(() => {});
+        }
         showToast(`Catálogo actualizado: ${res.count} producto(s).`);
         close();
         await loadAllState().catch(() => {});
@@ -401,6 +404,104 @@ async function insertCloudPurchaseOrder(order) {
   return { ok: true };
 }
 
+async function fetchCloudPurchaseOrders() {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(120);
+  if (error) return { ok: false, message: error.message };
+  const orders = (data || []).map(row => Object.assign({}, (row.payload || {}), {
+    id: row.id,
+    representativeId: row.representative_user_id,
+    representativeName: row.representative_name,
+    status: row.status || 'pending',
+    total: Number(row.total || 0),
+    note: row.note || ((row.payload || {}).note || ''),
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
+    syncStatus: 'cloud'
+  }));
+  return { ok: true, orders };
+}
+
+
+function mapMessageToCloud(message) {
+  const m = window.normalizeMessage ? normalizeMessage(message) : message;
+  return {
+    id: m.id,
+    type: m.type || 'general',
+    title: m.title || 'Mensaje',
+    body: m.body || '',
+    sender_user_id: AppState.session && AppState.session.onlineUserId ? AppState.session.onlineUserId : null,
+    sender_name: m.senderName || (AppState.session ? AppState.session.fullName : ''),
+    sender_role: m.senderRole || (AppState.session ? AppState.session.roleName : ''),
+    recipient_role: m.recipientRole || 'Administrador',
+    recipient_user_id: m.recipientUserId || null,
+    status: m.status || 'unread',
+    payload: m.payload || {},
+    created_at: m.createdAt ? new Date(m.createdAt).toISOString() : new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+}
+
+function mapMessageFromCloud(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    senderUserId: row.sender_user_id,
+    senderName: row.sender_name,
+    senderRole: row.sender_role,
+    recipientRole: row.recipient_role,
+    recipientUserId: row.recipient_user_id,
+    status: row.status,
+    payload: row.payload || {},
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+  };
+}
+
+async function insertCloudMessage(message) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { error } = await sb.from('messages').upsert(mapMessageToCloud(message), { onConflict: 'id' });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+async function fetchCloudInboxMessages() {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: false }).limit(80);
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, messages: (data || []).map(mapMessageFromCloud) };
+}
+
+async function markCloudMessageRead(messageId) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { error } = await sb.from('messages').update({ status: 'read', updated_at: new Date().toISOString() }).eq('id', messageId);
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+async function fetchCloudProfiles() {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { data, error } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, profiles: data || [] };
+}
+
+async function updateCloudProfileStatus(profileId, status) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  if (!isAdmin || !isAdmin()) return { ok: false, message: 'Solo administrador.' };
+  const { error } = await sb.from('profiles').update({ status, updated_at: new Date().toISOString() }).eq('id', profileId);
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
 async function syncAfterLogin() {
   // V4.7: no se sincroniza automáticamente al iniciar sesión.
   // Esto protege el inventario local del representante; la actualización debe ser manual con vista previa.
@@ -413,6 +514,7 @@ async function cloudAfterPut(storeName, record) {
     if (storeName === 'products') await upsertCloudProduct(record);
     if (storeName === 'sales') await insertCloudSale(record);
     if (storeName === 'purchaseOrders') await insertCloudPurchaseOrder(record);
+    if (storeName === 'messages') await insertCloudMessage(record);
   } catch (err) {
     console.warn('Sincronización diferida:', err.message);
   }
@@ -457,4 +559,10 @@ window.syncAfterLogin = syncAfterLogin;
 window.cloudAfterPut = cloudAfterPut;
 window.cloudAfterDelete = cloudAfterDelete;
 window.testOnlineConnection = testOnlineConnection;
+window.insertCloudMessage = insertCloudMessage;
+window.fetchCloudInboxMessages = fetchCloudInboxMessages;
+window.markCloudMessageRead = markCloudMessageRead;
+window.fetchCloudProfiles = fetchCloudProfiles;
+window.updateCloudProfileStatus = updateCloudProfileStatus;
 window.insertCloudPurchaseOrder = insertCloudPurchaseOrder;
+window.fetchCloudPurchaseOrders = fetchCloudPurchaseOrders;

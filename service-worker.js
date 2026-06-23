@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v4-7-sync-segura-ventas-limpias';
+const CACHE_NAME = 'natura-vida-v4-8-buzon-acceso-simple';
 const ASSETS = [
   './',
   './index.html',
@@ -21,6 +21,7 @@ const ASSETS = [
   './js/catalog-pdf.js',
   './js/smart-packages.js',
   './js/orders.js',
+  './js/inbox.js',
   './js/app.js',
   './icons/icon-48.png',
   './icons/icon-72.png',

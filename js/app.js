@@ -9,6 +9,10 @@ function renderTopHeader() {
       ? `${AppState.session.fullName || AppState.session.username} · ${AppState.session.roleName}`
       : (AppState.settings.businessModel || 'Administrador → Revendedores → Clientes');
   }
+  if (window.installInboxButton) {
+    installInboxButton();
+    refreshInboxBadge({ silent: true }).catch(() => {});
+  }
 }
 
 
@@ -36,13 +40,13 @@ function renderLoginScreen() {
   $('#mainArea').innerHTML = `
     <section class="loginShell">
       <div class="loginCard">
-        <div class="loginBadge">Acceso seguro</div>
+        <div class="loginBadge">Ingreso simple</div>
         <h1>Ingresar a Natura Vida</h1>
-        <p>Ingresa con tu usuario asignado. Después del primer acceso, usarás tu número de celular como usuario personal.</p>
+        <p>Para facilitar el acceso remoto, usa el usuario inicial asignado. Después podrás registrar tu celular como usuario personal.</p>
         <form id="loginForm" class="loginForm">
           <div class="field">
             <label>Usuario</label>
-            <input type="text" id="loginUser" autocomplete="username" placeholder="admin / vendedor1 / tu celular" required>
+            <input type="text" id="loginUser" autocomplete="username" placeholder="admin / vendedor1 / vendedor2..." required>
           </div>
           <div class="field">
             <label>Contraseña</label>
@@ -50,8 +54,11 @@ function renderLoginScreen() {
           </div>
           <button class="btn block" type="submit">Ingresar</button>
         </form>
-        <div class="loginHint secureHint">
-          Primer ingreso: usa el usuario inicial asignado por el administrador. Luego el sistema pedirá tus datos básicos y una contraseña personal.
+        <div class="loginAccessBox">
+          <strong>Datos iniciales de ingreso</strong>
+          <div><span>Administrador</span><b>admin / 12345678</b></div>
+          <div><span>Vendedores</span><b>vendedor1 al vendedor20 / 23456</b></div>
+          <small>Luego del primer ingreso se registran nombre, celular y contraseña personal. El código de activación solo se pide al administrador.</small>
         </div>
       </div>
     </section>
@@ -102,7 +109,7 @@ function renderMandatoryPasswordChange() {
           <div class="field"><label>Celular / WhatsApp — será tu usuario</label><input type="tel" id="cp_phone" inputmode="numeric" placeholder="Ej.: 70700000" required></div>
           <div class="field"><label>Ciudad / Departamento</label><input type="text" id="cp_city" placeholder="Ej.: La Paz, Santa Cruz, Beni"></div>
           <div class="field"><label>C.I. / Documento</label><input type="text" id="cp_doc" placeholder="Opcional"></div>
-          <div class="field"><label>Código de activación</label><input type="password" id="cp_activation" inputmode="numeric" placeholder="Código entregado por administrador" required></div>
+          ${AppState.session.roleName === 'Administrador' ? `<div class="field"><label>Código de activación administrador</label><input type="password" id="cp_activation" inputmode="numeric" placeholder="Solo administrador" required></div>` : `<div class="activationInfoBox">Registro de vendedor: no necesitas código. Solo completa tus datos para identificarte y recibir novedades/pedidos.</div>`}
           <div class="field"><label>Nueva contraseña personal</label><input type="password" id="cp_pass1" minlength="4" required></div>
           <div class="field"><label>Confirmar contraseña</label><input type="password" id="cp_pass2" minlength="4" required></div>
           <button class="btn block" type="submit">Guardar y continuar</button>
@@ -124,7 +131,7 @@ function renderMandatoryPasswordChange() {
       phone,
       city: $('#cp_city').value.trim(),
       documentId: $('#cp_doc').value.trim(),
-      activationCode: $('#cp_activation').value.trim()
+      activationCode: $('#cp_activation') ? $('#cp_activation').value.trim() : ''
     });
     if (!result.ok) { showToast(result.message, 'error'); return; }
     AppState.settings.contactName = $('#cp_name').value.trim();
@@ -170,6 +177,7 @@ function canAccessTab(tab) {
     resumen: hasPermission('own_reports:read') || hasPermission('team_reports:read'),
     ajustes: true,
     pedido: true,
+    inbox: true,
     usuarios: false,
     comisiones: false,
     'reportes-pro': false,
@@ -210,6 +218,7 @@ function render() {
     case 'cotizar': renderQuotes(); break;
     case 'grupos': renderPriceGroups(); break;
     case 'pedido': renderOrderRequest(); break;
+    case 'inbox': openInboxPanel(true); break;
     case 'clientes': renderClients(); break;
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
@@ -382,6 +391,8 @@ function renderMas() {
       <div class="moreItem dangerItem" id="moreLogout"><span class="ic svgic">${icon('logout')}</span><span>Cerrar sesión</span><span class="arrow">›</span></div>
     </div>
   `;
+  const moreInbox = $('#moreInbox');
+  if (moreInbox) moreInbox.addEventListener('click', () => openInboxPanel(true));
   $('#moreClients').addEventListener('click', () => navigateTo('clientes'));
   $('#moreGroups').addEventListener('click', () => navigateTo('grupos'));
   $('#moreCatalogPdf').addEventListener('click', () => openCatalogPdfOptions());
@@ -483,18 +494,49 @@ async function renderUsersFoundation() {
   $('#fabAdd').classList.add('hidden');
   const roles = await DB.getAll('roles');
   const users = await DB.getAll('users');
+  let cloudProfiles = [];
+  if (isAdmin() && window.fetchCloudProfiles) {
+    const res = await fetchCloudProfiles().catch(err => ({ ok: false, message: err.message }));
+    if (res && res.ok) cloudProfiles = res.profiles || [];
+  }
   $('#mainArea').innerHTML = `
     <section class="dashboardPanel">
-      <div class="panelHeader"><div><span class="eyebrow">Fase 2 preparada</span><h2>Usuarios, roles y permisos</h2></div></div>
-      <div class="banner">La base IndexedDB ya contiene stores para usuarios, roles, permisos y auditoría. En la Fase 2 se activará login seguro, sesión local y control de pantallas por rol.</div>
+      <div class="panelHeader"><div><span class="eyebrow">Control de acceso</span><h2>Usuarios activos</h2></div><button class="btn sm outline" id="refreshUsersBtn">Actualizar</button></div>
+      <div class="banner">Aquí puedes revisar usuarios locales y, cuando el servidor esté configurado, perfiles online. Si alguien no corresponde, márcalo como inactivo/bloqueado desde Supabase o desde este panel si está disponible.</div>
       <div class="miniStats">
         <div><span>Roles base</span><strong>${roles.length}</strong></div>
-        <div><span>Usuarios</span><strong>${users.length}</strong></div>
-        <div><span>Estado</span><strong>Preparado</strong></div>
+        <div><span>Usuarios locales</span><strong>${users.length}</strong></div>
+        <div><span>Online</span><strong>${cloudProfiles.length}</strong></div>
       </div>
-      ${roles.map(r => `<div class="rankRow"><span class="rank">🔐</span><div><strong>${escapeHtml(r.name)}</strong><small>${escapeHtml(r.description || '')}</small></div></div>`).join('')}
     </section>
+
+    <div class="sectiontitle">Usuarios locales iniciales</div>
+    ${users.map(u => `<div class="histitem userRow">
+      <div class="l"><div class="pname">${escapeHtml(u.fullName || u.username)}</div><div class="meta">${escapeHtml(u.username)} · ${escapeHtml(u.role || '')} · ${escapeHtml(u.status || 'active')}${u.phone ? ' · ' + escapeHtml(u.phone) : ''}</div></div>
+      <div class="r">${u.mustChangePassword ? '<span class="tinytag">Inicial</span>' : '<span class="tinytag">Personal</span>'}</div>
+    </div>`).join('')}
+
+    ${isAdmin() ? `
+      <div class="sectiontitle">Perfiles online Supabase</div>
+      ${cloudProfiles.length ? cloudProfiles.map(p => `<div class="histitem userRow">
+        <div class="l"><div class="pname">${escapeHtml(p.full_name || p.username || p.id)}</div><div class="meta">${escapeHtml(p.username || '')} · ${escapeHtml(p.role || '')} · ${escapeHtml(p.status || '')}</div></div>
+        <div class="r">${p.status === 'active' ? `<button class="btn sm outline blockUserBtn" data-id="${p.id}">Bloquear</button>` : `<button class="btn sm outline activeUserBtn" data-id="${p.id}">Activar</button>`}</div>
+      </div>`).join('') : `<div class="empty compact"><span class="ic">☁️</span><h3>Sin perfiles online cargados</h3><p>Configura Supabase y crea perfiles en la tabla profiles.</p></div>`}
+    ` : ''}
   `;
+  $('#refreshUsersBtn').addEventListener('click', () => renderUsersFoundation());
+  $all('.blockUserBtn').forEach(b => b.addEventListener('click', async () => {
+    if (!window.updateCloudProfileStatus) return showToast('Función online no disponible.', 'error');
+    const res = await updateCloudProfileStatus(b.dataset.id, 'inactive');
+    if (res.ok) { showToast('Usuario bloqueado.'); renderUsersFoundation(); }
+    else showToast(res.message || 'No se pudo bloquear.', 'error');
+  }));
+  $all('.activeUserBtn').forEach(b => b.addEventListener('click', async () => {
+    if (!window.updateCloudProfileStatus) return showToast('Función online no disponible.', 'error');
+    const res = await updateCloudProfileStatus(b.dataset.id, 'active');
+    if (res.ok) { showToast('Usuario activado.'); renderUsersFoundation(); }
+    else showToast(res.message || 'No se pudo activar.', 'error');
+  }));
 }
 
 async function renderCommissionsFoundation() {
@@ -536,6 +578,7 @@ async function initApp() {
     await loadAllState();
     renderTopHeader();
     renderBottomNav();
+    if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
     render();
     offerRestoreIfEmpty();
   } else {

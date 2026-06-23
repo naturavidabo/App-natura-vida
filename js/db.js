@@ -2,7 +2,7 @@
    Mantiene funcionamiento offline, amplía el modelo comercial y prepara sincronización futura. */
 
 const DB_NAME = 'natura_vida_db';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORES = [
   'products',
   'priceGroups',
@@ -23,7 +23,8 @@ const STORES = [
   'dispatches',
   'representativeReports',
   'importedPackages',
-  'purchaseOrders'
+  'purchaseOrders',
+  'messages'
 ];
 
 const DB_SCHEMA = {
@@ -55,7 +56,8 @@ const DB_SCHEMA = {
   dispatches: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byDate', 'date'], ['byStatus', 'status']] },
   representativeReports: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byImportedAt', 'importedAt']] },
   importedPackages: { keyPath: 'id', indexes: [['byPackageType', 'packageType'], ['byImportedAt', 'importedAt']] },
-  purchaseOrders: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byCreatedAt', 'createdAt'], ['byStatus', 'status'], ['bySyncStatus', 'syncStatus']] }
+  purchaseOrders: { keyPath: 'id', indexes: [['byRepresentative', 'representativeId'], ['byCreatedAt', 'createdAt'], ['byStatus', 'status'], ['bySyncStatus', 'syncStatus']] },
+  messages: { keyPath: 'id', indexes: [['byCreatedAt', 'createdAt'], ['byStatus', 'status'], ['byRecipientRole', 'recipientRole'], ['byRecipientUser', 'recipientUserId'], ['bySenderUser', 'senderUserId'], ['byType', 'type']] }
 };
 
 let _db = null;
@@ -387,9 +389,16 @@ async function ensureBootstrapData() {
   if (permissions.length === 0) {
     await DB.bulkPut('permissions', [
       { id: 'perm_admin_all', roleId: 'role_admin', actions: ['*'], createdAt: Date.now() },
-      { id: 'perm_reseller_sales', roleId: 'role_reseller', actions: ['products:read', 'clients:manage', 'quotes:manage', 'sales:create', 'own_reports:read'], createdAt: Date.now() },
+      { id: 'perm_reseller_sales', roleId: 'role_reseller', actions: ['products:read', 'products:local_edit', 'clients:manage', 'quotes:manage', 'sales:create', 'own_reports:read', 'orders:create'], createdAt: Date.now() },
       { id: 'perm_supervisor_team', roleId: 'role_supervisor', actions: ['products:read', 'clients:read', 'quotes:read', 'sales:read', 'team_reports:read'], createdAt: Date.now() }
     ], { silent: true });
+  }
+
+  const resellerPerm = await DB.get('permissions', 'perm_reseller_sales').catch(() => null);
+  if (resellerPerm) {
+    const needed = ['products:read', 'products:local_edit', 'clients:manage', 'quotes:manage', 'sales:create', 'own_reports:read', 'orders:create'];
+    resellerPerm.actions = Array.from(new Set([...(resellerPerm.actions || []), ...needed]));
+    await DB.put('permissions', resellerPerm, { silent: true });
   }
 
   const commissionRules = await DB.getAll('commissionRules');
