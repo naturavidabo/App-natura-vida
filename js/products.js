@@ -146,7 +146,7 @@ function renderInventario() {
         <h1>${seller ? 'Productos para vender' : 'Productos Natura Vida'}</h1>
         <p>${adminMode ? 'Costo por insumos, precio mayorista, precio representantes, precio público, stock, fotografía y trazabilidad online/offline.' : 'Administra tu stock propio, costo de envío, precio unitario y precio mayorista según tu zona.'}</p>
       </div>
-      ${adminMode ? '<button class="btn sm" id="quickAddProduct">+ Producto</button>' : '<button class="btn sm outline" id="quickRefreshProducts">Actualizar catálogo</button>'}
+      ${adminMode ? '<button class="btn sm" id="quickAddProduct">+ Producto</button>' : '<button class="btn sm outline" id="quickRefreshProducts">Recibir novedades</button>'}
     </section>
 
     <div class="kpiGrid inventoryKpis">
@@ -233,10 +233,13 @@ function renderInventario() {
   if (quickAdd) quickAdd.addEventListener('click', () => openProductForm(null));
   const quickRefresh = $('#quickRefreshProducts');
   if (quickRefresh) quickRefresh.addEventListener('click', async () => {
-    if (!window.syncCloudProductsToLocal || !isOnlineConfigured()) { showToast('Servidor online no configurado.', 'error'); return; }
-    const res = await syncCloudProductsToLocal();
-    if (res.ok) { showToast(`Catálogo actualizado: ${res.count} producto(s).`); renderInventario(); }
-    else showToast('No se pudo actualizar: ' + res.message, 'error');
+    if (!isOnlineConfigured()) { showToast('Servidor online no configurado.', 'error'); return; }
+    if (window.openSafeCloudSyncSheet) await openSafeCloudSyncSheet();
+    else if (window.syncCloudProductsToLocal) {
+      const res = await syncCloudProductsToLocal();
+      if (res.ok) { showToast(`Catálogo actualizado: ${res.count} producto(s).`); renderInventario(); }
+      else showToast('No se pudo actualizar: ' + res.message, 'error');
+    }
   });
   $('#searchInput').addEventListener('input', e => { _prodSearch = e.target.value; renderInventario(); });
   $all('.editBtn').forEach(b => b.addEventListener('click', () => openProductForm(b.dataset.id)));

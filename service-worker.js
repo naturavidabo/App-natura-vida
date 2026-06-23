@@ -1,4 +1,4 @@
-const CACHE_NAME = 'natura-vida-v4-6-acceso-simple';
+const CACHE_NAME = 'natura-vida-v4-7-sync-segura-ventas-limpias';
 const ASSETS = [
   './',
   './index.html',

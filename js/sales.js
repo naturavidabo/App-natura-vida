@@ -68,34 +68,22 @@ function renderVender() {
 
   let html = `
     ${sellerMode() ? `
-      <section class="resellerSaleHero">
-        <div class="eyebrow">Modo representante</div>
-        <h1>Vender desde mi inventario</h1>
-        <p>Usa tu stock regional, tus costos de envío y tus precios propios. Puedes vender unitario o mayorista.</p>
+      <section class="salesCleanHeader">
+        <div><span class="eyebrow">Ventas</span><h1>Registrar venta</h1></div>
+        <small>Los costos y márgenes se revisan en Inventario.</small>
       </section>
-      <div class="saletoggle salesChannelToggle">
+      <div class="saletoggle salesChannelToggle cleanSaleToggle">
         <button data-type="reseller_unit" class="${_saleType === 'reseller_unit' ? 'active' : ''}">Unitaria</button>
         <button data-type="reseller_wholesale" class="${_saleType === 'reseller_wholesale' ? 'active' : ''}">Mayorista</button>
-      </div>
-      <div class="formNotice salesChannelNotice">
-        ${_saleType === 'reseller_unit' ? 'Venta directa a cliente final usando tu precio unitario.' : 'Venta por volumen usando tu precio mayorista regional.'}
       </div>` : `
-      <section class="salesShowcaseHero premiumSalesHero">
-        <div class="salesHeroDecor"><span></span><span></span><span></span></div>
-        <div class="eyebrow">Catálogo de venta rápida</div>
-        <h1>Mostrar, vender y registrar</h1>
-        <p>Presenta los productos con una vista limpia y comercial para atención directa al cliente.</p>
-        <div class="salesBenefitChips">
-          <span>Natural</span><span>Orgánico</span><span>Bienestar</span>
-        </div>
+      <section class="salesCleanHeader">
+        <div><span class="eyebrow">Ventas</span><h1>Registrar venta</h1></div>
+        <small>Vista limpia para atender al cliente.</small>
       </section>
-      <div class="saletoggle salesChannelToggle">
+      <div class="saletoggle salesChannelToggle cleanSaleToggle">
         <button data-type="unit" class="${_saleType === 'unit' ? 'active' : ''}">Unitaria</button>
         <button data-type="market" class="${_saleType === 'market' ? 'active' : ''}">Mayorista</button>
         <button data-type="representative_transfer" class="${_saleType === 'representative_transfer' ? 'active' : ''}">Representantes</button>
-      </div>
-      <div class="formNotice salesChannelNotice">
-        ${_saleType === 'unit' ? 'Venta directa a cliente final.' : (_saleType === 'market' ? 'Venta al por mayor a tiendas, clientes mayoristas o compradores que no usan la app.' : 'Despacho/venta a representante regional. En V4 se complementa con archivo de despacho inteligente.')}
       </div>`}
 
     ${((_saleType === 'market' || _saleType === 'representative_transfer') || sellerMode()) && groupsEnabled ? `
@@ -137,38 +125,17 @@ function renderCatalogGrid() {
     const price = priceForCurrentMode(p);
     const qty = _cart[p.id] || 0;
     const low = p.stock <= AppState.settings.lowStockThreshold;
-    const base = sellerMode() ? sellerBaseCost(p) : representativePrice(p);
-    const adminBase = representativePrice(p);
-    const suggested = publicPrice(p);
-    const margin = sellerUnitMargin(p);
-    const localUnit = window.resellerLocalUnitPrice ? resellerLocalUnitPrice(p) : publicPrice(p);
-    const localWholesale = window.resellerLocalWholesalePrice ? resellerLocalWholesalePrice(p) : marketPrice(p);
     return `
-    <div class="catalogCard ${sellerMode() ? 'resellerCatalogCard' : ''}" data-id="${p.id}">
-      <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
-      <div class="catalogBody">
-        <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span><label class="catalogPromoTag">Natural</label></div>
+    <div class="catalogCard cleanSaleCard ${sellerMode() ? 'resellerCatalogCard' : ''}" data-id="${p.id}">
+      <div class="catalogPhoto cleanSalePhoto">${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
+      <div class="catalogBody cleanSaleBody">
+        <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span></div>
         <div class="catalogName">${escapeHtml(p.name)}</div>
-        ${p.description ? `<div class="catalogDesc">${escapeHtml(p.description)}</div>` : ''}
-        ${sellerMode() ? `
-          <div class="productFocusLine">Precio base y precio de venta</div>
-          <div class="sellerPriceBox">
-            <div><span>Base admin</span><strong>${fmtMoney(adminBase)}</strong></div>
-            <div><span>Mi costo real</span><strong>${fmtMoney(base)}</strong></div>
-            <div><span>Mi unitario</span><strong>${fmtMoney(localUnit)}</strong></div>
-            <div><span>Mi mayorista</span><strong>${fmtMoney(localWholesale)}</strong></div>
-          </div>
-          <div class="field sellerPriceField">
-            <label>${_saleType === 'reseller_wholesale' ? 'Precio final mayorista' : 'Precio final unitario'}</label>
-            <input type="number" inputmode="decimal" step="0.01" class="sellerCustomPrice" data-id="${p.id}" value="${price || ''}">
-          </div>
-          <div class="sellerMargin ${margin < 0 ? 'negative' : ''}">Margen por unidad: ${fmtMoney(margin)}</div>
-        ` : `
-          <div class="productFocusLine">Producto natural disponible</div>
-          <div class="catalogPrice">${fmtMoney(price)}</div>
-        `}
-        <div class="catalogStock ${low ? 'low' : ''}">Stock referencial: ${p.stock}</div>
-        <div class="qtyStepper">
+        <div class="cleanSaleLine">
+          <span class="catalogPrice cleanSalePrice">${fmtMoney(price)}</span>
+          <span class="catalogStock ${low ? 'low' : ''}">Stock: ${p.stock}</span>
+        </div>
+        <div class="qtyStepper cleanQtyStepper">
           <button class="qtyMinus" data-id="${p.id}">−</button>
           <span class="qtyVal" data-id="${p.id}">${qty}</span>
           <button class="qtyPlus" data-id="${p.id}">+</button>
@@ -177,16 +144,10 @@ function renderCatalogGrid() {
     </div>`;
   }).join('');
 
-  $all('.sellerCustomPrice', grid).forEach(inp => inp.addEventListener('input', () => {
-    const p = AppState.products.find(x => x.id === inp.dataset.id);
-    if (!p) return;
-    _cartPrices[p.id] = roundBs(parseFloat(inp.value) || 0);
-    renderCatalogGrid();
-    renderCartBar();
-  }));
   $all('.qtyPlus', grid).forEach(b => b.addEventListener('click', () => changeQty(b.dataset.id, 1)));
   $all('.qtyMinus', grid).forEach(b => b.addEventListener('click', () => changeQty(b.dataset.id, -1)));
 }
+
 
 function changeQty(productId, delta) {
   const p = AppState.products.find(x => x.id === productId);
@@ -221,13 +182,9 @@ function renderCartBar() {
     const p = AppState.products.find(x => x.id === id);
     return s + (p ? priceForCurrentMode(p) * qty : 0);
   }, 0);
-  const margin = sellerMode() ? Object.entries(_cart).reduce((s, [id, qty]) => {
-    const p = AppState.products.find(x => x.id === id);
-    return s + (p ? sellerUnitMargin(p) * qty : 0);
-  }, 0) : null;
   bar.innerHTML = `
     <div class="cartBarInfo">
-      <span class="cartCount">${count} ítem(s)${sellerMode() ? ` · margen ${fmtMoney(margin)}` : ''}</span>
+      <span class="cartCount">${count} ítem(s)</span>
       <span class="cartTotal">${fmtMoney(total)}</span>
     </div>
     <button class="btn" id="goToCheckout">Continuar</button>
@@ -250,20 +207,16 @@ function openCheckoutSheet() {
   }
 
   const total = items.reduce((s, i) => s + (i.price * i.qty), 0);
-  const sellerProfit = sellerMode() ? items.reduce((s, i) => s + ((i.price - sellerBaseCost(i.product)) * i.qty), 0) : 0;
-
   const html = `
     <h2>Confirmar venta <span class="x" id="closeSheet">✕</span></h2>
 
     <div class="sectiontitle2"><span>Productos (${items.length})</span></div>
     ${items.map(i => `
       <div class="histitem">
-        <div class="l"><div class="pname">${escapeHtml(i.product.name)}</div><div class="meta">${i.qty} × ${fmtMoney(i.price)}${sellerMode() ? ` · costo real ${fmtMoney(sellerBaseCost(i.product))}` : ''}</div></div>
+        <div class="l"><div class="pname">${escapeHtml(i.product.name)}</div><div class="meta">${i.qty} × ${fmtMoney(i.price)}</div></div>
         <div class="r">${fmtMoney(i.price * i.qty)}</div>
       </div>
     `).join('')}
-
-    ${sellerMode() ? `<div class="totalbox resellerProfitBox"><span class="lbl">Tu margen estimado</span><span class="val">${fmtMoney(sellerProfit)}</span></div>` : ''}
 
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
     <div class="field">

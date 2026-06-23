@@ -280,7 +280,7 @@ function renderInicio() {
       <div class="dashActions">
         <button class="btn" id="qbSell">Registrar venta</button>
         <button class="btn outline" id="qbInv">Inventario</button>
-        <button class="btn outline" id="qbSync">${isAdmin && isAdmin() ? 'Publicar catálogo' : 'Actualizar catálogo'}</button>
+        <button class="btn outline" id="qbSync">${isAdmin && isAdmin() ? 'Publicar catálogo' : 'Recibir novedades'}</button>
       </div>
     </section>
 
@@ -339,9 +339,11 @@ function renderInicio() {
       res = await pushLocalProductsToCloud();
       if (res.ok) showToast(`Catálogo publicado: ${res.count} producto(s).`);
       else showToast('No se pudo publicar: ' + res.message, 'error');
+    } else if (window.openSafeCloudSyncSheet) {
+      await openSafeCloudSyncSheet();
     } else if (window.syncCloudProductsToLocal) {
       res = await syncCloudProductsToLocal();
-      if (res.ok) { showToast(`Precios actualizados: ${res.count} producto(s).`); render(); }
+      if (res.ok) { showToast(`Catálogo actualizado: ${res.count} producto(s).`); render(); }
       else showToast('No se pudo sincronizar: ' + res.message, 'error');
     }
   });

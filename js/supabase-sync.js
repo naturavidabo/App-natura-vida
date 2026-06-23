@@ -142,34 +142,191 @@ async function fetchCurrentProfile(userId) {
   return data;
 }
 
-async function syncCloudProductsToLocal() {
+function productIdentityKey(product) {
+  return normalizeSearch(`${product && product.name ? product.name : ''}|${product && product.category ? product.category : 'General'}`);
+}
+
+function preserveRepresentativeLocalFields(existing, cloud) {
+  const local = existing || {};
+  const preservedPhoto = cloud.photo || local.photo || null;
+  return normalizeLegacyProduct(Object.assign({}, cloud, {
+    photo: preservedPhoto,
+    // INVENTARIO PROPIO DEL REPRESENTANTE: nunca se pisa con el servidor.
+    stock: existing ? (Number(local.stock) || 0) : 0,
+    adminStock: Number(cloud.stock || 0),
+    resellerAdditionalCost: existing ? (Number(local.resellerAdditionalCost) || 0) : 0,
+    resellerLocalUnitPrice: existing ? (Number(local.resellerLocalUnitPrice) || 0) : (publicPrice(cloud) || 0),
+    resellerLocalWholesalePrice: existing ? (Number(local.resellerLocalWholesalePrice) || 0) : (marketPrice(cloud) || 0),
+    resellerLocalNote: existing ? (local.resellerLocalNote || '') : '',
+    resellerLocalUpdatedAt: existing ? (local.resellerLocalUpdatedAt || null) : null,
+    previousLocalProductId: existing && existing.id !== cloud.id ? existing.id : (local.previousLocalProductId || null),
+    syncStatus: 'cloud_safe_merge',
+    updatedAt: Date.now()
+  }));
+}
+
+async function createPreSyncLocalSnapshot(reason = 'cloud_sync') {
+  try {
+    const snapshot = {
+      id: 'autosnapshot_' + Date.now(),
+      type: 'auto_backup_before_sync',
+      reason,
+      createdAt: Date.now(),
+      user: AppState.session ? {
+        userId: AppState.session.userId,
+        username: AppState.session.username,
+        fullName: AppState.session.fullName,
+        roleName: AppState.session.roleName
+      } : null,
+      products: AppState.products || [],
+      clients: AppState.clients || [],
+      sales: AppState.sales || [],
+      quotes: AppState.quotes || [],
+      priceGroups: AppState.priceGroups || [],
+      settings: AppState.settings || {}
+    };
+    localStorage.setItem('natura_vida_last_presync_snapshot', JSON.stringify(snapshot));
+    if (window.DB && DB.put) {
+      await DB.put('reportsCache', {
+        id: snapshot.id,
+        type: 'auto_backup_before_sync',
+        period: 'local',
+        generatedAt: snapshot.createdAt,
+        payload: snapshot
+      }, { silent: true }).catch(() => {});
+    }
+    return snapshot;
+  } catch (err) {
+    console.warn('No se pudo crear respaldo previo a sincronización:', err.message);
+    return null;
+  }
+}
+
+function buildSafeProductMerge(cloudRows) {
+  const cloudProducts = (cloudRows || []).map(mapProductFromCloud);
+  const existingProducts = (AppState.products || []).filter(p => p && p.status !== 'archived');
+  const byId = new Map(existingProducts.map(p => [p.id, p]));
+  const byKey = new Map(existingProducts.map(p => [productIdentityKey(p), p]));
+  const usedLocalIds = new Set();
+  const obsoleteLocalIds = new Set();
+
+  const mergedCloud = cloudProducts.map((cloud) => {
+    const existing = byId.get(cloud.id) || byKey.get(productIdentityKey(cloud)) || null;
+    if (existing) {
+      usedLocalIds.add(existing.id);
+      if (existing.id !== cloud.id) obsoleteLocalIds.add(existing.id);
+    }
+    if (window.isReseller && isReseller()) return preserveRepresentativeLocalFields(existing, cloud);
+    // En administrador también se preserva stock local si el producto ya existía y el servidor no trae valor útil.
+    return normalizeLegacyProduct(Object.assign({}, cloud, {
+      photo: cloud.photo || (existing && existing.photo) || null,
+      stock: Number.isFinite(Number(cloud.stock)) ? Number(cloud.stock || 0) : (existing ? Number(existing.stock || 0) : 0),
+      syncStatus: 'cloud_safe_merge',
+      updatedAt: Date.now()
+    }));
+  });
+
+  // Productos locales que todavía no existen en la nube NO se eliminan.
+  const cloudIds = new Set(cloudProducts.map(p => p.id));
+  const cloudKeys = new Set(cloudProducts.map(productIdentityKey));
+  const localOnly = existingProducts.filter(p => !usedLocalIds.has(p.id) && !cloudIds.has(p.id) && !cloudKeys.has(productIdentityKey(p)));
+  const result = mergedCloud.concat(localOnly.map(p => normalizeLegacyProduct(Object.assign({}, p, { syncStatus: p.syncStatus || 'local_preserved' }))));
+  result._obsoleteLocalIds = Array.from(obsoleteLocalIds);
+  return result;
+}
+
+async function fetchCloudProductRows() {
   const sb = getSupabaseClient();
   if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
   const { data, error } = await sb.from('products').select('*').neq('status', 'archived').order('name', { ascending: true });
   if (error) return { ok: false, message: error.message };
-  const existingById = new Map((AppState.products || []).map(p => [p.id, p]));
-  const products = (data || []).map(row => {
-    const cloud = mapProductFromCloud(row);
-    const existing = existingById.get(cloud.id);
-    if (isReseller && isReseller()) {
-      return normalizeLegacyProduct(Object.assign({}, cloud, {
-        // Preservar datos locales del representante.
-        stock: existing ? (Number(existing.stock) || 0) : 0,
-        adminStock: Number(cloud.stock || 0),
-        resellerAdditionalCost: existing ? (Number(existing.resellerAdditionalCost) || 0) : 0,
-        resellerLocalUnitPrice: existing ? (Number(existing.resellerLocalUnitPrice) || 0) : (publicPrice(cloud) || 0),
-        resellerLocalWholesalePrice: existing ? (Number(existing.resellerLocalWholesalePrice) || 0) : (marketPrice(cloud) || 0),
-        resellerLocalNote: existing ? (existing.resellerLocalNote || '') : '',
-        resellerLocalUpdatedAt: existing ? existing.resellerLocalUpdatedAt : null
-      }));
-    }
-    return cloud;
-  });
+  return { ok: true, rows: data || [] };
+}
+
+async function syncCloudProductsToLocal(options = {}) {
+  const fetched = await fetchCloudProductRows();
+  if (!fetched.ok) return fetched;
+  const rows = fetched.rows || [];
+  if (rows.length === 0) {
+    return { ok: false, blocked: true, message: 'El servidor no tiene productos publicados. No se modificó el inventario local.' };
+  }
+
+  await createPreSyncLocalSnapshot('before_cloud_products_sync');
+  const beforeCount = (AppState.products || []).length;
+  const products = buildSafeProductMerge(rows);
   await DB.bulkPut('products', products, { silent: true });
+  if (Array.isArray(products._obsoleteLocalIds)) {
+    for (const oldId of products._obsoleteLocalIds) await DB.delete('products', oldId, { silent: true }).catch(() => {});
+  }
   AppState.products = products;
   _lastCloudSync = Date.now();
-  return { ok: true, count: products.length };
+  return {
+    ok: true,
+    count: rows.length,
+    localCount: products.length,
+    beforeCount,
+    preservedLocal: Math.max(0, products.length - rows.length),
+    message: 'Catálogo actualizado sin borrar inventario local.'
+  };
 }
+
+async function openSafeCloudSyncSheet() {
+  const fetched = await fetchCloudProductRows();
+  if (!fetched.ok) { showToast('No se pudo leer servidor: ' + fetched.message, 'error'); return; }
+  const rows = fetched.rows || [];
+  if (rows.length === 0) {
+    showToast('Servidor sin productos publicados. No se tocó tu inventario.', 'error');
+    openSheet(`
+      <h2>Servidor sin catálogo <span class="x" id="closeSheet">✕</span></h2>
+      <div class="banner dangerBanner">El servidor no tiene productos publicados. Para proteger tus datos locales, la app no actualizó ni borró nada.</div>
+      <button class="btn block" id="closeSafeSync">Entendido</button>
+    `, (overlay, close) => {
+      $('#closeSheet', overlay).addEventListener('click', close);
+      $('#closeSafeSync', overlay).addEventListener('click', close);
+    });
+    return;
+  }
+  const mergedPreview = buildSafeProductMerge(rows);
+  const currentCount = (AppState.products || []).length;
+  const localOnly = Math.max(0, mergedPreview.length - rows.length);
+  openSheet(`
+    <h2>Recibir novedades <span class="x" id="closeSheet">✕</span></h2>
+    <div class="safeSyncHero">
+      <div class="readyMark">✓</div>
+      <div>
+        <div class="eyebrow">Sincronización segura</div>
+        <h3>Se encontró catálogo online</h3>
+        <p>Antes de actualizar se guardará un respaldo local automático.</p>
+      </div>
+    </div>
+    <div class="miniStats safeSyncStats">
+      <div><span>Servidor</span><strong>${rows.length}</strong></div>
+      <div><span>Actual local</span><strong>${currentCount}</strong></div>
+      <div><span>Se conservarán</span><strong>${localOnly}</strong></div>
+    </div>
+    <div class="banner">La actualización traerá nombres, fotos, descripciones y precios base del administrador. No borrará stock local, precios propios del representante, costos de envío, clientes ni ventas.</div>
+    <button class="btn block" id="applySafeSync">Actualizar de forma segura</button>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#applySafeSync', overlay).addEventListener('click', async () => {
+      const btn = $('#applySafeSync', overlay);
+      btn.disabled = true;
+      btn.textContent = 'Actualizando…';
+      const res = await syncCloudProductsToLocal();
+      if (res.ok) {
+        showToast(`Catálogo actualizado: ${res.count} producto(s).`);
+        close();
+        await loadAllState().catch(() => {});
+        render();
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Actualizar de forma segura';
+        showToast(res.message || 'No se pudo actualizar.', 'error');
+      }
+    });
+  });
+}
+
 
 async function pushLocalProductsToCloud() {
   const sb = getSupabaseClient();
@@ -245,9 +402,9 @@ async function insertCloudPurchaseOrder(order) {
 }
 
 async function syncAfterLogin() {
-  if (!isOnlineConfigured()) return { ok: true, mode: 'local' };
-  const result = await syncCloudProductsToLocal();
-  return result;
+  // V4.7: no se sincroniza automáticamente al iniciar sesión.
+  // Esto protege el inventario local del representante; la actualización debe ser manual con vista previa.
+  return { ok: true, mode: isOnlineConfigured() ? 'online_ready_manual_sync' : 'local' };
 }
 
 async function cloudAfterPut(storeName, record) {
@@ -293,6 +450,8 @@ window.onlineSignIn = onlineSignIn;
 window.onlineSignOut = onlineSignOut;
 window.getOnlineSessionProfile = getOnlineSessionProfile;
 window.syncCloudProductsToLocal = syncCloudProductsToLocal;
+window.openSafeCloudSyncSheet = openSafeCloudSyncSheet;
+window.createPreSyncLocalSnapshot = createPreSyncLocalSnapshot;
 window.pushLocalProductsToCloud = pushLocalProductsToCloud;
 window.syncAfterLogin = syncAfterLogin;
 window.cloudAfterPut = cloudAfterPut;
