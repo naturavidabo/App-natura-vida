@@ -1,4 +1,4 @@
--- NATURA VIDA BOLIVIA — ESQUEMA SUPABASE V5
+-- NATURA VIDA BOLIVIA — ESQUEMA SUPABASE V5.1 ESTABLE
 -- Supabase como núcleo principal; IndexedDB queda como caché offline.
 -- Uso interno: políticas simples para reducir bloqueos operativos.
 -- Ejecutar en Supabase > SQL Editor > New query > Run.

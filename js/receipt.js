@@ -111,6 +111,7 @@ function drawReceiptCanvas(sale) {
   return new Promise((resolve) => {
     if (AppState.settings.logo) {
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => { drawAll(img); resolve(canvas); };
       img.onerror = () => { drawAll(null); resolve(canvas); };
       img.src = AppState.settings.logo;

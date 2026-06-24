@@ -104,6 +104,47 @@ create table if not exists public.sync_events (
   created_at timestamptz not null default now()
 );
 
+
+-- V5.1: completar columnas faltantes si products fue creada manualmente con pocas columnas.
+alter table public.products add column if not exists category text default 'General';
+alter table public.products add column if not exists sku text default '';
+alter table public.products add column if not exists description text default '';
+alter table public.products add column if not exists cost numeric not null default 0;
+alter table public.products add column if not exists market_price numeric not null default 0;
+alter table public.products add column if not exists reseller_price numeric not null default 0;
+alter table public.products add column if not exists public_price numeric not null default 0;
+alter table public.products add column if not exists stock integer not null default 0;
+alter table public.products add column if not exists photo text;
+alter table public.products add column if not exists status text not null default 'active';
+
+-- V5.1: completar columnas faltantes para ventas, pedidos y mensajes si existían parcialmente.
+alter table public.sales add column if not exists seller_user_id uuid references auth.users(id) on delete set null;
+alter table public.sales add column if not exists seller_name text;
+alter table public.sales add column if not exists client_name text;
+alter table public.sales add column if not exists client_phone text;
+alter table public.sales add column if not exists sale_type text;
+alter table public.sales add column if not exists total numeric not null default 0;
+alter table public.sales add column if not exists seller_profit numeric not null default 0;
+alter table public.sales add column if not exists payload jsonb not null default '{}'::jsonb;
+
+alter table public.purchase_orders add column if not exists representative_user_id uuid references auth.users(id) on delete set null;
+alter table public.purchase_orders add column if not exists representative_name text;
+alter table public.purchase_orders add column if not exists status text not null default 'pending';
+alter table public.purchase_orders add column if not exists total numeric not null default 0;
+alter table public.purchase_orders add column if not exists note text default '';
+alter table public.purchase_orders add column if not exists payload jsonb not null default '{}'::jsonb;
+
+alter table public.messages add column if not exists type text not null default 'general';
+alter table public.messages add column if not exists title text not null default 'Mensaje';
+alter table public.messages add column if not exists body text default '';
+alter table public.messages add column if not exists sender_user_id uuid references auth.users(id) on delete set null;
+alter table public.messages add column if not exists sender_name text;
+alter table public.messages add column if not exists sender_role text;
+alter table public.messages add column if not exists recipient_role text default 'Administrador';
+alter table public.messages add column if not exists recipient_user_id uuid references auth.users(id) on delete set null;
+alter table public.messages add column if not exists status text not null default 'unread';
+alter table public.messages add column if not exists payload jsonb not null default '{}'::jsonb;
+
 -- Actualizaciones seguras para bases creadas con versiones anteriores.
 alter table public.products add column if not exists photo_url text;
 alter table public.products add column if not exists payload jsonb not null default '{}'::jsonb;

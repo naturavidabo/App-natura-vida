@@ -66,7 +66,9 @@ async function syncInboxFromCloud() {
 }
 
 async function refreshInboxBadge(options = {}) {
-  if (requireAuth()) await syncInboxFromCloud().catch(() => {});
+  // Para evitar congelamientos, el buzón no consulta Supabase en cada render.
+  // Sólo actualiza online si se solicita explícitamente con forceCloud.
+  if (options.forceCloud && requireAuth()) await syncInboxFromCloud().catch(() => {});
   const messages = (await DB.getAll('messages').catch(() => [])).map(normalizeMessage);
   AppState.messages = messages;
   const unread = messages.filter(m => messageVisibleForCurrentUser(m) && m.status !== 'read').length;
@@ -102,10 +104,14 @@ async function markLocalMessageRead(id) {
 }
 
 async function openInboxPanel(forceRefresh = false) {
-  if (forceRefresh) await syncInboxFromCloud().catch(() => {});
+  if (forceRefresh) {
+    showToast('Actualizando buzón…');
+    await syncInboxFromCloud().catch(() => {});
+  }
   const messages = (await DB.getAll('messages').catch(() => [])).map(normalizeMessage)
     .filter(messageVisibleForCurrentUser)
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 80);
   const unread = messages.filter(m => m.status !== 'read').length;
   openSheet(`
     <h2>Buzón <span class="x" id="closeSheet">✕</span></h2>

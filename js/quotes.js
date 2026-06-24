@@ -220,6 +220,155 @@ function shareQuoteText(q, total) {
   }
 }
 
+
+function drawQuoteCanvas(q, total) {
+  const W = 720;
+  const items = q.items || [];
+  const H = Math.max(720, 330 + (items.length * 46) + 180);
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#F5FAF6';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFFFFF';
+  roundRect(ctx, 34, 34, W - 68, H - 68, 28, true, false);
+
+  ctx.fillStyle = '#01773B';
+  roundRect(ctx, 34, 34, W - 68, 96, 28, true, false);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(AppState.settings.businessName || 'NATURA VIDA', 62, 82);
+  ctx.font = '14px Arial';
+  ctx.fillText(AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 62, 108);
+
+  let y = 170;
+  ctx.fillStyle = '#15171A';
+  ctx.font = 'bold 25px Arial';
+  ctx.fillText('COTIZACIÓN', 62, y);
+  ctx.textAlign = 'right';
+  ctx.font = '13px Arial';
+  ctx.fillStyle = '#6B7280';
+  ctx.fillText('Fecha: ' + new Date(q.createdAt || Date.now()).toLocaleDateString('es-BO'), W - 62, y);
+  ctx.fillText('Válida hasta: ' + fmtDate(q.expiryDate), W - 62, y + 22);
+  ctx.textAlign = 'left';
+
+  y += 50;
+  ctx.fillStyle = '#EEF7F1';
+  roundRect(ctx, 62, y, W - 124, 72, 18, true, false);
+  ctx.fillStyle = '#15171A';
+  ctx.font = 'bold 16px Arial';
+  ctx.fillText('Cliente: ' + (q.clientName || '—'), 86, y + 30);
+  ctx.font = '14px Arial';
+  ctx.fillStyle = '#56635B';
+  ctx.fillText('Teléfono: ' + (q.clientPhone || '—'), 86, y + 52);
+  y += 108;
+
+  ctx.font = 'bold 13px Arial';
+  ctx.fillStyle = '#6B7280';
+  ctx.fillText('PRODUCTO', 62, y);
+  ctx.fillText('CANT.', 410, y);
+  ctx.fillText('PRECIO', 485, y);
+  ctx.textAlign = 'right';
+  ctx.fillText('SUBTOTAL', W - 62, y);
+  ctx.textAlign = 'left';
+  y += 12;
+  ctx.strokeStyle = '#DDE7DF';
+  ctx.beginPath(); ctx.moveTo(62, y); ctx.lineTo(W - 62, y); ctx.stroke();
+  y += 30;
+
+  items.forEach((it, idx) => {
+    if (idx % 2 === 0) {
+      ctx.fillStyle = '#FAFCFB';
+      roundRect(ctx, 56, y - 22, W - 112, 38, 12, true, false);
+    }
+    ctx.fillStyle = '#15171A';
+    ctx.font = '14px Arial';
+    ctx.fillText(String(it.name || '').slice(0, 42), 62, y);
+    ctx.fillText(String(it.qty || 0), 418, y);
+    ctx.fillText(fmtMoney(it.price || 0), 485, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtMoney((it.price || 0) * (it.qty || 0)), W - 62, y);
+    ctx.textAlign = 'left';
+    y += 46;
+  });
+
+  y += 18;
+  ctx.strokeStyle = '#DDE7DF';
+  ctx.beginPath(); ctx.moveTo(62, y); ctx.lineTo(W - 62, y); ctx.stroke();
+  y += 48;
+
+  ctx.fillStyle = '#01773B';
+  ctx.font = 'bold 30px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText('TOTAL: ' + fmtMoney(total), W - 62, y);
+  ctx.textAlign = 'left';
+
+  y += 64;
+  ctx.fillStyle = '#FFF8EB';
+  roundRect(ctx, 62, y, W - 124, 74, 18, true, false);
+  ctx.fillStyle = '#8A5A12';
+  ctx.font = 'bold 14px Arial';
+  ctx.fillText('Nota', 86, y + 28);
+  ctx.font = '13px Arial';
+  ctx.fillText('Precios sujetos a disponibilidad. Gracias por preferir productos naturales.', 86, y + 52);
+  return canvas;
+}
+
+function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+  if (w < 2 * r) r = w / 2;
+  if (h < 2 * r) r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+function generateQuoteImage(q, total) {
+  const canvas = drawQuoteCanvas(q, total);
+  openSheet(`
+    <h2>Imagen de cotización <span class="x" id="closeSheet">✕</span></h2>
+    <div class="receiptCanvasWrap" id="quoteCanvasWrap"></div>
+    <div class="exportRow">
+      <div class="exportBtn" id="downloadQuoteImg"><span class="ic">🖼️</span><span class="lbl">Guardar imagen</span><span class="sub">JPG</span></div>
+      <div class="exportBtn" id="shareQuoteImg"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / sistema</span></div>
+    </div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const wrap = $('#quoteCanvasWrap', overlay);
+    wrap.appendChild(canvas);
+    $('#downloadQuoteImg', overlay).addEventListener('click', () => {
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cotizacion_${(q.clientName || 'cliente').replace(/\s+/g, '_')}_${todayISO()}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        showToast('Imagen de cotización descargada.');
+      }, 'image/jpeg', 0.95);
+    });
+    $('#shareQuoteImg', overlay).addEventListener('click', () => {
+      canvas.toBlob(async (blob) => {
+        const file = new File([blob], `cotizacion_${todayISO()}.jpg`, { type: 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try { await navigator.share({ files: [file], title: 'Cotización Natura Vida', text: `Cotización — ${AppState.settings.businessName}` }); } catch (_) {}
+        } else {
+          showToast('Este navegador no permite compartir imagen directa. Usa Guardar imagen.', 'error');
+        }
+      }, 'image/jpeg', 0.95);
+    });
+  });
+}
+
 window.renderQuotes = renderQuotes;
 window.openQuoteForm = openQuoteForm;
 window.openQuotePreview = openQuotePreview;

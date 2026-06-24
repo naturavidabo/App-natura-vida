@@ -438,11 +438,28 @@ async function pushLocalProductsToCloud() {
   if (!AppState.session || AppState.session.roleName !== 'Administrador') {
     return { ok: false, message: 'Solo el administrador puede publicar productos.' };
   }
-  const rows = await Promise.all(AppState.products.filter(p => p.status !== 'archived').map(mapProductToCloudAsync));
-  if (rows.length === 0) return { ok: true, count: 0 };
-  const { error } = await sb.from('products').upsert(rows, { onConflict: 'id' });
-  if (error) return { ok: false, message: error.message };
-  return { ok: true, count: rows.length };
+  const activeProducts = AppState.products.filter(p => p.status !== 'archived');
+  if (activeProducts.length === 0) return { ok: false, message: 'No hay productos activos para publicar.' };
+
+  const rows = [];
+  for (const p of activeProducts) rows.push(await mapProductToCloudAsync(p));
+
+  let sent = 0;
+  const chunkSize = 20;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await sb.from('products').upsert(chunk, { onConflict: 'id' });
+    if (error) {
+      let msg = error.message || 'Error desconocido de Supabase';
+      if (/column|schema|relation|does not exist|permission|policy/i.test(msg)) {
+        msg += ' — Ejecuta primero SUPABASE_MIGRACION_V5_1_ESTABLE.sql en Supabase > SQL Editor.';
+      }
+      return { ok: false, message: msg, sent };
+    }
+    sent += chunk.length;
+  }
+  await setSyncMeta('catalog_last_published_at', new Date().toISOString()).catch(() => {});
+  return { ok: true, count: sent };
 }
 
 async function upsertCloudProduct(product) {
@@ -661,7 +678,7 @@ async function runBackgroundSyncOnce(reason = 'background') {
     if (window.render) render();
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
   }
-  if (window.fetchAndCacheInboxMessages) await fetchAndCacheInboxMessages().catch(() => {});
+  // Buzón se actualiza sólo al abrirlo para evitar lag en Android.
   if (window.fetchAndCachePurchaseOrders && window.isAdmin && isAdmin()) await fetchAndCachePurchaseOrders().catch(() => {});
   return res;
 }

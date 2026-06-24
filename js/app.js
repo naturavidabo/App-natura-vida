@@ -176,7 +176,6 @@ function canAccessTab(tab) {
     pedido: true,
     inbox: true,
     usuarios: false,
-    comisiones: false,
     'reportes-pro': false,
     mas: true
   };
@@ -220,7 +219,6 @@ function render() {
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
     case 'usuarios': renderUsersFoundation(); break;
-    case 'comisiones': renderCommissionsFoundation(); break;
     case 'reportes-pro': renderReportsFoundation(); break;
     case 'mas': renderMas(); break;
     default: renderInicio();
@@ -282,7 +280,7 @@ function renderInicio() {
     <section class="dashHero">
       <div class="eyebrow">Plataforma comercial offline-first</div>
       <h1>Natura Vida Bolivia</h1>
-      <p>Sesión activa: <strong>${escapeHtml(AppState.session.fullName || '')}</strong> · ${escapeHtml(AppState.session.roleName || '')}. Plataforma comercial offline preparada para crecimiento y sincronización futura.</p>
+      <p>Sesión activa: <strong>${escapeHtml(AppState.session.fullName || '')}</strong> · ${escapeHtml(AppState.session.roleName || '')}. Plataforma comercial con caché offline y sincronización Supabase práctica.</p>
       <div class="dashActions">
         <button class="btn" id="qbSell">Registrar venta</button>
         <button class="btn outline" id="qbInv">Inventario</button>
@@ -319,7 +317,6 @@ function renderInicio() {
         <div class="quickBtn" id="qbQuote"><span class="ic svgic">${icon('quote')}</span><span>Nueva cotización</span></div>
         <div class="quickBtn" id="qbClients"><span class="ic svgic">${icon('clients')}</span><span>Clientes (${AppState.clients.length})</span></div>
         <div class="quickBtn" id="qbUsers"><span class="ic svgic">${icon('users')}</span><span>Usuarios y roles</span></div>
-        <div class="quickBtn" id="qbCommissions"><span class="ic svgic">${icon('commission')}</span><span>Comisiones</span></div>
         ${isReseller && isReseller() ? `<div class="quickBtn" id="qbOrder"><span class="ic svgic">${icon('box')}</span><span>Pedido al administrador</span></div>` : ''}
       </div>
       <div class="systemBadges">
@@ -339,18 +336,28 @@ function renderInicio() {
   $('#qbSell').addEventListener('click', () => navigateTo('vender'));
   $('#qbInv').addEventListener('click', () => navigateTo('inventario'));
   $('#qbSync').addEventListener('click', async () => {
-    if (!isOnlineConfigured()) { showToast('Configura el servidor online en Ajustes.', 'error'); navigateTo('ajustes'); return; }
-    let res;
-    if (isAdmin && isAdmin() && window.pushLocalProductsToCloud) {
-      res = await pushLocalProductsToCloud();
-      if (res.ok) showToast(`Catálogo publicado: ${res.count} producto(s).`);
-      else showToast('No se pudo publicar: ' + res.message, 'error');
-    } else if (window.openSafeCloudSyncSheet) {
-      await openSafeCloudSyncSheet();
-    } else if (window.syncCloudProductsToLocal) {
-      res = await syncCloudProductsToLocal();
-      if (res.ok) { showToast(`Catálogo actualizado: ${res.count} producto(s).`); render(); }
-      else showToast('No se pudo sincronizar: ' + res.message, 'error');
+    try {
+      if (!isOnlineConfigured()) { showToast('Configura el servidor online en Ajustes.', 'error'); navigateTo('ajustes'); return; }
+      let res;
+      if (isAdmin && isAdmin() && window.pushLocalProductsToCloud) {
+        const btn = $('#qbSync');
+        btn.disabled = true;
+        const oldText = btn.textContent;
+        btn.textContent = 'Publicando…';
+        res = await pushLocalProductsToCloud({ showProgress: true });
+        btn.disabled = false;
+        btn.textContent = oldText;
+        if (res.ok) showToast(`Catálogo publicado: ${res.count} producto(s).`);
+        else showToast('No se pudo publicar: ' + res.message, 'error');
+      } else if (window.openSafeCloudSyncSheet) {
+        await openSafeCloudSyncSheet();
+      } else if (window.syncCloudProductsToLocal) {
+        res = await syncCloudProductsToLocal({ full: true });
+        if (res.ok) { showToast(`Catálogo actualizado: ${res.count} producto(s).`); render(); }
+        else showToast('No se pudo sincronizar: ' + res.message, 'error');
+      }
+    } catch (err) {
+      showToast('Error de sincronización: ' + (err.message || err), 'error');
     }
   });
   $('#goInventory').addEventListener('click', () => navigateTo('inventario'));
@@ -358,7 +365,6 @@ function renderInicio() {
   $('#qbQuote').addEventListener('click', () => navigateTo('cotizar'));
   $('#qbClients').addEventListener('click', () => navigateTo('clientes'));
   $('#qbUsers').addEventListener('click', () => navigateTo('usuarios'));
-  $('#qbCommissions').addEventListener('click', () => navigateTo('comisiones'));
   const qbOrder = $('#qbOrder');
   if (qbOrder) qbOrder.addEventListener('click', () => navigateTo('pedido'));
 }
@@ -381,7 +387,6 @@ function renderMas() {
       <div class="moreItem" id="moreSmartPackages"><span class="ic svgic">${icon('reports')}</span><span>Intercambio inteligente</span><span class="tagSoon">V4</span><span class="arrow">›</span></div>
       ${isReseller && isReseller() ? `<div class="moreItem" id="moreOrder"><span class="ic svgic">${icon('box')}</span><span>Pedido online al administrador</span><span class="tagSoon">Nuevo</span><span class="arrow">›</span></div>` : ''}
       <div class="moreItem" id="moreUsers"><span class="ic svgic">${icon('users')}</span><span>Usuarios, roles y permisos</span><span class="tagSoon">Activo</span><span class="arrow">›</span></div>
-      <div class="moreItem" id="moreCommissions"><span class="ic svgic">${icon('commission')}</span><span>Comisiones revendedor</span><span class="tagSoon">Base</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreReports"><span class="ic svgic">${icon('reports')}</span><span>Reportes comerciales</span><span class="tagSoon">Base</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreResumen"><span class="ic svgic">${icon('home')}</span><span>Resumen e historial</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreSettings"><span class="ic svgic">${icon('settings')}</span><span>Ajustes y respaldo</span><span class="arrow">›</span></div>
@@ -397,7 +402,6 @@ function renderMas() {
   const moreOrder = $('#moreOrder');
   if (moreOrder) moreOrder.addEventListener('click', () => navigateTo('pedido'));
   $('#moreUsers').addEventListener('click', () => navigateTo('usuarios'));
-  $('#moreCommissions').addEventListener('click', () => navigateTo('comisiones'));
   $('#moreReports').addEventListener('click', () => navigateTo('reportes-pro'));
   $('#moreResumen').addEventListener('click', () => navigateTo('resumen'));
   $('#moreSettings').addEventListener('click', () => navigateTo('ajustes'));

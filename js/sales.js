@@ -198,15 +198,12 @@ function openCheckoutSheet() {
     return { product: p, qty, price: p ? priceForCurrentMode(p) : 0 };
   }).filter(i => i.product);
 
-  if (sellerMode()) {
-    const invalid = items.find(i => i.price < sellerBaseCost(i.product));
-    if (invalid) {
-      showToast(`El precio de ${invalid.product.name} no puede ser menor a tu costo real.`, 'error');
-      return;
-    }
-  }
-
+  // La venta no se bloquea por margen negativo. Si un precio queda bajo el costo,
+  // se registra igual y la utilidad saldrá negativa en Resumen/Inventario.
   const total = items.reduce((s, i) => s + (i.price * i.qty), 0);
+  const sellerProfit = sellerMode()
+    ? items.reduce((s, i) => s + ((i.price - sellerBaseCost(i.product)) * i.qty), 0)
+    : 0;
   const html = `
     <h2>Confirmar venta <span class="x" id="closeSheet">✕</span></h2>
 
