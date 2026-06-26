@@ -338,26 +338,49 @@ function renderInicio() {
   $('#qbSync').addEventListener('click', async () => {
     try {
       if (!isOnlineConfigured()) { showToast('Configura el servidor online en Ajustes.', 'error'); navigateTo('ajustes'); return; }
-      let res;
-      if (isAdmin && isAdmin() && window.pushLocalProductsToCloud) {
-        const btn = $('#qbSync');
-        btn.disabled = true;
-        const oldText = btn.textContent;
-        btn.textContent = 'Publicando…';
-        res = await pushLocalProductsToCloud({ showProgress: true });
+      const btn = $('#qbSync');
+      btn.disabled = true;
+      const oldText = btn.textContent;
+      // CORRECCIÓN V6: antes el administrador solo "publicaba" (push) y nunca
+      // "recibía" (pull) cambios hechos desde otro celular o Supabase. Ahora
+      // runFullAdminSync hace ambas cosas en orden, además de enviar lo
+      // pendiente en la cola (ventas, pedidos, mensajes).
+      if (isAdmin && isAdmin() && window.runFullAdminSync) {
+        btn.textContent = 'Sincronizando…';
+        const res = await runFullAdminSync();
         btn.disabled = false;
         btn.textContent = oldText;
-        if (res.ok) showToast(`Catálogo publicado: ${res.count} producto(s).`);
-        else showToast('No se pudo publicar: ' + res.message, 'error');
+        const okPull = res.pulled && res.pulled.ok;
+        const okPush = res.pushed && res.pushed.ok;
+        if (okPull || okPush) {
+          const parts = [];
+          if (okPull) parts.push(`recibidos: ${res.pulled.count || 0}`);
+          if (okPush) parts.push(`publicados: ${res.pushed.count || 0}`);
+          if (res.flush && res.flush.failed) parts.push(`⚠️ ${res.flush.failed} con error`);
+          showToast(`Catálogo sincronizado (${parts.join(', ')}).`);
+          render();
+        } else {
+          const msg = (res.pulled && res.pulled.message) || (res.pushed && res.pushed.message) || 'No se pudo sincronizar.';
+          showToast('No se pudo sincronizar: ' + msg, 'error');
+        }
       } else if (window.openSafeCloudSyncSheet) {
+        btn.disabled = false;
+        btn.textContent = oldText;
         await openSafeCloudSyncSheet();
       } else if (window.syncCloudProductsToLocal) {
-        res = await syncCloudProductsToLocal({ full: true });
+        const res = await syncCloudProductsToLocal({ full: true });
+        btn.disabled = false;
+        btn.textContent = oldText;
         if (res.ok) { showToast(`Catálogo actualizado: ${res.count} producto(s).`); render(); }
         else showToast('No se pudo sincronizar: ' + res.message, 'error');
+      } else {
+        btn.disabled = false;
+        btn.textContent = oldText;
       }
     } catch (err) {
       showToast('Error de sincronización: ' + (err.message || err), 'error');
+      const btn = $('#qbSync');
+      if (btn) btn.disabled = false;
     }
   });
   $('#goInventory').addEventListener('click', () => navigateTo('inventario'));

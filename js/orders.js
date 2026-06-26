@@ -146,7 +146,12 @@ function buildOrderPayload() {
 async function submitOrderRequest() {
   if (orderCount() === 0) { showToast('Selecciona productos para el pedido.', 'error'); return; }
   const order = buildOrderPayload();
-  await DB.put('purchaseOrders', order, { silent: true }).catch(() => {});
+  // CORRECCIÓN V6: antes se guardaba con {silent:true} y el envío a Supabase
+  // dependía solo de la llamada manual de abajo. Si el representante estaba
+  // sin conexión en ese momento, el pedido jamás se reintentaba después.
+  // Ahora se guarda sin "silent" para que, además del intento inmediato,
+  // quede en la cola duradera de sincronización.
+  await DB.put('purchaseOrders', order).catch(() => {});
   let onlineResult = null;
   if (isOnlineConfigured() && window.insertCloudPurchaseOrder) {
     onlineResult = await insertCloudPurchaseOrder(order).catch(err => ({ ok: false, message: err.message }));

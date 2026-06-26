@@ -30,7 +30,14 @@ function messageVisibleForCurrentUser(message) {
 
 async function saveLocalMessage(message) {
   const msg = normalizeMessage(message);
-  await DB.put('messages', msg, { silent: true }).catch(() => {});
+  // CORRECCIÓN V6: antes se guardaba con {silent:true}, lo que significa que si
+  // el celular estaba sin conexión en ese momento, el mensaje NUNCA se
+  // reintentaba después — se perdía para siempre del lado de Supabase, aunque
+  // localmente quedara guardado. saveLocalMessage solo se usa para mensajes
+  // NUEVOS creados en este dispositivo (no para mensajes que llegan de la
+  // nube), así que ahora se guarda sin "silent" para que entre a la cola
+  // duradera de sincronización (ver supabase-sync.js).
+  await DB.put('messages', msg).catch(() => {});
   AppState.messages = (await DB.getAll('messages').catch(() => []));
   return msg;
 }
@@ -47,10 +54,10 @@ async function sendAdminMessage(type, title, body, payload = {}) {
     status: 'unread',
     payload
   });
+  // El envío inmediato hacia Supabase ahora ocurre dentro de saveLocalMessage
+  // (vía DB.put no silencioso), con reintento automático si falla o si no hay
+  // conexión en este momento.
   await saveLocalMessage(msg);
-  if (window.insertCloudMessage && isOnlineConfigured()) {
-    await insertCloudMessage(msg).catch(err => console.warn('No se pudo enviar mensaje online:', err.message));
-  }
   await refreshInboxBadge({ silent: true }).catch(() => {});
   return msg;
 }

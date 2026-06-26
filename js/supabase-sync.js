@@ -372,6 +372,10 @@ async function syncCloudProductsToLocal(options = {}) {
 }
 
 async function openSafeCloudSyncSheet() {
+  // CORRECCIÓN V6: antes este botón solo traía catálogo nuevo. Ahora primero
+  // intenta enviar lo que el representante tenga pendiente (ventas, pedidos),
+  // así "Recibir novedades" también sirve como su sincronización completa.
+  await flushPendingSyncQueue().catch(() => {});
   const fetched = await fetchCloudProductRows();
   if (!fetched.ok) { showToast('No se pudo leer servidor: ' + fetched.message, 'error'); return; }
   const rows = fetched.rows || [];
@@ -494,7 +498,11 @@ function mapSaleToCloud(sale) {
 async function insertCloudSale(sale) {
   const sb = getSupabaseClient();
   if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
-  const { error } = await sb.from('sales').insert(mapSaleToCloud(sale));
+  // CORRECCIÓN V6: antes usaba insert(), que fallaba con error de llave duplicada
+  // si la venta se reintentaba (por ejemplo tras recuperar conexión). Ese error
+  // detenía TODA la cola de sincronización (ver flushPendingSyncQueue). upsert
+  // hace que reintentar la misma venta sea seguro.
+  const { error } = await sb.from('sales').upsert(mapSaleToCloud(sale), { onConflict: 'id' });
   if (error) return { ok: false, message: error.message };
   return { ok: true };
 }
@@ -517,7 +525,8 @@ function mapPurchaseOrderToCloud(order) {
 async function insertCloudPurchaseOrder(order) {
   const sb = getSupabaseClient();
   if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
-  const { error } = await sb.from('purchase_orders').insert(mapPurchaseOrderToCloud(order));
+  // CORRECCIÓN V6: upsert en lugar de insert, por la misma razón que insertCloudSale.
+  const { error } = await sb.from('purchase_orders').upsert(mapPurchaseOrderToCloud(order), { onConflict: 'id' });
   if (error) return { ok: false, message: error.message };
   return { ok: true };
 }
@@ -644,11 +653,21 @@ async function pushQueuedItem(item) {
 
 async function flushPendingSyncQueue(limit = 25) {
   if (!isOnlineConfigured() || !window.DB) return { ok: false, message: 'Servidor no configurado.' };
+  const MAX_ATTEMPTS = 8;
   const items = (await DB.getAll('syncQueue').catch(() => []))
     .filter(i => i.status === 'pending')
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
     .slice(0, limit);
   let sent = 0;
+  let failed = 0;
+  // CORRECCIÓN V6 (bug crítico): antes, si UN solo elemento de la cola fallaba
+  // (por ejemplo una venta duplicada), el "break" detenía el envío de TODOS los
+  // elementos siguientes en la cola — productos, ventas, pedidos y mensajes
+  // quedaban pendientes para siempre, incluso después de recuperar conexión.
+  // Esto explica por qué la mensajería y los pedidos "funcionaban al principio
+  // y luego dejaban de funcionar": bastaba un solo error para trabar todo lo
+  // que viniera después. Ahora se usa "continue": un elemento con error se
+  // reintenta más tarde, pero no bloquea a los demás.
   for (const item of items) {
     try {
       item.attempts = (item.attempts || 0) + 1;
@@ -658,14 +677,23 @@ async function flushPendingSyncQueue(limit = 25) {
       await DB.put('syncQueue', item, { silent: true });
       sent++;
     } catch (err) {
-      item.status = 'pending';
       item.lastError = err.message || 'Error desconocido';
       item.updatedAt = Date.now();
+      if ((item.attempts || 0) >= MAX_ATTEMPTS) {
+        // Tras varios intentos fallidos (ej.: falta ejecutar una migración SQL,
+        // o un registro con datos inválidos) se marca como "failed" para dejar
+        // de reintentarlo indefinidamente y no acumular ruido en la cola.
+        item.status = 'failed';
+        failed++;
+      } else {
+        item.status = 'pending';
+      }
       await DB.put('syncQueue', item, { silent: true }).catch(() => {});
-      break;
+      // Ya no se hace "break": se continúa con el resto de la cola.
+      continue;
     }
   }
-  return { ok: true, sent, pending: Math.max(0, items.length - sent) };
+  return { ok: true, sent, failed, pending: Math.max(0, items.length - sent - failed) };
 }
 
 let _backgroundSyncStarted = false;
@@ -720,6 +748,28 @@ async function cloudAfterDelete(storeName, id) {
 }
 
 
+async function runFullAdminSync() {
+  // CORRECCIÓN V6 (bug crítico): el botón "Actualizar" del administrador antes
+  // SOLO publicaba (push) lo que hubiera en el celular hacia Supabase, pero
+  // nunca traía (pull) lo que otro dispositivo o el propio Supabase tuvieran
+  // de nuevo. Por eso, dos celulares con la cuenta de administrador divergían
+  // para siempre: cada uno solo subía su propia versión, ninguno bajaba la
+  // del otro. Ahora el botón hace las tres cosas en orden:
+  //   1) Envía lo que esté pendiente en la cola (ventas, pedidos, mensajes).
+  //   2) Trae del servidor los productos más nuevos (incluye cambios hechos
+  //      desde OTRO celular o directamente en Supabase).
+  //   3) Publica hacia el servidor los productos locales (por si este celular
+  //      tiene productos nuevos que el servidor todavía no tiene).
+  if (!isOnlineConfigured()) return { ok: false, message: 'Servidor online no configurado.' };
+  const flush = await flushPendingSyncQueue().catch(err => ({ ok: false, message: err.message }));
+  const pulled = await syncCloudProductsToLocal().catch(err => ({ ok: false, message: err.message }));
+  if (pulled && pulled.ok) {
+    await loadAllState().catch(() => {});
+  }
+  const pushed = await pushLocalProductsToCloud().catch(err => ({ ok: false, message: err.message }));
+  return { ok: true, flush, pulled, pushed };
+}
+
 async function testOnlineConnection() {
   try {
     const sb = getSupabaseClient();
@@ -742,6 +792,7 @@ window.onlineSignIn = onlineSignIn;
 window.onlineSignOut = onlineSignOut;
 window.getOnlineSessionProfile = getOnlineSessionProfile;
 window.syncCloudProductsToLocal = syncCloudProductsToLocal;
+window.runFullAdminSync = runFullAdminSync;
 window.openSafeCloudSyncSheet = openSafeCloudSyncSheet;
 window.createPreSyncLocalSnapshot = createPreSyncLocalSnapshot;
 window.pushLocalProductsToCloud = pushLocalProductsToCloud;
