@@ -214,6 +214,71 @@ async function getOnlineSessionProfile() {
   return { user, profile };
 }
 
+// CORRECCIÓN V6.2 — UNIFICACIÓN DE AUTENTICACIÓN.
+// Crea (o vincula, si ya existe) una cuenta real de Supabase Auth para un
+// usuario que hasta ahora solo existía en el almacenamiento local de un
+// celular. Como Supabase Auth exige un correo, se usa un correo "sintético"
+// derivado del nombre de usuario (ver toSyntheticEmail en auth.js) — no
+// necesita recibir correos reales, solo sirve como identificador único.
+//
+// IMPORTANTE — requisito de configuración en el panel de Supabase:
+// si el proyecto tiene activada la confirmación de correo
+// (Authentication → Providers → Email → "Confirm email"), signUp() crea el
+// usuario pero NO entrega una sesión activa hasta confirmar ese correo —
+// algo que nunca va a pasar porque el correo es sintético. Si ves que las
+// cuentas se crean pero nunca quedan "vinculadas" (cloudLinked sigue en
+// false), lo más probable es que necesites desactivar esa opción para este
+// proyecto, ya que aquí no se gestiona con correos reales.
+async function createOrLinkCloudAccount(username, plainPassword, profile = {}) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const email = toSyntheticEmail(username);
+
+  // Por si la cuenta ya existe en Supabase (por ejemplo, un intento anterior
+  // que creó el usuario pero se cortó antes de guardar el perfil).
+  const trySignIn = await sb.auth.signInWithPassword({ email, password: plainPassword }).catch(() => null);
+  if (trySignIn && trySignIn.data && trySignIn.data.user) {
+    await upsertCloudProfileForUser(trySignIn.data.user.id, username, profile);
+    return { ok: true, user: trySignIn.data.user, session: trySignIn.data.session, mode: 'linked_existing' };
+  }
+
+  const { data, error } = await sb.auth.signUp({ email, password: plainPassword });
+  if (error) return { ok: false, message: error.message };
+  if (!data || !data.user) return { ok: false, message: 'No se pudo crear la cuenta online.' };
+
+  if (!data.session) {
+    // Cuenta creada pero sin sesión activa todavía (ver nota de confirmación
+    // de correo más arriba). Se guarda igual el perfil para que quede
+    // registrada; en el próximo intento, el signInWithPassword de arriba
+    // debería completarla si la confirmación ya no es necesaria.
+    await upsertCloudProfileForUser(data.user.id, username, profile).catch(() => {});
+    return { ok: true, user: data.user, session: null, mode: 'created_unconfirmed', needsEmailConfirmation: true };
+  }
+
+  await upsertCloudProfileForUser(data.user.id, username, profile);
+  return { ok: true, user: data.user, session: data.session, mode: 'created' };
+}
+
+async function upsertCloudProfileForUser(userId, username, profile = {}) {
+  const sb = getSupabaseClient();
+  if (!sb || !userId) return { ok: false };
+  const row = {
+    id: userId,
+    username: String(username || '').toLowerCase(),
+    full_name: profile.fullName || '',
+    role: profile.roleName || 'Revendedor',
+    role_id: profile.roleId || '',
+    status: 'active',
+    phone: profile.phone || '',
+    city: profile.city || '',
+    document_id: profile.documentId || '',
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await sb.from('profiles').upsert(row, { onConflict: 'id' });
+  if (error) { console.warn('No se pudo guardar perfil online:', error.message); return { ok: false, message: error.message }; }
+  return { ok: true };
+}
+
 async function fetchCurrentProfile(userId) {
   const sb = getSupabaseClient();
   if (!sb || !userId) return null;
@@ -229,13 +294,19 @@ function productIdentityKey(product) {
   return normalizeSearch(`${product && product.name ? product.name : ''}|${product && product.category ? product.category : 'General'}`);
 }
 
-function preserveRepresentativeLocalFields(existing, cloud) {
+function preserveRepresentativeLocalFields(existing, cloud, repStockMap) {
   const local = existing || {};
   const preservedPhoto = cloud.photo || local.photo || null;
+  // V6.3: si ya hay un valor de stock propio guardado en la nube para este
+  // representante y este producto, ese pasa a ser el valor correcto (es el
+  // mismo en todos sus celulares). Si todavía no existe en la nube (cuenta
+  // no vinculada, o producto nunca antes sincronizado), se conserva el
+  // comportamiento anterior: el stock local de este dispositivo.
+  const cloudStock = repStockMap && repStockMap.has(cloud.id) ? Number(repStockMap.get(cloud.id)) : null;
+  const stock = cloudStock !== null ? cloudStock : (existing ? (Number(local.stock) || 0) : 0);
   return normalizeLegacyProduct(Object.assign({}, cloud, {
     photo: preservedPhoto,
-    // INVENTARIO PROPIO DEL REPRESENTANTE: nunca se pisa con el servidor.
-    stock: existing ? (Number(local.stock) || 0) : 0,
+    stock,
     adminStock: Number(cloud.stock || 0),
     resellerAdditionalCost: existing ? (Number(local.resellerAdditionalCost) || 0) : 0,
     resellerLocalUnitPrice: existing ? (Number(local.resellerLocalUnitPrice) || 0) : (publicPrice(cloud) || 0),
@@ -285,7 +356,7 @@ async function createPreSyncLocalSnapshot(reason = 'cloud_sync') {
   }
 }
 
-function buildSafeProductMerge(cloudRows) {
+function buildSafeProductMerge(cloudRows, repStockMap) {
   const cloudProducts = (cloudRows || []).map(mapProductFromCloud);
   const existingProducts = (AppState.products || []).filter(p => p && p.status !== 'archived');
   const byId = new Map(existingProducts.map(p => [p.id, p]));
@@ -299,7 +370,7 @@ function buildSafeProductMerge(cloudRows) {
       usedLocalIds.add(existing.id);
       if (existing.id !== cloud.id) obsoleteLocalIds.add(existing.id);
     }
-    if (window.isReseller && isReseller()) return preserveRepresentativeLocalFields(existing, cloud);
+    if (window.isReseller && isReseller()) return preserveRepresentativeLocalFields(existing, cloud, repStockMap);
     // En administrador también se preserva stock local si el producto ya existía y el servidor no trae valor útil.
     return normalizeLegacyProduct(Object.assign({}, cloud, {
       photo: cloud.photo || (existing && existing.photo) || null,
@@ -353,14 +424,36 @@ async function syncCloudProductsToLocal(options = {}) {
 
   await createPreSyncLocalSnapshot('before_cloud_products_sync');
   const beforeCount = (AppState.products || []).length;
-  const products = buildSafeProductMerge(activeRows);
+  // V6.3: si quien sincroniza es un representante con cuenta vinculada a
+  // Supabase, se trae primero su propio stock guardado en la nube, para que
+  // el merge de abajo lo use en vez del valor local de este celular.
+  let repStockMap = null;
+  if (window.isReseller && isReseller()) {
+    repStockMap = await fetchRepresentativeStockMap().catch(() => null);
+  }
+  const products = buildSafeProductMerge(activeRows, repStockMap);
   await DB.bulkPut('products', products, { silent: true });
   if (Array.isArray(products._obsoleteLocalIds)) {
     for (const oldId of products._obsoleteLocalIds) await DB.delete('products', oldId, { silent: true }).catch(() => {});
   }
   AppState.products = products;
   _lastCloudSync = Date.now();
-  await setSyncMeta('products_last_sync', new Date().toISOString());
+  // CORRECCIÓN V6 (bug crítico): antes se guardaba new Date().toISOString(),
+  // es decir, la hora del RELOJ DEL CELULAR que sincroniza. Si ese reloj
+  // está adelantado aunque sea por segundos (común en celulares Android sin
+  // hora exacta), el punto de corte queda por delante de cualquier producto
+  // futuro, y la sincronización incremental deja de traer novedades PARA
+  // SIEMPRE, sin ningún error visible — encaja exactamente con "el POST
+  // devuelve 201 pero el otro dispositivo nunca lo descarga". Ahora el punto
+  // de corte se calcula a partir del updated_at más reciente que realmente
+  // vino del servidor (dato confiable, no depende del reloj de este celular).
+  const maxUpdatedAt = rows.reduce((max, r) => {
+    const t = r && r.updated_at ? new Date(r.updated_at).getTime() : 0;
+    return t > max ? t : max;
+  }, 0);
+  if (maxUpdatedAt > 0) {
+    await setSyncMeta('products_last_sync', new Date(maxUpdatedAt).toISOString());
+  }
   return {
     ok: true,
     count: rows.length,
@@ -417,7 +510,15 @@ async function openSafeCloudSyncSheet() {
       const btn = $('#applySafeSync', overlay);
       btn.disabled = true;
       btn.textContent = 'Actualizando…';
-      const res = await syncCloudProductsToLocal();
+      // CORRECCIÓN V6: se fuerza descarga completa (full:true) en lugar de
+      // incremental. Antes, la vista previa de arriba mostraba TODOS los
+      // productos del servidor (fetchCloudProductRows sin filtro), pero al
+      // aplicar el cambio se usaba la versión incremental (con cursor) — si
+      // el cursor de este celular estaba desincronizado, la vista previa
+      // podía mostrar productos nuevos que luego, al aplicar, no se
+      // descargaban realmente. Forzar full:true aquí garantiza que lo que
+      // se ve en la vista previa es exactamente lo que se aplica.
+      const res = await syncCloudProductsToLocal({ full: true });
       if (res.ok) {
         if (window.sendAdminMessage && isReseller && isReseller()) {
           await sendAdminMessage('catalog_update', 'Representante recibió novedades', `${AppState.session.fullName || AppState.session.username} actualizó catálogo desde servidor.`, { count: res.count }).catch(() => {});
@@ -478,6 +579,89 @@ async function deleteCloudProduct(productId) {
   if (!sb || !AppState.session || AppState.session.roleName !== 'Administrador') return;
   const { error } = await sb.from('products').update({ status: 'archived', updated_at: new Date().toISOString() }).eq('id', productId);
   if (error) console.warn('No se pudo archivar producto online:', error.message);
+}
+
+// ============================================================================
+// STOCK PROPIO DEL REPRESENTANTE — SINCRONIZADO EN LA NUBE (V6.3 / V6.4)
+// ----------------------------------------------------------------------------
+// Cada representante sigue teniendo SU PROPIO stock por producto (no es el
+// inventario centralizado del administrador, eso sigue siendo
+// product.stock / adminStock). Ese stock propio vive en Supabase, en la
+// tabla "representative_stock", ligado al UUID real de la cuenta del
+// representante. Así, si esa misma persona entra desde un segundo celular,
+// ve el mismo número.
+//
+// CORRECCIÓN V6.4 (antes el celular mandaba "mi stock final es X"; ahora
+// manda "aplica este ajuste de Y unidades", positivo o negativo):
+// si dos celulares del mismo representante mandaban un valor absoluto casi
+// al mismo tiempo, el que llegaba último pisaba completamente al anterior —
+// se podía perder el efecto de una venta hecha en el otro celular. Ahora el
+// ajuste se aplica de forma ATÓMICA dentro de Supabase (función RPC
+// adjust_representative_stock, ver SUPABASE_MIGRACION_V6_4_STOCK_ATOMICO_RLS.sql),
+// que suma/resta sobre el valor más reciente sin pisar nada. Además, cada
+// ajuste tiene un identificador propio (movementId) que se reutiliza en
+// cada reintento, así un reintento por falta de conexión nunca aplica el
+// mismo cambio dos veces.
+//
+// Requiere que el representante ya tenga cuenta vinculada en Supabase
+// (AppState.session.onlineUserId) — ver la unificación de autenticación V6.2.
+// Si todavía no se vinculó (por ejemplo, está usando la app sin conexión por
+// primera vez), su stock sigue funcionando 100% local como antes, sin error,
+// hasta que la cuenta quede vinculada.
+// ============================================================================
+
+function generateMovementId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  // Respaldo simple por si el navegador no soporta crypto.randomUUID (poco
+  // probable en un celular moderno, pero mejor no romper el flujo por eso).
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Aplica el ajuste de forma atómica en Supabase llamando a la función RPC.
+// delta puede ser negativo (venta) o positivo (recepción de mercadería).
+async function adjustRepresentativeStockRemote(productId, delta, movementId) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  if (!AppState.session || !AppState.session.onlineUserId) {
+    return { ok: false, message: 'Esta cuenta todavía no está vinculada a Supabase.' };
+  }
+  const { data, error } = await sb.rpc('adjust_representative_stock', {
+    p_movement_id: movementId,
+    p_product_id: productId,
+    p_delta: Math.trunc(Number(delta) || 0)
+  });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, stock: data };
+}
+
+// Pone en la cola duradera el ajuste de stock propio (se reintenta solo si
+// no hay conexión justo en este momento, siempre con el mismo movementId)
+// y, de paso, intenta enviarlo ya.
+async function queueRepresentativeStockDelta(productId, delta) {
+  if (!window.isReseller || !isReseller()) return;
+  if (!AppState.session || !AppState.session.onlineUserId) return;
+  if (!isOnlineConfigured()) return;
+  const cleanDelta = Math.trunc(Number(delta) || 0);
+  if (!cleanDelta) return; // nada que ajustar
+  const movementId = generateMovementId();
+  if (window.queueSync) await queueSync('representativeStockDelta', productId, 'put', { productId, delta: cleanDelta, movementId }).catch(() => {});
+  if (window.flushPendingSyncQueue) flushPendingSyncQueue(5).catch(() => {});
+}
+
+// Trae, para el representante con sesión actual, su propio stock de todos
+// los productos ya guardado en la nube. Devuelve un Map productId -> stock.
+async function fetchRepresentativeStockMap() {
+  const sb = getSupabaseClient();
+  if (!sb || !AppState.session || !AppState.session.onlineUserId) return null;
+  const { data, error } = await sb.from('representative_stock').select('product_id, stock').eq('representative_user_id', AppState.session.onlineUserId);
+  if (error) { console.warn('No se pudo leer stock propio en la nube:', error.message); return null; }
+  const map = new Map();
+  (data || []).forEach(row => map.set(row.product_id, Number(row.stock) || 0));
+  return map;
 }
 
 function mapSaleToCloud(sale) {
@@ -645,6 +829,11 @@ async function pushQueuedItem(item) {
     return { ok: true };
   }
   if (item.operation === 'put') {
+    if (item.storeName === 'representativeStockDelta') {
+      const res = await adjustRepresentativeStockRemote(item.payload.productId, item.payload.delta, item.payload.movementId);
+      if (!res.ok) throw new Error(res.message || 'No se pudo ajustar el stock del representante.');
+      return { ok: true };
+    }
     await cloudAfterPut(item.storeName, item.payload);
     return { ok: true };
   }
@@ -722,8 +911,22 @@ function startBackgroundSync() {
 }
 
 async function syncAfterLogin() {
-  if (isOnlineConfigured()) startBackgroundSync();
-  return { ok: true, mode: isOnlineConfigured() ? 'online_primary_cache_offline' : 'local' };
+  if (!isOnlineConfigured()) return { ok: true, mode: 'local' };
+  // CORRECCIÓN V6.2 — SUPABASE COMO FUENTE PRINCIPAL: en vez de solo
+  // programar la sincronización en segundo plano (que esperaba 2.5s y
+  // luego usaba descarga incremental), ahora se hace una descarga COMPLETA
+  // inmediatamente al iniciar sesión, antes de mostrar el panel principal.
+  // Así la información que ve la persona justo después de entrar viene
+  // siempre de Supabase, no de lo que haya quedado guardado en este
+  // celular de una sesión anterior.
+  await flushPendingSyncQueue().catch(() => {});
+  const pulled = await syncCloudProductsToLocal({ full: true }).catch(err => ({ ok: false, message: err.message }));
+  if (pulled && pulled.ok) {
+    await loadAllState().catch(() => {});
+    if (window.render) render();
+  }
+  startBackgroundSync();
+  return { ok: true, mode: 'online_primary_cache_offline', pulled };
 }
 
 async function cloudAfterPut(storeName, record) {
@@ -762,7 +965,7 @@ async function runFullAdminSync() {
   //      tiene productos nuevos que el servidor todavía no tiene).
   if (!isOnlineConfigured()) return { ok: false, message: 'Servidor online no configurado.' };
   const flush = await flushPendingSyncQueue().catch(err => ({ ok: false, message: err.message }));
-  const pulled = await syncCloudProductsToLocal().catch(err => ({ ok: false, message: err.message }));
+  const pulled = await syncCloudProductsToLocal({ full: true }).catch(err => ({ ok: false, message: err.message }));
   if (pulled && pulled.ok) {
     await loadAllState().catch(() => {});
   }
@@ -812,3 +1015,8 @@ window.updateCloudProfileStatus = updateCloudProfileStatus;
 window.insertCloudPurchaseOrder = insertCloudPurchaseOrder;
 window.fetchCloudPurchaseOrders = fetchCloudPurchaseOrders;
 window.updateCloudPurchaseOrderStatus = updateCloudPurchaseOrderStatus;
+window.createOrLinkCloudAccount = createOrLinkCloudAccount;
+window.upsertCloudProfileForUser = upsertCloudProfileForUser;
+window.adjustRepresentativeStockRemote = adjustRepresentativeStockRemote;
+window.queueRepresentativeStockDelta = queueRepresentativeStockDelta;
+window.fetchRepresentativeStockMap = fetchRepresentativeStockMap;

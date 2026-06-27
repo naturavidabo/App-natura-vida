@@ -107,8 +107,8 @@ function renderMandatoryPasswordChange() {
           <div class="field"><label>Ciudad / Departamento</label><input type="text" id="cp_city" placeholder="Ej.: La Paz, Santa Cruz, Beni"></div>
           <div class="field"><label>C.I. / Documento</label><input type="text" id="cp_doc" placeholder="Opcional"></div>
           ${AppState.session.roleName === 'Administrador' ? `<div class="field"><label>Código de activación administrador</label><input type="password" id="cp_activation" inputmode="numeric" placeholder="Solo administrador" required></div>` : `<div class="activationInfoBox">Registro de vendedor: no necesitas código. Solo completa tus datos para identificarte y recibir novedades/pedidos.</div>`}
-          <div class="field"><label>Nueva contraseña personal</label><input type="password" id="cp_pass1" minlength="4" required></div>
-          <div class="field"><label>Confirmar contraseña</label><input type="password" id="cp_pass2" minlength="4" required></div>
+          <div class="field"><label>Nueva contraseña personal</label><input type="password" id="cp_pass1" minlength="6" required></div>
+          <div class="field"><label>Confirmar contraseña</label><input type="password" id="cp_pass2" minlength="6" required></div>
           <button class="btn block" type="submit">Guardar y continuar</button>
         </form>
         <div class="loginHint secureHint">Después de guardar, ya no usarás el usuario inicial. Entrarás con tu celular y tu nueva contraseña.</div>
@@ -135,7 +135,19 @@ function renderMandatoryPasswordChange() {
     AppState.settings.contactPhone = phone;
     AppState.settings.contactCity = $('#cp_city').value.trim();
     await saveSettings();
-    showToast('Acceso actualizado correctamente.');
+    // V6.2: informar si la cuenta quedó vinculada a Supabase o no, sin
+    // bloquear el flujo (el acceso local ya quedó listo en cualquier caso).
+    if (result.cloud && result.cloud.attempted) {
+      if (result.cloud.ok && result.cloud.needsEmailConfirmation) {
+        showToast('Acceso guardado. La cuenta en la nube necesita que se desactive "Confirmar correo" en Supabase para completarse.', 'error');
+      } else if (result.cloud.ok) {
+        showToast('Acceso actualizado y vinculado a Supabase correctamente.');
+      } else {
+        showToast('Acceso local guardado. No se pudo vincular con Supabase ahora (se reintentará en el próximo ingreso): ' + (result.cloud.message || ''), 'error');
+      }
+    } else {
+      showToast('Acceso actualizado correctamente.');
+    }
     renderTopHeader();
     renderBottomNav();
     AppState.currentTab = 'inicio';
@@ -526,7 +538,7 @@ async function renderUsersFoundation() {
   $('#mainArea').innerHTML = `
     <section class="dashboardPanel">
       <div class="panelHeader"><div><span class="eyebrow">Control de acceso</span><h2>Usuarios activos</h2></div><button class="btn sm outline" id="refreshUsersBtn">Actualizar</button></div>
-      <div class="banner">Aquí puedes revisar usuarios locales y, cuando el servidor esté configurado, perfiles online. Si alguien no corresponde, márcalo como inactivo/bloqueado desde Supabase o desde este panel si está disponible.</div>
+      <div class="banner">"Perfiles online Supabase" es ahora la lista real de representantes y administradores de todo el negocio (se llena cuando cada persona activa su celular). "Usuarios locales" solo muestra las cuentas guardadas en este celular en particular, útiles para entrar sin conexión.</div>
       <div class="miniStats">
         <div><span>Roles base</span><strong>${roles.length}</strong></div>
         <div><span>Usuarios locales</span><strong>${users.length}</strong></div>
@@ -534,10 +546,10 @@ async function renderUsersFoundation() {
       </div>
     </section>
 
-    <div class="sectiontitle">Usuarios locales iniciales</div>
+    <div class="sectiontitle">Usuarios locales (este celular)</div>
     ${users.map(u => `<div class="histitem userRow">
       <div class="l"><div class="pname">${escapeHtml(u.fullName || u.username)}</div><div class="meta">${escapeHtml(u.username)} · ${escapeHtml(u.role || '')} · ${escapeHtml(u.status || 'active')}${u.phone ? ' · ' + escapeHtml(u.phone) : ''}</div></div>
-      <div class="r">${u.mustChangePassword ? '<span class="tinytag">Inicial</span>' : '<span class="tinytag">Personal</span>'}</div>
+      <div class="r">${u.mustChangePassword ? '<span class="tinytag">Inicial</span>' : (u.cloudLinked ? '<span class="tinytag">🔗 En la nube</span>' : '<span class="tinytag">Solo este celular</span>')}</div>
     </div>`).join('')}
 
     ${isAdmin() ? `

@@ -259,6 +259,11 @@ function openCheckoutSheet() {
         } else {
           it.product.stock = Math.max(0, (Number(it.product.stock) || 0) - it.qty);
           await DB.put('products', it.product, { silent: true });
+          // V6.4: se manda el AJUSTE (-qty), no el stock final ya calculado.
+          // Así, si este mismo representante vende casi al mismo tiempo desde
+          // otro celular, Supabase suma ambos descuentos correctamente en vez
+          // de que el último envío pise al anterior.
+          if (window.queueRepresentativeStockDelta) queueRepresentativeStockDelta(it.product.id, -it.qty).catch(() => {});
         }
         saleItems.push({
           productId: it.product.id,

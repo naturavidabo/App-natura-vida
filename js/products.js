@@ -609,6 +609,12 @@ function openResellerProductForm(id) {
       p.resellerLocalUpdatedAt = Date.now();
       p.updatedAt = Date.now();
       await DB.put('products', p, { silent: true });
+      // V6.4: se manda el AJUSTE (diferencia entre lo que había y lo nuevo),
+      // no el stock final ya calculado — igual que en las ventas, para que
+      // Supabase pueda combinar correctamente cambios hechos casi al mismo
+      // tiempo desde otro celular de este mismo representante.
+      const stockDelta = newStock - previousStock;
+      if (window.queueRepresentativeStockDelta) queueRepresentativeStockDelta(p.id, stockDelta).catch(() => {});
       if (previousStock !== newStock) {
         await DB.put('inventoryMovements', {
           id: uid('mov'), productId: p.id, productName: p.name,

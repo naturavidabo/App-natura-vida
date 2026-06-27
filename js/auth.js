@@ -31,12 +31,42 @@ function applyOnlineSession(user, profile) {
   };
 }
 
+function toSyntheticEmail(username) {
+  const clean = String(username || '').trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+  return `${clean || 'usuario'}@natura-vida-app.local`;
+}
+
 async function authenticateUser(username, password) {
   const cleanUser = String(username || '').trim().toLowerCase().replace(/\s+/g, '');
   const hash = await sha256Hex(password);
 
-  // 1) Prioridad: acceso local simple. Esto evita que una conexión Supabase
-  // bloquee el ingreso con admin / vendedor1 cuando el usuario online aún no existe.
+  // CORRECCIÓN V6.2 — UNIFICACIÓN DE AUTENTICACIÓN:
+  // Antes el acceso local (IndexedDB de este celular) tenía prioridad
+  // absoluta, y el intento de login online solo se hacía si NO existía un
+  // usuario local con ese nombre — y además se llamaba con el username tal
+  // cual como si fuera un correo, algo que Supabase Auth nunca acepta. En la
+  // práctica, el login online nunca llegaba a funcionar de verdad.
+  //
+  // Ahora, si hay servidor configurado, Supabase es la fuente PRINCIPAL de
+  // autenticación: se intenta primero. El acceso local solo se usa como
+  // respaldo para modo sin conexión, o para cuentas creadas antes de esta
+  // versión que todavía no se migraron a Supabase (ver migrateLegacyUserToCloud).
+  const onlineReady = window.isOnlineConfigured && isOnlineConfigured();
+
+  if (onlineReady && window.onlineSignIn) {
+    const email = toSyntheticEmail(cleanUser);
+    const online = await onlineSignIn(email, password).catch(err => ({ ok: false, message: err && err.message, networkError: true }));
+    if (online.ok) {
+      applyOnlineSession(online.user, online.profile);
+      await cacheLocalLoginFallback(cleanUser, hash, online.profile).catch(() => {});
+      await writeAudit('login:online', 'user', online.user.id, null, { username: cleanUser }).catch(() => {});
+      return { ok: true, user: online.user, online: true };
+    }
+    // Si Supabase respondió "credenciales inválidas" (no un problema de red),
+    // de todas formas se intenta el acceso local: cubre cuentas activadas
+    // antes de esta versión y que todavía no tienen cuenta en Supabase.
+  }
+
   const localRows = await DB.getByIndex('users', 'byUsername', cleanUser);
   const localUser = (localRows || []).find(u => u.status === 'active');
 
@@ -61,7 +91,16 @@ async function authenticateUser(username, password) {
 
   if (localUser) {
     if (hash !== localUser.passwordHash) return { ok: false, message: 'Contraseña incorrecta.' };
-    return startLocalSession(localUser);
+    const result = await startLocalSession(localUser);
+    // MIGRACIÓN AUTOMÁTICA (silenciosa, no bloquea el ingreso): si esta
+    // cuenta ya está personalizada (no es el acceso genérico inicial) y aún
+    // no tiene cuenta vinculada en Supabase, se intenta crear/vincular ahora
+    // en segundo plano, usando la contraseña que la persona acaba de
+    // escribir (es la única vez que la tenemos en texto plano).
+    if (onlineReady && !localUser.mustChangePassword && !localUser.cloudLinked) {
+      migrateLegacyUserToCloud(localUser, password).catch(() => {});
+    }
+    return result;
   }
 
   // Acceso inicial permanente y simple por dispositivo:
@@ -78,24 +117,70 @@ async function authenticateUser(username, password) {
     }
   }
 
-  // 2) Si no existe usuario local, recién intenta login online.
-  if (window.isOnlineConfigured && isOnlineConfigured()) {
-    const online = await onlineSignIn(cleanUser, password);
-    if (online.ok) {
-      applyOnlineSession(online.user, online.profile);
-      await writeAudit('login:online', 'user', online.user.id, null, { username: cleanUser }).catch(() => {});
-      return { ok: true, user: online.user, online: true };
-    }
-    return online;
-  }
-
   return { ok: false, message: 'Usuario no encontrado o inactivo.' };
+}
+
+// Guarda/actualiza una copia local mínima de la cuenta para que el ingreso
+// offline siga funcionando después de haber iniciado sesión online al menos
+// una vez en este celular.
+async function cacheLocalLoginFallback(username, passwordHash, profile) {
+  if (!window.DB || !profile) return;
+  const existingRows = await DB.getByIndex('users', 'byUsername', username).catch(() => []);
+  const existing = (existingRows || [])[0] || null;
+  const user = Object.assign({ id: existing ? existing.id : 'user_' + (profile.id || username) }, existing, {
+    username,
+    passwordHash,
+    fullName: profile.full_name || username,
+    role: profile.role || (existing && existing.role) || 'Revendedor',
+    roleId: profile.role_id || (existing && existing.roleId) || 'role_reseller',
+    status: profile.status === 'inactive' ? 'inactive' : 'active',
+    mustChangePassword: false,
+    cloudLinked: true,
+    cloudUserId: profile.id,
+    updatedAt: Date.now()
+  });
+  await DB.put('users', user, { silent: true }).catch(() => {});
+}
+
+// Crea o vincula la cuenta en Supabase para un usuario que hasta ahora solo
+// existía en el almacenamiento local de este celular.
+async function migrateLegacyUserToCloud(user, plainPassword) {
+  if (!window.createOrLinkCloudAccount) return;
+  const res = await createOrLinkCloudAccount(user.username, plainPassword, {
+    fullName: user.fullName,
+    roleName: user.role,
+    roleId: user.roleId,
+    phone: user.phone,
+    city: user.city,
+    documentId: user.documentId
+  }).catch(err => ({ ok: false, message: err && err.message }));
+  if (res && res.ok && res.user) {
+    user.cloudLinked = true;
+    user.cloudUserId = res.user.id;
+    user.updatedAt = Date.now();
+    await DB.put('users', user, { silent: true }).catch(() => {});
+  }
+  return res;
 }
 
 async function restoreSession() {
   try {
-    // Restaurar primero sesión local. Evita que una sesión online previa
-    // pise el modo local del dispositivo.
+    // CORRECCIÓN V6.2: antes se restauraba primero la sesión LOCAL (marcador
+    // en localStorage), y la sesión online de Supabase solo se consultaba si
+    // no había marcador local. Ahora que Supabase es la fuente principal, se
+    // invierte el orden: si hay servidor configurado y existe una sesión de
+    // Supabase válida (con perfil activo), esa es la que se usa siempre que
+    // sea posible — así el estado de "activo/inactivo" del administrador
+    // manda incluso si este celular tenía una sesión local guardada de antes.
+    if (window.isOnlineConfigured && isOnlineConfigured()) {
+      const online = await getOnlineSessionProfile().catch(() => null);
+      if (online && online.user && online.profile) {
+        applyOnlineSession(online.user, online.profile);
+        return true;
+      }
+    }
+
+    // Respaldo sin conexión (o servidor no configurado): sesión local guardada.
     const raw = localStorage.getItem('natura_vida_session');
     if (raw) {
       const saved = JSON.parse(raw);
@@ -117,15 +202,6 @@ async function restoreSession() {
           };
           return true;
         }
-      }
-    }
-
-    // Si no hay sesión local guardada, usar sesión online existente si corresponde.
-    if (window.isOnlineConfigured && isOnlineConfigured()) {
-      const online = await getOnlineSessionProfile();
-      if (online && online.user && online.profile) {
-        applyOnlineSession(online.user, online.profile);
-        return true;
       }
     }
 
@@ -171,6 +247,7 @@ function isReseller() {
 
 window.sha256Hex = sha256Hex;
 window.authenticateUser = authenticateUser;
+window.toSyntheticEmail = toSyntheticEmail;
 window.restoreSession = restoreSession;
 window.logoutSession = logoutSession;
 window.hasPermission = hasPermission;
@@ -181,8 +258,11 @@ window.updateLocalPassword = updateLocalPassword;
 
 
 async function updateLocalPassword(userId, newPassword, profileData = {}) {
-  if (!userId || !newPassword || newPassword.length < 4) {
-    return { ok: false, message: 'La contraseña debe tener al menos 4 caracteres.' };
+  if (!userId || !newPassword || newPassword.length < 6) {
+    // CORRECCIÓN V6.2: el mínimo sube de 4 a 6 caracteres porque Supabase
+    // Auth exige 6 como mínimo por defecto. Con 4, la cuenta local se podía
+    // crear pero la cuenta en la nube fallaba siempre al intentar vincularla.
+    return { ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
   }
   const user = await DB.get('users', userId);
   if (!user) return { ok: false, message: 'Usuario local no encontrado.' };
@@ -212,7 +292,48 @@ async function updateLocalPassword(userId, newPassword, profileData = {}) {
   AppState.session.username = user.username;
   AppState.session.fullName = user.fullName || AppState.session.fullName;
   AppState.session.mustChangePassword = false;
-  return { ok: true, user };
+
+  // CORRECCIÓN V6.2 — UNIFICACIÓN DE AUTENTICACIÓN: al activar su celular
+  // (poner su número y su contraseña personal), la persona ahora también
+  // queda registrada con una cuenta real en Supabase, no solo en este
+  // dispositivo. Esto es lo que permite que el mismo representante pueda
+  // entrar después desde un segundo celular, y que el administrador vea a
+  // todos los representantes reales en un solo lugar (panel "Usuarios").
+  // Si por algún motivo falla (sin conexión justo en ese momento, por
+  // ejemplo), la cuenta local igual queda lista y se reintentará vincular
+  // automáticamente en el próximo inicio de sesión exitoso.
+  let cloud = { ok: false, attempted: false };
+  if (window.isOnlineConfigured && isOnlineConfigured() && window.createOrLinkCloudAccount) {
+    cloud = await createOrLinkCloudAccount(user.username, newPassword, {
+      fullName: user.fullName,
+      roleName: user.role,
+      roleId: user.roleId,
+      phone: user.phone,
+      city: user.city,
+      documentId: user.documentId
+    }).catch(err => ({ ok: false, message: err && err.message }));
+    cloud.attempted = true;
+    if (cloud.ok && cloud.user) {
+      user.cloudLinked = true;
+      user.cloudUserId = cloud.user.id;
+      await DB.put('users', user, { silent: true });
+      if (cloud.session) {
+        // Ya hay una sesión real de Supabase activa: se adopta de inmediato
+        // en vez de seguir en modo local, ya que la persona está literalmente
+        // terminando de crear su cuenta en este instante.
+        applyOnlineSession(cloud.user, {
+          id: cloud.user.id,
+          username: user.username,
+          full_name: user.fullName,
+          role: user.role,
+          role_id: user.roleId,
+          status: 'active'
+        });
+      }
+    }
+  }
+
+  return { ok: true, user, cloud };
 }
 
 
