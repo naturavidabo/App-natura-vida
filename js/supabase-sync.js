@@ -191,9 +191,16 @@ async function onlineSignIn(email, password) {
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) return { ok: false, message: error.message || 'No se pudo iniciar sesión online.' };
   const profile = await fetchCurrentProfile(data.user.id);
-  if (!profile || profile.status !== 'active') {
+  // CORRECCIÓN V6.6: el modelo único de usuario usa ahora 'pendiente' /
+  // 'activo' / 'bloqueado' (antes era 'active'/'inactive'). Solo 'bloqueado'
+  // impide iniciar sesión; 'pendiente' SÍ puede entrar (queda con permisos
+  // restringidos, ver AppState.session.pendingApproval), tal como pide la
+  // orden de refactorización V6 ("mientras esté pendiente no puede vender ni
+  // sincronizar, pero igual puede entrar a ver su estado").
+  const status = String((profile && profile.status) || '').toLowerCase();
+  if (!profile || status === 'bloqueado' || status === 'inactive') {
     await sb.auth.signOut();
-    return { ok: false, message: 'Perfil no autorizado o inactivo.' };
+    return { ok: false, message: 'Esta cuenta está bloqueada. Contacta al administrador.' };
   }
   return { ok: true, user: data.user, profile };
 }
@@ -210,7 +217,8 @@ async function getOnlineSessionProfile() {
   const user = data && data.session && data.session.user;
   if (!user) return null;
   const profile = await fetchCurrentProfile(user.id);
-  if (!profile || profile.status !== 'active') return null;
+  const status = String((profile && profile.status) || '').toLowerCase();
+  if (!profile || status === 'bloqueado' || status === 'inactive') return null;
   return { user, profile };
 }
 
@@ -262,13 +270,21 @@ async function createOrLinkCloudAccount(username, plainPassword, profile = {}) {
 async function upsertCloudProfileForUser(userId, username, profile = {}) {
   const sb = getSupabaseClient();
   if (!sb || !userId) return { ok: false };
+  // CORRECCIÓN V6.6: status y role ya no quedan fijos en 'active'/'Revendedor'.
+  // Quien llama a esta función decide (los representantes que activan su
+  // celular bajo el flujo legacy siguen entrando como 'activo', para no
+  // cortarles el acceso que ya tenían; las cuentas NUEVAS creadas con el
+  // flujo de "Crear cuenta" entran como 'pendiente' hasta que el
+  // administrador las apruebe, según la orden de refactorización V6).
+  const roleCanonical = String(profile.roleCanonical || (profile.roleName === 'Administrador' ? 'administrador' : 'representante')).toLowerCase();
   const row = {
     id: userId,
     username: String(username || '').toLowerCase(),
+    email: profile.email || null,
     full_name: profile.fullName || '',
-    role: profile.roleName || 'Revendedor',
-    role_id: profile.roleId || '',
-    status: 'active',
+    role: roleCanonical,
+    role_id: profile.roleId || (roleCanonical === 'administrador' ? 'role_admin' : 'role_reseller'),
+    status: profile.statusCanonical || 'activo',
     phone: profile.phone || '',
     city: profile.city || '',
     document_id: profile.documentId || '',
@@ -276,8 +292,86 @@ async function upsertCloudProfileForUser(userId, username, profile = {}) {
   };
   const { error } = await sb.from('profiles').upsert(row, { onConflict: 'id' });
   if (error) { console.warn('No se pudo guardar perfil online:', error.message); return { ok: false, message: error.message }; }
+  return { ok: true, row };
+}
+
+// ============================================================================
+// MODELO ÚNICO DE USUARIO POR CORREO (Orden de Refactorización V6, fase 1)
+// ----------------------------------------------------------------------------
+// A diferencia de createOrLinkCloudAccount (V6.2, pensado para activar un
+// celular con número de teléfono y correo sintético), estas funciones son
+// para el flujo NUEVO: "Crear cuenta" con correo real, "Ya tengo cuenta" y
+// "Recuperar acceso". Supabase es la única fuente de verdad: no se crea
+// ningún registro local en paralelo.
+// ============================================================================
+
+async function signUpEmailAccount(email, password, fullName) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if (error) return { ok: false, message: error.message };
+  if (!data || !data.user) return { ok: false, message: 'No se pudo crear la cuenta.' };
+
+  // ¿Es la primera cuenta de todo el proyecto? Si nadie existe aún, esta
+  // persona se activa como administrador de una vez — si no, nadie podría
+  // entrar nunca a aprobar al resto.
+  const countRes = await sb.from('profiles').select('id', { count: 'exact', head: true }).catch(() => ({ count: null }));
+  const isFirstEverUser = !countRes || !countRes.count;
+  const roleCanonical = isFirstEverUser ? 'administrador' : 'representante';
+  const statusCanonical = isFirstEverUser ? 'activo' : 'pendiente';
+
+  const profileResult = await upsertCloudProfileForUser(data.user.id, email, {
+    fullName, email, roleCanonical, statusCanonical
+  });
+
+  return {
+    ok: true,
+    user: data.user,
+    session: data.session || null,
+    needsEmailConfirmation: !data.session,
+    profile: (profileResult && profileResult.row) || { id: data.user.id, email, full_name: fullName, role: roleCanonical, status: statusCanonical }
+  };
+}
+
+async function sendPasswordRecoveryEmail(email) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { error } = await sb.auth.resetPasswordForEmail(email);
+  if (error) return { ok: false, message: error.message };
   return { ok: true };
 }
+
+async function touchLastLogin(userId) {
+  const sb = getSupabaseClient();
+  if (!sb || !userId) return;
+  await sb.from('profiles').update({ last_login_at: new Date().toISOString() }).eq('id', userId).catch(() => {});
+}
+
+// Cambiar el estado de un usuario (aprobar / bloquear / desbloquear). Solo el
+// administrador puede hacerlo — ver sección "BLOQUEO DE USUARIOS" de la orden.
+async function setProfileStatus(userId, statusCanonical) {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  if (!AppState.session || AppState.session.roleCanonical !== 'administrador') {
+    return { ok: false, message: 'Solo un administrador puede cambiar el estado de un usuario.' };
+  }
+  const validStatuses = ['pendiente', 'activo', 'bloqueado'];
+  if (!validStatuses.includes(statusCanonical)) return { ok: false, message: 'Estado no válido.' };
+  const { error } = await sb.from('profiles').update({ status: statusCanonical, updated_at: new Date().toISOString() }).eq('id', userId);
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+// Lista completa de usuarios para el panel del administrador (sección
+// "BLOQUEO DE USUARIOS" / "APROBACIÓN DE NUEVOS USUARIOS").
+async function fetchAllProfilesForAdmin() {
+  const sb = getSupabaseClient();
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  const { data, error } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, profiles: data || [] };
+}
+
 
 async function fetchCurrentProfile(userId) {
   const sb = getSupabaseClient();
@@ -392,76 +486,98 @@ function buildSafeProductMerge(cloudRows, repStockMap) {
 async function fetchCloudProductRows(options = {}) {
   const sb = getSupabaseClient();
   if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
-  let query = sb.from('products').select('*').order('updated_at', { ascending: true });
-  if (options.since) query = query.gt('updated_at', options.since);
-  if (!options.includeArchived) query = query.neq('status', 'archived');
-  const { data, error } = await query;
-  if (error) return { ok: false, message: error.message };
-  return { ok: true, rows: data || [] };
+  // CORRECCIÓN V6.5 (bug crítico encontrado en auditoría): antes, si la
+  // consulta a Supabase fallaba por falta de conexión justo en ese momento
+  // (muy probable para un representante en la calle), esta función LANZABA
+  // una excepción en vez de devolver {ok:false}. Como quien la llama
+  // (openSafeCloudSyncSheet, el botón "Recibir novedades") no esperaba eso,
+  // el botón quedaba colgado en "Actualizando…" para siempre, sin ningún
+  // mensaje de error, y en la consola del navegador quedaba una promesa
+  // rechazada sin manejar. Ahora cualquier error de red también se atrapa
+  // aquí y se devuelve como {ok:false, message}, igual que un error normal
+  // de Supabase.
+  try {
+    let query = sb.from('products').select('*').order('updated_at', { ascending: true });
+    if (options.since) query = query.gt('updated_at', options.since);
+    if (!options.includeArchived) query = query.neq('status', 'archived');
+    const { data, error } = await query;
+    if (error) return { ok: false, message: error.message };
+    return { ok: true, rows: data || [] };
+  } catch (err) {
+    return { ok: false, message: (err && err.message) || 'Error de conexión con el servidor.' };
+  }
 }
 
 async function syncCloudProductsToLocal(options = {}) {
-  const last = options.full ? null : await getSyncMeta('products_last_sync');
-  const fetched = await fetchCloudProductRows({ since: last, includeArchived: true });
-  if (!fetched.ok) return fetched;
-  let rows = fetched.rows || [];
+  // CORRECCIÓN V6.5: toda la función queda protegida con try/catch. Aunque
+  // fetchCloudProductRows ya no lanza excepciones por error de red, esto es
+  // una protección adicional para que ningún otro fallo inesperado deje un
+  // botón "Actualizando…" colgado para siempre sin mensaje de error.
+  try {
+    const last = options.full ? null : await getSyncMeta('products_last_sync');
+    const fetched = await fetchCloudProductRows({ since: last, includeArchived: true });
+    if (!fetched.ok) return fetched;
+    let rows = fetched.rows || [];
 
-  // Primer uso o servidor recién configurado: si no hay cambios incrementales, intenta catálogo completo.
-  if (!last && rows.length === 0) {
-    const full = await fetchCloudProductRows({ includeArchived: true });
-    if (!full.ok) return full;
-    rows = full.rows || [];
-  }
+    // Primer uso o servidor recién configurado: si no hay cambios incrementales, intenta catálogo completo.
+    if (!last && rows.length === 0) {
+      const full = await fetchCloudProductRows({ includeArchived: true });
+      if (!full.ok) return full;
+      rows = full.rows || [];
+    }
 
-  if (rows.length === 0) {
-    return { ok: true, count: 0, localCount: (AppState.products || []).length, message: 'No hay novedades nuevas en el servidor.' };
-  }
+    if (rows.length === 0) {
+      return { ok: true, count: 0, localCount: (AppState.products || []).length, message: 'No hay novedades nuevas en el servidor.' };
+    }
 
-  const activeRows = rows.filter(r => (r.status || 'active') !== 'archived');
-  if (activeRows.length === 0 && (AppState.products || []).length === 0) {
-    return { ok: false, blocked: true, message: 'El servidor no tiene productos activos. No se modificó el inventario local.' };
-  }
+    const activeRows = rows.filter(r => (r.status || 'active') !== 'archived');
+    if (activeRows.length === 0 && (AppState.products || []).length === 0) {
+      return { ok: false, blocked: true, message: 'El servidor no tiene productos activos. No se modificó el inventario local.' };
+    }
 
-  await createPreSyncLocalSnapshot('before_cloud_products_sync');
-  const beforeCount = (AppState.products || []).length;
-  // V6.3: si quien sincroniza es un representante con cuenta vinculada a
-  // Supabase, se trae primero su propio stock guardado en la nube, para que
-  // el merge de abajo lo use en vez del valor local de este celular.
-  let repStockMap = null;
-  if (window.isReseller && isReseller()) {
-    repStockMap = await fetchRepresentativeStockMap().catch(() => null);
+    await createPreSyncLocalSnapshot('before_cloud_products_sync');
+    const beforeCount = (AppState.products || []).length;
+    // V6.3: si quien sincroniza es un representante con cuenta vinculada a
+    // Supabase, se trae primero su propio stock guardado en la nube, para que
+    // el merge de abajo lo use en vez del valor local de este celular.
+    let repStockMap = null;
+    if (window.isReseller && isReseller()) {
+      repStockMap = await fetchRepresentativeStockMap().catch(() => null);
+    }
+    const products = buildSafeProductMerge(activeRows, repStockMap);
+    await DB.bulkPut('products', products, { silent: true });
+    if (Array.isArray(products._obsoleteLocalIds)) {
+      for (const oldId of products._obsoleteLocalIds) await DB.delete('products', oldId, { silent: true }).catch(() => {});
+    }
+    AppState.products = products;
+    _lastCloudSync = Date.now();
+    // CORRECCIÓN V6 (bug crítico): antes se guardaba new Date().toISOString(),
+    // es decir, la hora del RELOJ DEL CELULAR que sincroniza. Si ese reloj
+    // está adelantado aunque sea por segundos (común en celulares Android sin
+    // hora exacta), el punto de corte queda por delante de cualquier producto
+    // futuro, y la sincronización incremental deja de traer novedades PARA
+    // SIEMPRE, sin ningún error visible — encaja exactamente con "el POST
+    // devuelve 201 pero el otro dispositivo nunca lo descarga". Ahora el punto
+    // de corte se calcula a partir del updated_at más reciente que realmente
+    // vino del servidor (dato confiable, no depende del reloj de este celular).
+    const maxUpdatedAt = rows.reduce((max, r) => {
+      const t = r && r.updated_at ? new Date(r.updated_at).getTime() : 0;
+      return t > max ? t : max;
+    }, 0);
+    if (maxUpdatedAt > 0) {
+      await setSyncMeta('products_last_sync', new Date(maxUpdatedAt).toISOString());
+    }
+    return {
+      ok: true,
+      count: rows.length,
+      localCount: products.length,
+      beforeCount,
+      preservedLocal: Math.max(0, products.length - rows.length),
+      message: 'Catálogo actualizado sin borrar inventario local.'
+    };
+  } catch (err) {
+    return { ok: false, message: (err && err.message) || 'Error inesperado al sincronizar el catálogo.' };
   }
-  const products = buildSafeProductMerge(activeRows, repStockMap);
-  await DB.bulkPut('products', products, { silent: true });
-  if (Array.isArray(products._obsoleteLocalIds)) {
-    for (const oldId of products._obsoleteLocalIds) await DB.delete('products', oldId, { silent: true }).catch(() => {});
-  }
-  AppState.products = products;
-  _lastCloudSync = Date.now();
-  // CORRECCIÓN V6 (bug crítico): antes se guardaba new Date().toISOString(),
-  // es decir, la hora del RELOJ DEL CELULAR que sincroniza. Si ese reloj
-  // está adelantado aunque sea por segundos (común en celulares Android sin
-  // hora exacta), el punto de corte queda por delante de cualquier producto
-  // futuro, y la sincronización incremental deja de traer novedades PARA
-  // SIEMPRE, sin ningún error visible — encaja exactamente con "el POST
-  // devuelve 201 pero el otro dispositivo nunca lo descarga". Ahora el punto
-  // de corte se calcula a partir del updated_at más reciente que realmente
-  // vino del servidor (dato confiable, no depende del reloj de este celular).
-  const maxUpdatedAt = rows.reduce((max, r) => {
-    const t = r && r.updated_at ? new Date(r.updated_at).getTime() : 0;
-    return t > max ? t : max;
-  }, 0);
-  if (maxUpdatedAt > 0) {
-    await setSyncMeta('products_last_sync', new Date(maxUpdatedAt).toISOString());
-  }
-  return {
-    ok: true,
-    count: rows.length,
-    localCount: products.length,
-    beforeCount,
-    preservedLocal: Math.max(0, products.length - rows.length),
-    message: 'Catálogo actualizado sin borrar inventario local.'
-  };
 }
 
 async function openSafeCloudSyncSheet() {
@@ -569,16 +685,19 @@ async function pushLocalProductsToCloud() {
 
 async function upsertCloudProduct(product) {
   const sb = getSupabaseClient();
-  if (!sb || !AppState.session || AppState.session.roleName !== 'Administrador') return;
+  if (!sb) return { ok: false, message: 'Servidor online no configurado.' };
+  if (!AppState.session || AppState.session.roleName !== 'Administrador') return { ok: true, skipped: true };
   const { error } = await sb.from('products').upsert(await mapProductToCloudAsync(product), { onConflict: 'id' });
-  if (error) console.warn('No se pudo subir producto:', error.message);
+  if (error) { console.warn('No se pudo subir producto:', error.message); return { ok: false, message: error.message }; }
+  return { ok: true };
 }
 
 async function deleteCloudProduct(productId) {
   const sb = getSupabaseClient();
-  if (!sb || !AppState.session || AppState.session.roleName !== 'Administrador') return;
+  if (!sb || !AppState.session || AppState.session.roleName !== 'Administrador') return { ok: true, skipped: true };
   const { error } = await sb.from('products').update({ status: 'archived', updated_at: new Date().toISOString() }).eq('id', productId);
-  if (error) console.warn('No se pudo archivar producto online:', error.message);
+  if (error) { console.warn('No se pudo archivar producto online:', error.message); return { ok: false, message: error.message }; }
+  return { ok: true };
 }
 
 // ============================================================================
@@ -930,23 +1049,42 @@ async function syncAfterLogin() {
 }
 
 async function cloudAfterPut(storeName, record) {
+  if (!isOnlineConfigured()) return { ok: true, skipped: true };
+  // CORRECCIÓN V6.5 (bug crítico encontrado en auditoría): antes esta
+  // función atrapaba CUALQUIER error y solo lo mostraba con console.warn,
+  // sin avisarle a quien la llamó (pushQueuedItem) que algo había fallado.
+  // Como pushQueuedItem hacía "return {ok:true}" sin más después de
+  // llamarla, un elemento de la cola se marcaba "done" (enviado) aunque en
+  // realidad NUNCA hubiera llegado a Supabase — por ejemplo, ante un error
+  // de validación del servidor o una caída de red en ese momento exacto.
+  // El dato quedaba perdido para Supabase sin ningún reintento ni aviso.
+  // Ahora se revisa el resultado de cada función de envío y, si falló, se
+  // relanza el error para que pushQueuedItem / flushPendingSyncQueue lo
+  // detecten y reintenten como corresponde.
   try {
-    if (!isOnlineConfigured()) return;
-    if (storeName === 'products') await upsertCloudProduct(record);
-    if (storeName === 'sales') await insertCloudSale(record);
-    if (storeName === 'purchaseOrders') await insertCloudPurchaseOrder(record);
-    if (storeName === 'messages') await insertCloudMessage(record);
+    let res = { ok: true };
+    if (storeName === 'products') res = await upsertCloudProduct(record);
+    if (storeName === 'sales') res = await insertCloudSale(record);
+    if (storeName === 'purchaseOrders') res = await insertCloudPurchaseOrder(record);
+    if (storeName === 'messages') res = await insertCloudMessage(record);
+    if (res && res.ok === false) throw new Error(res.message || 'No se pudo sincronizar con Supabase.');
+    return { ok: true };
   } catch (err) {
     console.warn('Sincronización diferida:', err.message);
+    throw err;
   }
 }
 
 async function cloudAfterDelete(storeName, id) {
+  if (!isOnlineConfigured()) return { ok: true, skipped: true };
   try {
-    if (!isOnlineConfigured()) return;
-    if (storeName === 'products') await deleteCloudProduct(id);
+    let res = { ok: true };
+    if (storeName === 'products') res = await deleteCloudProduct(id);
+    if (res && res.ok === false) throw new Error(res.message || 'No se pudo eliminar en Supabase.');
+    return { ok: true };
   } catch (err) {
     console.warn('Eliminación online diferida:', err.message);
+    throw err;
   }
 }
 
@@ -1020,3 +1158,8 @@ window.upsertCloudProfileForUser = upsertCloudProfileForUser;
 window.adjustRepresentativeStockRemote = adjustRepresentativeStockRemote;
 window.queueRepresentativeStockDelta = queueRepresentativeStockDelta;
 window.fetchRepresentativeStockMap = fetchRepresentativeStockMap;
+window.signUpEmailAccount = signUpEmailAccount;
+window.sendPasswordRecoveryEmail = sendPasswordRecoveryEmail;
+window.touchLastLogin = touchLastLogin;
+window.setProfileStatus = setProfileStatus;
+window.fetchAllProfilesForAdmin = fetchAllProfilesForAdmin;

@@ -288,7 +288,15 @@ const DB = {
     const prepared = storeName === 'products' ? normalizeLegacyProduct(value) : value;
     store.put(prepared);
     await transactionPromise(transaction);
-    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions', 'purchaseOrders'].includes(storeName)) {
+    // CORRECCIÓN V6.5 (bug crítico encontrado en auditoría): 'messages' no
+    // estaba en esta lista. inbox.js (desde V6.2) guarda mensajes nuevos con
+    // DB.put('messages', msg) SIN {silent:true}, asumiendo que eso bastaba
+    // para encolar y enviar a Supabase — pero como 'messages' no estaba aquí,
+    // esa condición era siempre falsa: ningún mensaje nuevo llegaba a la
+    // nube, ni de inmediato ni por la cola. Quedaba solo guardado en este
+    // celular. Esto fue una regresión real introducida en V6.2, peor que el
+    // comportamiento anterior a esa versión.
+    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions', 'purchaseOrders', 'messages'].includes(storeName)) {
       queueSync(storeName, prepared.id, 'put', prepared).catch(() => {});
       if (window.cloudAfterPut) window.cloudAfterPut(storeName, prepared).catch(() => {});
     }
@@ -312,7 +320,8 @@ const DB = {
     const transaction = db.transaction(storeName, 'readwrite');
     transaction.objectStore(storeName).delete(id);
     await transactionPromise(transaction);
-    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions', 'purchaseOrders'].includes(storeName)) {
+    // Mismo motivo que en put(): se agrega 'messages' por consistencia.
+    if (!options.silent && ['products', 'sales', 'clients', 'quotes', 'inventoryMovements', 'users', 'commissions', 'purchaseOrders', 'messages'].includes(storeName)) {
       queueSync(storeName, id, 'delete', null).catch(() => {});
       if (window.cloudAfterDelete) window.cloudAfterDelete(storeName, id).catch(() => {});
     }

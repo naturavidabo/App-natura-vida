@@ -15,20 +15,51 @@ function permissionsForRole(roleName) {
   return ['products:read', 'products:local_edit', 'clients:manage', 'quotes:manage', 'sales:create', 'own_reports:read', 'orders:create'];
 }
 
+// V6.6: Supabase ahora guarda role como 'administrador'/'representante' y
+// status como 'pendiente'/'activo'/'bloqueado'. El resto de la app (sales.js,
+// products.js, products de permisos, etc.) sigue revisando los nombres
+// internos de siempre ('Administrador'/'Revendedor'), así que se traduce
+// aquí UNA sola vez, en vez de tener que cambiar cada chequeo de permisos
+// del proyecto (eso es justamente lo que la orden de refactorización pide
+// evitar: regresiones por tocar demasiado código a la vez).
+function roleCanonicalToDisplay(roleCanonical) {
+  const r = String(roleCanonical || '').toLowerCase();
+  if (r === 'administrador' || r === 'admin') return 'Administrador';
+  return 'Revendedor';
+}
+
 function applyOnlineSession(user, profile) {
-  const roleName = profile.role || 'Revendedor';
+  const roleCanonical = String(profile.role || 'representante').toLowerCase();
+  const roleName = roleCanonicalToDisplay(roleCanonical);
+  const statusCanonical = String(profile.status || 'activo').toLowerCase();
   AppState.session = {
     isAuthenticated: true,
     online: true,
     onlineUserId: user.id,
     userId: user.id,
-    username: profile.username || user.email,
+    email: profile.email || user.email || null,
+    username: profile.username || profile.email || user.email,
     fullName: profile.full_name || profile.username || user.email,
-    roleId: profile.role_id || roleName.toLowerCase(),
+    roleId: profile.role_id || (roleCanonical === 'administrador' ? 'role_admin' : 'role_reseller'),
     roleName,
+    roleCanonical,
+    statusCanonical,
+    // V6.6: mientras esté "pendiente" de aprobación, puede entrar a ver su
+    // estado pero no debe poder vender ni disparar sincronización crítica
+    // (sección "APROBACIÓN DE NUEVOS USUARIOS" de la orden). El bloqueo real
+    // de esas acciones se aplica donde corresponda (ventas, sync) — este
+    // flag es lo que esas pantallas deben consultar.
+    pendingApproval: statusCanonical === 'pendiente',
     permissions: permissionsForRole(roleName),
     mustChangePassword: false
   };
+}
+
+// Verificación rápida de si la sesión actual puede operar con normalidad
+// (vender, sincronizar). Ver sección 7 de la orden de refactorización V6.
+function canOperate() {
+  return !!(AppState.session && AppState.session.isAuthenticated &&
+    !AppState.session.pendingApproval && AppState.session.statusCanonical !== 'bloqueado');
 }
 
 function toSyntheticEmail(username) {
@@ -339,3 +370,80 @@ async function updateLocalPassword(userId, newPassword, profileData = {}) {
 
 window.NATURA_ADMIN_ACTIVATION_CODE = NATURA_ADMIN_ACTIVATION_CODE;
 window.NATURA_ADMIN_ACTIVATION_CODES = NATURA_ADMIN_ACTIVATION_CODES;
+
+// ============================================================================
+// NUEVO FLUJO DE CUENTAS POR CORREO (Orden de Refactorización V6, fase 1)
+// ----------------------------------------------------------------------------
+// "Crear cuenta" / "Ya tengo cuenta" / "Recuperar acceso". A diferencia del
+// flujo anterior (usuario/teléfono + activación local), aquí NO se crea
+// ningún registro en el almacenamiento local — Supabase es la única fuente
+// de verdad desde el primer momento, como pide la orden. Las pantallas que
+// usan esto se conectan en la siguiente fase (sección 1 de la orden); estas
+// funciones ya quedan listas para que esa interfaz las llame.
+// ============================================================================
+
+async function registerNewAccount(fullName, email, password) {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanName = String(fullName || '').trim();
+  if (!cleanEmail || !cleanEmail.includes('@')) return { ok: false, message: 'Ingresa un correo electrónico válido.' };
+  if (!cleanName) return { ok: false, message: 'Ingresa tu nombre.' };
+  if (!password || password.length < 6) return { ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
+  if (!window.isOnlineConfigured || !isOnlineConfigured()) return { ok: false, message: 'Se necesita conexión a internet para crear una cuenta.' };
+  if (!window.signUpEmailAccount) return { ok: false, message: 'Función no disponible en esta versión.' };
+
+  const res = await signUpEmailAccount(cleanEmail, password, cleanName).catch(err => ({ ok: false, message: err && err.message }));
+  if (!res.ok) return res;
+
+  if (res.needsEmailConfirmation) {
+    // El proyecto de Supabase tiene activada la confirmación por correo: la
+    // cuenta queda creada pero la persona debe confirmar antes de entrar.
+    return { ok: true, needsEmailConfirmation: true, message: 'Cuenta creada. Revisa tu correo para confirmar el acceso antes de iniciar sesión.' };
+  }
+
+  applyOnlineSession(res.user, res.profile);
+  await writeAudit('signup:email', 'user', res.user.id, null, { email: cleanEmail }).catch(() => {});
+  return { ok: true, user: res.user, pendingApproval: AppState.session.pendingApproval };
+}
+
+async function loginWithEmail(email, password) {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail || !password) return { ok: false, message: 'Ingresa tu correo y tu contraseña.' };
+  if (!window.isOnlineConfigured || !isOnlineConfigured()) return { ok: false, message: 'Se necesita conexión a internet para iniciar sesión.' };
+  const res = await onlineSignIn(cleanEmail, password).catch(err => ({ ok: false, message: err && err.message, networkError: true }));
+  if (!res.ok) return res;
+  applyOnlineSession(res.user, res.profile);
+  if (window.touchLastLogin) touchLastLogin(res.user.id).catch(() => {});
+  await writeAudit('login:email', 'user', res.user.id, null, { email: cleanEmail }).catch(() => {});
+  return { ok: true, user: res.user, pendingApproval: AppState.session.pendingApproval };
+}
+
+async function requestPasswordRecovery(email) {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return { ok: false, message: 'Ingresa tu correo electrónico.' };
+  if (!window.isOnlineConfigured || !isOnlineConfigured()) return { ok: false, message: 'Se necesita conexión a internet.' };
+  if (!window.sendPasswordRecoveryEmail) return { ok: false, message: 'Función no disponible en esta versión.' };
+  return sendPasswordRecoveryEmail(cleanEmail).catch(err => ({ ok: false, message: err && err.message }));
+}
+
+// Acciones de administrador — sección "BLOQUEO DE USUARIOS" /
+// "APROBACIÓN DE NUEVOS USUARIOS" de la orden.
+async function adminApproveUser(userId) {
+  if (!window.setProfileStatus) return { ok: false, message: 'Función no disponible.' };
+  return setProfileStatus(userId, 'activo').catch(err => ({ ok: false, message: err && err.message }));
+}
+async function adminBlockUser(userId) {
+  if (!window.setProfileStatus) return { ok: false, message: 'Función no disponible.' };
+  return setProfileStatus(userId, 'bloqueado').catch(err => ({ ok: false, message: err && err.message }));
+}
+async function adminUnblockUser(userId) {
+  if (!window.setProfileStatus) return { ok: false, message: 'Función no disponible.' };
+  return setProfileStatus(userId, 'activo').catch(err => ({ ok: false, message: err && err.message }));
+}
+
+window.registerNewAccount = registerNewAccount;
+window.loginWithEmail = loginWithEmail;
+window.requestPasswordRecovery = requestPasswordRecovery;
+window.adminApproveUser = adminApproveUser;
+window.adminBlockUser = adminBlockUser;
+window.adminUnblockUser = adminUnblockUser;
+window.canOperate = canOperate;
