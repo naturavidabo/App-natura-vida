@@ -1,34 +1,54 @@
-# NATURA VIDA V5.1 — Estabilización de ventas, catálogo y cotizaciones
+# NATURA VIDA V4.6 — Acceso simple y activación inicial
 
-## Correcciones críticas
+## Objetivo
+Simplificar el ingreso para administrador y vendedores, evitando pantallas confusas y manteniendo una llave de activación.
 
-### Ventas
-- Se corrigió el error que impedía confirmar ventas.
-- Se corrigió la generación de recibo después de registrar la venta.
-- Se permite registrar ventas aunque el margen sea negativo; la utilidad queda reflejada en reportes/inventario.
+## Acceso inicial local
 
-### Cotizaciones
-- Se agregó generación real de imagen JPG de cotización.
-- Se mantiene compartir texto, pero ahora también existe guardar/compartir imagen.
+### Administrador
+- Usuario inicial: `admin`
+- Contraseña inicial: `12345678`
 
-### Publicar catálogo
-- Se mejoró la publicación por lotes hacia Supabase.
-- Se mejoraron mensajes de error para indicar si falta ejecutar la migración SQL.
-- Se agregó migración V5.1 para completar columnas faltantes si la tabla products fue creada manualmente o quedó incompleta.
+### Vendedores / representantes
+- Usuarios iniciales disponibles: `vendedor1` hasta `vendedor20`
+- Contraseña inicial: `23456`
 
-### Supabase
-- Nuevo archivo recomendado: SUPABASE_MIGRACION_V5_1_ESTABLE.sql
-- No borra datos existentes.
-- Completa columnas faltantes de products, sales, purchase_orders y messages.
+## Llave de activación
+Durante el primer ingreso, la app pide un código de activación:
 
-### Mensajería / buzón
-- Se eliminó la consulta automática constante a Supabase al renderizar.
-- El buzón actualiza online sólo al abrirlo o presionar actualizar.
-- Se limita la carga visual a 80 mensajes para evitar congelamientos en Android.
+- Código: `2721971`
 
-### UI
-- Se quitó el botón de Comisiones de accesos rápidos y de Más.
-- Se mantiene la estructura interna por compatibilidad, pero no se muestra al usuario.
+Este código no se muestra en pantalla dentro de la app. Debe entregarlo el administrador cuando corresponda.
 
-### Backups
-- Se mantiene respaldo compacto sin imágenes base64.
+## Flujo simplificado
+1. La persona ingresa con usuario inicial asignado.
+2. Ingresa la contraseña inicial.
+3. La app pide datos básicos:
+   - nombre completo,
+   - celular / WhatsApp,
+   - ciudad,
+   - documento opcional,
+   - código de activación,
+   - nueva contraseña personal.
+4. Desde ese momento, el usuario deja de usar `vendedor1`, `vendedor2`, etc.
+5. Su nuevo usuario personal será su número de celular.
+
+## Ejemplo
+Primer ingreso:
+- usuario: `vendedor3`
+- contraseña: `23456`
+
+Luego configura:
+- celular: `70700000`
+- nueva contraseña: la que el vendedor decida
+
+Siguientes ingresos:
+- usuario: `70700000`
+- contraseña: su nueva contraseña
+
+## Archivos modificados
+- `js/db.js`
+- `js/auth.js`
+- `js/app.js`
+- `css/app.css`
+- `service-worker.js`

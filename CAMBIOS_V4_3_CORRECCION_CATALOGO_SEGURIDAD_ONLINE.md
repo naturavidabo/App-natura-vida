@@ -1,37 +1,379 @@
-# NATURA VIDA V4.3 — Corrección catálogo, compartir, seguridad y online
+/* smart-packages.js — Paquetes inteligentes offline para administradores y representantes.
+   Permite exportar/importar actualizaciones parciales sin reemplazar toda la base. */
 
-## Correcciones del catálogo PDF
-- Se retiraron las imágenes promocionales pegadas como fondo o como páginas completas.
-- El PDF ya no usa las referencias visuales enviadas como imágenes finales.
-- Se rediseñó el catálogo con elementos propios: hojas, chips, bloques, iconos y textos comerciales para clientes.
-- Se corrigió la distorsión de fotografías de productos: ahora se insertan manteniendo proporción dentro del recuadro.
-- Se eliminó texto interno como “diseño premium”, “objetivo del catálogo”, “comunicación clara”, etc.
-- La página de beneficios ahora está redactada para clientes: bienestar, piel, cabello, energía y cuidado natural.
-- El contacto del catálogo usa los datos del perfil del usuario/app.
+function packageStamp() {
+  return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+}
 
-## Compartir
-- Catálogo PDF: al generar, muestra previsualización, compartir y descargar.
-- Paquetes inteligentes: al exportar catálogo o reporte, muestra compartir y descargar.
-- Copia de seguridad: al generar, muestra compartir y descargar.
+function packageId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
+}
 
-## Seguridad
-- Se eliminaron las credenciales visibles de la pantalla de login.
-- En el primer ingreso local se exige cambio de contraseña y datos de contacto.
-- Se agregó formulario de primer ingreso: nombre, teléfono, documento y nueva contraseña.
+function basePackageMeta(type, targetRole = 'all', targetId = 'all') {
+  return {
+    app: 'NATURA_VIDA_BOLIVIA',
+    schemaVersion: 1,
+    packageType: type,
+    packageId: packageId(type),
+    createdAt: new Date().toISOString(),
+    createdBy: AppState.session ? (AppState.session.fullName || AppState.session.username || 'local') : 'local',
+    createdById: AppState.session ? AppState.session.userId : 'local',
+    createdByRole: AppState.session ? AppState.session.roleName : 'Local',
+    targetRole,
+    targetId
+  };
+}
 
-## Perfil del usuario / negocio
-- Ajustes permite guardar nombre de contacto, WhatsApp y ciudad.
-- Esos datos alimentan el catálogo PDF.
+function downloadJsonPackage(data, filename) {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'text/plain' });
+  openPackageReadySheet(blob, filename, data._meta || {});
+  return { blob, filename };
+}
 
-## Online
-- Ajustes ahora permite configurar Supabase desde la app:
-  - activar/desactivar servidor online
-  - Project URL
-  - anon public key
-  - probar conexión
-- El botón “Publicar catálogo” envía a Ajustes si no hay servidor configurado.
+function saveJsonPackage(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2500);
+}
 
-## Ventas
-- Se retiraron las imágenes promocionales pegadas en la vista de ventas.
-- Se dejó una cabecera comercial propia, con decoración de hojas y chips naturales.
-- Se mantuvieron los canales: Unitaria / Mayorista / Representantes.
+async function shareJsonPackage(blob, filename, meta = {}) {
+  if (window.shareBlobFile) {
+    return shareBlobFile(
+      blob,
+      filename,
+      'text/plain',
+      'Archivo Natura Vida',
+      `Archivo ${meta.packageType || 'inteligente'} de Natura Vida. Adjunta este archivo por WhatsApp como documento.`
+    );
+  }
+  saveJsonPackage(blob, filename);
+  showToast('Archivo descargado. Adjunta el archivo por WhatsApp como documento.');
+  return false;
+}
+
+function openPackageReadySheet(blob, filename, meta = {}) {
+  openSheet(`
+    <h2>Archivo listo <span class="x" id="closeSheet">✕</span></h2>
+    <div class="catalogReadyHero">
+      <div class="readyMark">✓</div>
+      <div>
+        <div class="eyebrow">Paquete inteligente generado</div>
+        <h3>${escapeHtml(filename)}</h3>
+        <p>Tipo: ${escapeHtml(meta.packageType || 'archivo')} · Fecha: ${new Date().toLocaleString('es-BO')}</p>
+      </div>
+    </div>
+    <div class="exportRow catalogExportRow">
+      <div class="exportBtn primaryShare" id="sharePkg"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / sistema</span></div>
+      <div class="exportBtn" id="downloadPkg"><span class="ic">↓</span><span class="lbl">Descargar</span><span class="sub">Guardar archivo</span></div>
+    </div>
+    <div class="banner catalogShareNote">Usa <strong>Compartir</strong> para enviarlo por WhatsApp. Si tu celular no permite compartir directo, usa Descargar y adjúntalo como documento.</div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#sharePkg', overlay).addEventListener('click', () => shareJsonPackage(blob, filename, meta));
+    $('#downloadPkg', overlay).addEventListener('click', () => { saveJsonPackage(blob, filename); showToast('Archivo descargado.'); });
+    if (navigator.canShare) {
+      const file = new File([blob], filename, { type: 'text/plain' });
+      if (navigator.canShare({ files: [file] })) setTimeout(() => shareJsonPackage(blob, filename, meta), 450);
+    }
+  });
+}
+
+function safeCatalogProduct(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category || 'General',
+    sku: p.sku || '',
+    marketPrice: Number(p.marketPrice ?? p.wholesaleMarketPrice ?? p.marketPriceFixed ?? 0) || 0,
+    resellerPrice: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0) || 0,
+    publicPrice: Number(p.publicPrice ?? p.unitPriceFixed ?? 0) || 0,
+    wholesaleMarketPrice: Number(p.marketPrice ?? p.wholesaleMarketPrice ?? p.marketPriceFixed ?? 0) || 0,
+    wholesalePriceFixed: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0) || 0,
+    unitPriceFixed: Number(p.publicPrice ?? p.unitPriceFixed ?? 0) || 0,
+    stock: Number(p.stock || 0),
+    adminStock: Number(p.stock || 0),
+    description: p.description || '',
+    photo: p.photo || null,
+    status: p.status || 'active',
+    updatedAt: p.updatedAt || Date.now()
+  };
+}
+
+async function exportCatalogUpdatePackage() {
+  if (!isAdmin()) {
+    showToast('Solo el administrador puede exportar catálogo general.', 'error');
+    return;
+  }
+  const payload = {
+    _meta: basePackageMeta('catalog_update', 'representative', 'all'),
+    products: AppState.products.filter(p => p.status !== 'archived').map(safeCatalogProduct)
+  };
+  const filename = `NVB_CATALOGO_GENERAL_${packageStamp()}.json`;
+  downloadJsonPackage(payload, filename);
+  showToast('Actualización de catálogo generada. Usa Compartir para enviarla.');
+}
+
+async function exportRepresentativeReportPackage() {
+  if (!isReseller()) {
+    showToast('Esta función es para representantes/revendedores.', 'error');
+    return;
+  }
+  const sellerId = AppState.session.userId;
+  const sales = AppState.sales.filter(s => !s.exportedInReportId && (!s.sellerId || s.sellerId === sellerId || ['reseller','reseller_unit','reseller_wholesale'].includes(s.type)));
+  const payload = {
+    _meta: basePackageMeta('representative_report', 'admin', 'admin'),
+    representative: {
+      id: sellerId,
+      name: AppState.session.fullName || AppState.session.username,
+      username: AppState.session.username
+    },
+    sales,
+    stockReport: AppState.products.filter(p => p.status !== 'archived').map(p => ({
+      productId: p.id,
+      name: p.name,
+      category: p.category || 'General',
+      stock: Number(p.stock || 0),
+      marketPrice: marketPrice(p),
+      resellerPrice: representativePrice(p),
+      publicPrice: publicPrice(p),
+      resellerAdditionalCost: resellerAdditionalCost(p),
+      resellerEffectiveCost: resellerEffectiveCost(p),
+      resellerLocalUnitPrice: resellerLocalUnitPrice(p),
+      resellerLocalWholesalePrice: resellerLocalWholesalePrice(p)
+    })),
+    clients: AppState.clients || []
+  };
+  const filename = `NVB_REPORTE_${(AppState.session.username || 'REP').toUpperCase()}_${packageStamp()}.json`;
+  downloadJsonPackage(payload, filename);
+  showToast('Reporte parcial generado. Usa Compartir para enviarlo.');
+}
+
+async function markImportedPackage(meta, summary) {
+  await DB.put('importedPackages', {
+    id: meta.packageId,
+    packageId: meta.packageId,
+    packageType: meta.packageType,
+    createdAt: meta.createdAt,
+    importedAt: Date.now(),
+    source: meta.createdBy || '',
+    summary: summary || {}
+  }, { silent: true }).catch(() => {});
+}
+
+async function alreadyImported(packageId) {
+  if (!packageId) return false;
+  const row = await DB.get('importedPackages', packageId).catch(() => null);
+  return !!row;
+}
+
+async function applyCatalogUpdatePackage(pkg) {
+  const incoming = Array.isArray(pkg.products) ? pkg.products : [];
+  let added = 0, updated = 0;
+  for (const raw of incoming) {
+    if (!raw || !raw.id) continue;
+    const existing = AppState.products.find(p => p.id === raw.id);
+    if (existing) {
+      const preservedStock = isReseller() ? existing.stock : raw.stock;
+      Object.assign(existing, normalizeLegacyProduct(Object.assign({}, existing, raw, {
+        // Para representantes, actualizar catálogo/precios/foto, pero no pisar su stock propio.
+        stock: preservedStock,
+        adminStock: Number(raw.stock || raw.adminStock || 0),
+        cost: existing.cost || 0,
+        resellerAdditionalCost: isReseller() ? (existing.resellerAdditionalCost || 0) : (raw.resellerAdditionalCost || 0),
+        resellerLocalUnitPrice: isReseller() ? (existing.resellerLocalUnitPrice || raw.publicPrice || raw.unitPriceFixed || 0) : (raw.resellerLocalUnitPrice || 0),
+        resellerLocalWholesalePrice: isReseller() ? (existing.resellerLocalWholesalePrice || raw.marketPrice || raw.wholesaleMarketPrice || 0) : (raw.resellerLocalWholesalePrice || 0),
+        resellerLocalNote: isReseller() ? (existing.resellerLocalNote || '') : '',
+        updatedAt: Date.now()
+      })));
+      await DB.put('products', existing, { silent: true });
+      updated++;
+    } else {
+      const prepared = normalizeLegacyProduct(Object.assign({}, raw, {
+        cost: 0,
+        stock: isReseller() ? 0 : Number(raw.stock || 0),
+        adminStock: Number(raw.stock || raw.adminStock || 0),
+        resellerAdditionalCost: 0,
+        resellerLocalUnitPrice: isReseller() ? Number(raw.publicPrice || raw.unitPriceFixed || 0) : 0,
+        resellerLocalWholesalePrice: isReseller() ? Number(raw.marketPrice || raw.wholesaleMarketPrice || 0) : 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }));
+      AppState.products.push(prepared);
+      await DB.put('products', prepared, { silent: true });
+      added++;
+    }
+  }
+  await loadAllState();
+  return { added, updated, total: incoming.length };
+}
+
+async function applyRepresentativeReportPackage(pkg) {
+  if (!isAdmin()) throw new Error('Solo el administrador puede importar reportes de representantes.');
+  const meta = pkg._meta || {};
+  const reportId = meta.packageId || packageId('representative_report');
+  const representative = pkg.representative || {};
+  const incomingSales = Array.isArray(pkg.sales) ? pkg.sales : [];
+  let importedSales = 0;
+
+  for (const s of incomingSales) {
+    if (!s || !s.id) continue;
+    const exists = AppState.sales.find(x => x.id === s.id || x.importedOriginalId === s.id);
+    if (exists) continue;
+    const imported = Object.assign({}, s, {
+      id: `imported_${s.id}`,
+      importedOriginalId: s.id,
+      importedFromRepresentative: representative.id || meta.createdById || 'representative',
+      importedFromName: representative.name || meta.createdBy || 'Representante',
+      importedReportId: reportId,
+      importedAt: Date.now(),
+      syncStatus: 'imported'
+    });
+    AppState.sales.push(imported);
+    await DB.put('sales', imported, { silent: true });
+    importedSales++;
+  }
+
+  const report = {
+    id: reportId,
+    representativeId: representative.id || meta.createdById || '',
+    representativeName: representative.name || meta.createdBy || '',
+    createdAt: meta.createdAt || new Date().toISOString(),
+    importedAt: Date.now(),
+    salesCount: incomingSales.length,
+    importedSales,
+    stockReport: Array.isArray(pkg.stockReport) ? pkg.stockReport : [],
+    totalReported: incomingSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0)
+  };
+  await DB.put('representativeReports', report, { silent: true });
+  await loadAllState();
+  return { importedSales, salesCount: incomingSales.length, representativeName: report.representativeName };
+}
+
+
+async function applyPurchaseOrderPackage(pkg) {
+  if (!isAdmin()) throw new Error('Solo el administrador puede importar pedidos de representantes.');
+  const order = pkg.order || pkg.purchaseOrder || null;
+  if (!order || !Array.isArray(order.items)) throw new Error('El paquete no contiene un pedido válido.');
+  const exists = await DB.get('purchaseOrders', order.id).catch(() => null);
+  if (exists) throw new Error('Este pedido ya fue incorporado.');
+  const prepared = Object.assign({}, order, {
+    importedAt: Date.now(),
+    syncStatus: 'imported',
+    status: order.status || 'pending'
+  });
+  await DB.put('purchaseOrders', prepared, { silent: true });
+  return { orderId: prepared.id, items: prepared.items.length, total: prepared.total || 0, representativeName: prepared.representativeName || '' };
+}
+
+function readJsonFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { resolve(JSON.parse(reader.result)); }
+      catch (err) { reject(new Error('El archivo no es JSON válido.')); }
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.readAsText(file);
+  });
+}
+
+async function importSmartPackageFromFile(file) {
+  const pkg = await readJsonFile(file);
+  const meta = pkg._meta || {};
+  if (meta.app !== 'NATURA_VIDA_BOLIVIA') {
+    throw new Error('No es un paquete inteligente de NATURA VIDA.');
+  }
+  if (await alreadyImported(meta.packageId)) {
+    throw new Error('Este paquete ya fue importado anteriormente.');
+  }
+
+  let summary;
+  if (meta.packageType === 'catalog_update') {
+    const msg = `Actualización de catálogo detectada\n\nOrigen: ${meta.createdBy}\nFecha: ${new Date(meta.createdAt).toLocaleString('es-BO')}\nProductos: ${(pkg.products || []).length}\n\nSe actualizarán precios, fotos y descripciones. En modo representante no se reemplazará tu stock propio.\n\n¿Aplicar actualización?`;
+    if (!confirmDialog(msg)) throw new Error('Cancelado');
+    summary = await applyCatalogUpdatePackage(pkg);
+  } else if (meta.packageType === 'representative_report') {
+    const msg = `Reporte parcial detectado\n\nRepresentante: ${(pkg.representative && pkg.representative.name) || meta.createdBy}\nFecha: ${new Date(meta.createdAt).toLocaleString('es-BO')}\nVentas reportadas: ${(pkg.sales || []).length}\n\n¿Incorporar al panel administrador?`;
+    if (!confirmDialog(msg)) throw new Error('Cancelado');
+    summary = await applyRepresentativeReportPackage(pkg);
+  } else if (meta.packageType === 'purchase_order') {
+    const order = pkg.order || pkg.purchaseOrder || {};
+    const msg = `Pedido detectado\n\nRepresentante: ${order.representativeName || meta.createdBy}\nFecha: ${new Date(meta.createdAt).toLocaleString('es-BO')}\nProductos: ${(order.items || []).length}\nTotal base: ${fmtMoney(order.total || 0)}\n\n¿Incorporar pedido al buzón/panel administrador?`;
+    if (!confirmDialog(msg)) throw new Error('Cancelado');
+    summary = await applyPurchaseOrderPackage(pkg);
+    if (window.saveLocalMessage) {
+      await saveLocalMessage({
+        type: 'purchase_order',
+        title: 'Pedido importado de representante',
+        body: `${order.representativeName || meta.createdBy} envió/importó un pedido por ${fmtMoney(order.total || 0)}.`,
+        senderName: order.representativeName || meta.createdBy || '',
+        senderRole: 'Revendedor',
+        recipientRole: 'Administrador',
+        payload: { orderId: order.id, total: order.total, items: order.items || [] }
+      }).catch(() => {});
+    }
+  } else {
+    throw new Error('Tipo de paquete no soportado todavía: ' + meta.packageType);
+  }
+
+  await markImportedPackage(meta, summary);
+  return { meta, summary };
+}
+
+function openSmartPackagesPanel() {
+  openSheet(`
+    <h2>Intercambio inteligente <span class="x" id="closeSheet">✕</span></h2>
+    <div class="banner">
+      Usa archivos parciales para actualizar catálogo, importar reportes y evitar reemplazar toda la copia de seguridad.
+    </div>
+    ${isAdmin() ? `
+      <button class="btn block" id="exportCatalogUpdate" style="margin-bottom:10px;">Exportar catálogo general para representantes</button>
+      <label class="btn outline block" style="margin-bottom:10px;">
+        Importar reporte/actualización inteligente
+        <input type="file" id="smartImportInput" accept=".json" style="display:none;">
+      </label>
+    ` : `
+      <label class="btn block" style="margin-bottom:10px;">
+        Importar catálogo/despacho recibido
+        <input type="file" id="smartImportInput" accept=".json" style="display:none;">
+      </label>
+      <button class="btn outline block" id="exportRepReport" style="margin-bottom:10px;">Exportar reporte parcial para administrador</button>
+    `}
+    <div class="formNotice">
+      Nota: por seguridad del celular, la PWA no puede abrir automáticamente archivos de WhatsApp. Debes tocar importar y seleccionar el archivo recibido.
+    </div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const expCat = $('#exportCatalogUpdate', overlay);
+    if (expCat) expCat.addEventListener('click', exportCatalogUpdatePackage);
+    const expRep = $('#exportRepReport', overlay);
+    if (expRep) expRep.addEventListener('click', exportRepresentativeReportPackage);
+    $('#smartImportInput', overlay).addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const result = await importSmartPackageFromFile(file);
+        showToast('Paquete aplicado correctamente.');
+        close();
+        render();
+      } catch (err) {
+        if (err.message !== 'Cancelado') showToast('⚠️ ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+window.exportCatalogUpdatePackage = exportCatalogUpdatePackage;
+window.exportRepresentativeReportPackage = exportRepresentativeReportPackage;
+window.importSmartPackageFromFile = importSmartPackageFromFile;
+window.openSmartPackagesPanel = openSmartPackagesPanel;
+window.applyPurchaseOrderPackage = applyPurchaseOrderPackage;
+window.openPackageReadySheet = openPackageReadySheet;
+window.basePackageMeta = basePackageMeta;
+window.packageStamp = packageStamp;

@@ -1,91 +1,38 @@
-# NATURA VIDA V4 - Catálogo PDF e intercambio inteligente
+# NATURA VIDA V4.4 — Corrección catálogo, compartir, precios por canal y online
 
-## Objetivo
-Complementar la app para el modelo real de trabajo:
+## Correcciones críticas
 
-Administrador central -> representantes regionales -> tiendas / mercados / clientes finales.
+### Catálogo PDF
+- Se eliminó el uso de funciones gráficas que podían provocar el error "No se pudo generar el catálogo".
+- El catálogo ya no usa imágenes de referencia pegadas como fondo.
+- Las fotos de productos se insertan manteniendo proporción, sin aplastarse.
+- Se mantiene el enfoque comercial para clientes: beneficios, bienestar, belleza, contacto y productos.
 
-## Nuevo módulo: Catálogo PDF para WhatsApp
+### Compartir archivos
+- Copia de seguridad: el botón Compartir ahora intenta usar Web Share; si el navegador no permite adjuntar el archivo, descarga el archivo y abre una guía para enviarlo por WhatsApp como documento.
+- Paquetes inteligentes: catálogo general y reportes parciales tienen el mismo flujo de compartir/descargar.
+- Catálogo PDF: también usa el flujo robusto de compartir, descargar y fallback.
 
-Se agregó una opción en **Más -> Catálogo PDF para WhatsApp**.
-
-Permite generar un PDF con:
-- nombre del producto;
-- fotografía;
-- categoría;
-- descripción;
+### Inventario y precios
+Cada producto ahora maneja:
+- costo calculado por insumos;
 - precio público;
-- stock referencial opcional;
-- contacto o WhatsApp de pedidos.
+- precio mayorista;
+- precio representantes.
 
-El PDF no muestra costos internos. El precio revendedor interno solo puede incluirse si se marca manualmente desde una sesión de administrador.
+El costo ya se calcula desde los insumos y se muestra como campo calculado.
 
-## Nuevo módulo: Intercambio inteligente
+### Ventas
+Los canales quedan separados:
+- Unitaria usa precio público.
+- Mayorista usa precio mayorista.
+- Representantes usa precio representantes.
 
-Se agregó una opción en **Más -> Intercambio inteligente**.
+### Decimales
+- Los montos ya no se redondean siempre a enteros.
+- Se conservan hasta 2 decimales cuando corresponde.
 
-Funciones iniciales:
-
-### Administrador
-- Exportar catálogo general para representantes.
-- Importar reporte parcial de representante.
-
-### Representante
-- Importar catálogo/actualización recibida.
-- Exportar reporte parcial para el administrador.
-
-## Paquetes inteligentes
-
-Los archivos `.json` ahora pueden tener tipo:
-- `catalog_update`: actualización de catálogo, precios, fotos y descripción.
-- `representative_report`: reporte parcial de ventas e inventario de representante.
-
-Cada paquete incluye:
-- ID único;
-- fecha de creación;
-- origen;
-- destino;
-- tipo de paquete.
-
-La app detecta si un paquete ya fue importado para evitar duplicados.
-
-## Ventas por canal
-
-En el panel de venta del administrador se reemplazó la lógica simple por canales:
-
-- Venta unitaria.
-- Venta mayorista.
-- A representante.
-
-El canal “A representante” ya queda registrado como tipo separado para continuar con la generación de despacho inteligente.
-
-## Archivos modificados
-- `index.html`
-- `service-worker.js`
-- `css/app.css`
-- `js/db.js`
-- `js/app.js`
-- `js/sales.js`
-
-## Archivos nuevos
-- `js/catalog-pdf.js`
-- `js/smart-packages.js`
-
-## Nota importante
-La PWA no puede abrir automáticamente archivos recibidos por WhatsApp sin intervención del usuario, por seguridad del navegador/celular. El flujo correcto es:
-
-1. Recibir archivo por WhatsApp.
-2. Guardarlo o abrirlo desde descargas.
-3. Entrar a la app.
-4. Tocar **Más -> Intercambio inteligente**.
-5. Seleccionar el archivo.
-6. La app detecta el tipo de paquete y pregunta si se desea aplicar.
-
-## Siguiente paso recomendado
-Implementar V4.2:
-
-- creación de representantes desde el administrador;
-- generación de despacho a representante con archivo inteligente;
-- importación de despacho que aumente inventario regional;
-- reporte consolidado por representante;
-- historial de paquetes enviados/recibidos.
+### Online Supabase
+- Se agregó soporte para `market_price` en productos.
+- Se actualizó `SUPABASE_SCHEMA.sql` con la columna de precio mayorista.
+- Si ya existe la tabla `products`, se incluye la instrucción `alter table` correspondiente.

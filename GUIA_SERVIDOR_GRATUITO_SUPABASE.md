@@ -1,94 +1,91 @@
-# NATURA VIDA BOLIVIA — Servidor gratuito online
+# NATURA VIDA V4 - Catálogo PDF e intercambio inteligente
 
-## Arquitectura recomendada
+## Objetivo
+Complementar la app para el modelo real de trabajo:
 
-- **GitHub Pages**: aloja la PWA estática.
-- **Supabase Free**: aloja usuarios, roles, productos, precios y ventas.
-- **IndexedDB**: mantiene funcionamiento offline en cada celular.
+Administrador central -> representantes regionales -> tiendas / mercados / clientes finales.
 
-## Paso 1 — Crear proyecto Supabase
+## Nuevo módulo: Catálogo PDF para WhatsApp
 
-1. Entra a Supabase.
-2. Crea un proyecto nuevo.
-3. Guarda la contraseña de base de datos.
-4. En Project Settings > API copia:
-   - Project URL
-   - anon/public key
+Se agregó una opción en **Más -> Catálogo PDF para WhatsApp**.
 
-## Paso 2 — Crear tablas y permisos
+Permite generar un PDF con:
+- nombre del producto;
+- fotografía;
+- categoría;
+- descripción;
+- precio público;
+- stock referencial opcional;
+- contacto o WhatsApp de pedidos.
 
-1. En Supabase abre SQL Editor.
-2. Copia todo el archivo `SUPABASE_SCHEMA.sql`.
-3. Ejecuta Run.
+El PDF no muestra costos internos. El precio revendedor interno solo puede incluirse si se marca manualmente desde una sesión de administrador.
 
-## Paso 3 — Crear usuarios
+## Nuevo módulo: Intercambio inteligente
 
-1. Ve a Authentication > Users.
-2. Crea un usuario para el administrador, por ejemplo:
-   - `admin@naturavida.bo`
-3. Crea usuarios para revendedores, por ejemplo:
-   - `revendedor1@naturavida.bo`
-4. Copia el UUID de cada usuario.
-5. En SQL Editor ejecuta los insert de `profiles`, reemplazando los UUID.
+Se agregó una opción en **Más -> Intercambio inteligente**.
 
-Ejemplo:
-
-```sql
-insert into public.profiles (id, username, full_name, role, role_id, status)
-values ('UUID_DEL_ADMIN', 'admin', 'Administrador Natura Vida', 'Administrador', 'role_admin', 'active');
-
-insert into public.profiles (id, username, full_name, role, role_id, status)
-values ('UUID_DEL_REVENDEDOR', 'revendedor1', 'Revendedor Demo', 'Revendedor', 'role_reseller', 'active');
-```
-
-## Paso 4 — Activar la app online
-
-Abre `js/supabase-config.js` y cambia:
-
-```js
-window.NATURA_ONLINE_CONFIG = {
-  enabled: true,
-  supabaseUrl: 'TU_PROJECT_URL',
-  supabaseAnonKey: 'TU_ANON_KEY'
-};
-```
-
-## Paso 5 — Subir a GitHub Pages
-
-1. Sube todos los archivos de esta carpeta al repositorio.
-2. Espera el deploy de GitHub Pages.
-3. Limpia caché de la PWA si ves versión vieja:
-   - F12
-   - Application
-   - Service Workers
-   - Unregister
-   - Clear storage
-   - Ctrl + F5
-
-## Funcionamiento del negocio
+Funciones iniciales:
 
 ### Administrador
-- Crea productos.
-- Actualiza costo, precio revendedor y precio público.
-- Publica productos al servidor.
-- Puede ver inventario completo y reportes.
+- Exportar catálogo general para representantes.
+- Importar reporte parcial de representante.
 
-### Revendedor
-- Entra con su cuenta.
-- Actualiza catálogo/precios desde el servidor.
-- Ve precio base revendedor.
-- Ve precio público sugerido.
-- Coloca su propio precio de venta.
-- La app calcula su margen automáticamente.
+### Representante
+- Importar catálogo/actualización recibida.
+- Exportar reporte parcial para el administrador.
 
-Ejemplo:
+## Paquetes inteligentes
 
-- Precio revendedor/base: Bs 100
-- Precio público sugerido: Bs 150
-- Si vende a Bs 150, margen: Bs 50
-- Si vende a Bs 140, margen: Bs 40
-- Si vende a Bs 160, margen: Bs 60
+Los archivos `.json` ahora pueden tener tipo:
+- `catalog_update`: actualización de catálogo, precios, fotos y descripción.
+- `representative_report`: reporte parcial de ventas e inventario de representante.
 
-## Nota de seguridad
+Cada paquete incluye:
+- ID único;
+- fecha de creación;
+- origen;
+- destino;
+- tipo de paquete.
 
-La clave `anon/public` de Supabase puede ir en el frontend. La seguridad real está en las políticas RLS del archivo SQL. No subas claves secretas de servicio al repositorio.
+La app detecta si un paquete ya fue importado para evitar duplicados.
+
+## Ventas por canal
+
+En el panel de venta del administrador se reemplazó la lógica simple por canales:
+
+- Venta unitaria.
+- Venta mayorista.
+- A representante.
+
+El canal “A representante” ya queda registrado como tipo separado para continuar con la generación de despacho inteligente.
+
+## Archivos modificados
+- `index.html`
+- `service-worker.js`
+- `css/app.css`
+- `js/db.js`
+- `js/app.js`
+- `js/sales.js`
+
+## Archivos nuevos
+- `js/catalog-pdf.js`
+- `js/smart-packages.js`
+
+## Nota importante
+La PWA no puede abrir automáticamente archivos recibidos por WhatsApp sin intervención del usuario, por seguridad del navegador/celular. El flujo correcto es:
+
+1. Recibir archivo por WhatsApp.
+2. Guardarlo o abrirlo desde descargas.
+3. Entrar a la app.
+4. Tocar **Más -> Intercambio inteligente**.
+5. Seleccionar el archivo.
+6. La app detecta el tipo de paquete y pregunta si se desea aplicar.
+
+## Siguiente paso recomendado
+Implementar V4.2:
+
+- creación de representantes desde el administrador;
+- generación de despacho a representante con archivo inteligente;
+- importación de despacho que aumente inventario regional;
+- reporte consolidado por representante;
+- historial de paquetes enviados/recibidos.

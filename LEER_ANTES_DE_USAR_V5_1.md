@@ -1,45 +1,34 @@
-# LEER ANTES DE USAR — NATURA VIDA V5.1
+# NATURA VIDA V5.1 — Estabilización de ventas, catálogo y cotizaciones
 
-Esta versión corrige fallas críticas reportadas en V5.0.
+## Correcciones críticas
 
-## Qué debes hacer en Supabase
+### Ventas
+- Se corrigió el error que impedía confirmar ventas.
+- Se corrigió la generación de recibo después de registrar la venta.
+- Se permite registrar ventas aunque el margen sea negativo; la utilidad queda reflejada en reportes/inventario.
 
-Si ya tienes proyecto Supabase creado, ejecuta este archivo:
+### Cotizaciones
+- Se agregó generación real de imagen JPG de cotización.
+- Se mantiene compartir texto, pero ahora también existe guardar/compartir imagen.
 
-SUPABASE_MIGRACION_V5_1_ESTABLE.sql
+### Publicar catálogo
+- Se mejoró la publicación por lotes hacia Supabase.
+- Se mejoraron mensajes de error para indicar si falta ejecutar la migración SQL.
+- Se agregó migración V5.1 para completar columnas faltantes si la tabla products fue creada manualmente o quedó incompleta.
 
-Ruta:
-Supabase > SQL Editor / Editor SQL > New query / Nueva consulta > pegar contenido > Run / Ejecutar.
+### Supabase
+- Nuevo archivo recomendado: SUPABASE_MIGRACION_V5_1_ESTABLE.sql
+- No borra datos existentes.
+- Completa columnas faltantes de products, sales, purchase_orders y messages.
 
-Este archivo NO borra datos. Completa columnas faltantes si la tabla products fue creada manualmente o quedó incompleta.
+### Mensajería / buzón
+- Se eliminó la consulta automática constante a Supabase al renderizar.
+- El buzón actualiza online sólo al abrirlo o presionar actualizar.
+- Se limita la carga visual a 80 mensajes para evitar congelamientos en Android.
 
-## Qué debes subir a GitHub
+### UI
+- Se quitó el botón de Comisiones de accesos rápidos y de Más.
+- Se mantiene la estructura interna por compatibilidad, pero no se muestra al usuario.
 
-Sube todo el contenido interno de esta carpeta:
-- index.html
-- manifest.json
-- service-worker.js
-- js
-- css
-- icons
-- img
-- archivos .sql y .md
-
-## Caché
-
-Después de subir, limpiar caché en celulares:
-- Chrome > Configuración del sitio > Borrar datos
-- o desinstalar/reinstalar la PWA.
-
-## Prueba mínima
-
-1. Entrar como admin.
-2. Crear producto de prueba.
-3. Registrar venta.
-4. Verificar que se genera recibo.
-5. Crear cotización.
-6. Presionar Generar imagen.
-7. Ejecutar Publicar catálogo.
-8. En vendedor, presionar Recibir novedades.
-
-Si el catálogo no publica, revisar el error. Si dice columnas/tabla/política, ejecutar SUPABASE_MIGRACION_V5_1_ESTABLE.sql.
+### Backups
+- Se mantiene respaldo compacto sin imágenes base64.

@@ -1,221 +1,189 @@
-# NATURA VIDA — AUDITORÍA TÉCNICA V6.5 DE SINCRONIZACIÓN
+/* clients.js — Directorio de clientes: nombre, teléfono, grupo de precio asignado, historial. */
 
-Fecha: 27 de junio de 2026
+let _clientSearch = '';
 
-## Cómo se hizo esta auditoría (importante, leer primero)
+function renderClients() {
+  $('#fabAdd').classList.remove('hidden');
+  $('#fabAdd').onclick = () => openClientForm(null);
+  const main = $('#mainArea');
 
-Para esta auditoría se montó un entorno de pruebas en Node.js que carga
-el código JavaScript **real** del proyecto (los mismos archivos `.js`,
-sin modificar su lógica) contra una base de datos local simulada y un
-backend de Supabase simulado en memoria. Esto permitió **ejecutar** la
-lógica real de login, sincronización, cola offline y stock atómico con
-varios "dispositivos" virtuales compartiendo el mismo backend — no solo
-leer el código y suponer que funciona.
+  let html = `
+    <div class="toolrow">
+      <input type="text" id="searchInput" placeholder="Buscar cliente..." value="${escapeHtml(_clientSearch)}">
+    </div>
+  `;
 
-**Límite honesto de este método:** no hay acceso a tu proyecto real de
-Supabase (no hay conexión a internet ni tus credenciales disponibles
-aquí), así que no se probó contra el Postgres real ni se verificó que
-las políticas RLS estén realmente activas en tu base de datos en este
-momento. Lo que se probó es: (a) que la lógica JavaScript hace exactamente
-lo que se espera dado un backend que se comporta como Postgres/Supabase
-debería comportarse, y (b) que el SQL escrito coincide exactamente con lo
-que el mock reproduce. Antes de confiar 100%, sigue valiendo la prueba
-manual en tu Supabase real con dos celulares, que es insustituible.
+  const filtered = AppState.clients.filter(c => matchesSearch(c.name, _clientSearch) || matchesSearch(c.phone, _clientSearch));
 
-Encontré y corregí **3 bugs reales** durante esta auditoría (no existían
-antes de hoy en tu lista de problemas conocidos). Se explican en detalle
-en la sección "Bugs encontrados y corregidos hoy" más abajo. Esto explica
-directamente la sensación de "parece peor que antes" — uno de los tres
-(mensajes) era una regresión introducida por mí mismo en una corrección
-anterior de esta misma conversación.
+  if (filtered.length === 0) {
+    html += `
+      <div class="empty">
+        <span class="ic">👤</span>
+        <h3>${AppState.clients.length === 0 ? 'Aún no hay clientes' : 'Sin resultados'}</h3>
+        <p>${AppState.clients.length === 0 ? 'Se agregan automáticamente al registrar una venta, o créalos aquí.' : 'Intenta con otro término.'}</p>
+      </div>`;
+  } else {
+    filtered.slice().reverse().forEach(c => {
+      const group = AppState.priceGroups.find(g => g.id === c.priceGroupId);
+      const purchases = AppState.sales.filter(s => s.clientId === c.id);
+      html += `
+      <div class="card" data-id="${c.id}">
+        <div style="padding:13px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div class="name">${escapeHtml(c.name)}</div>
+            ${group ? `<span class="pill" style="background:${group.color}22; color:${group.color};">${escapeHtml(group.name)}</span>` : ''}
+          </div>
+          <div class="costline" style="margin-top:6px;">📞 ${escapeHtml(c.phone || 'sin teléfono')}</div>
+          <div class="costline">🛒 ${purchases.length} compra(s) registrada(s)</div>
+        </div>
+        <div class="cardactions">
+          <button class="histClientBtn" data-id="${c.id}">📜 Historial</button>
+          <button class="editClientBtn" data-id="${c.id}">✏️ Editar</button>
+          <button class="danger delClientBtn" data-id="${c.id}">🗑️</button>
+        </div>
+      </div>`;
+    });
+  }
 
----
+  main.innerHTML = html;
+  $('#searchInput').addEventListener('input', e => { _clientSearch = e.target.value; renderClients(); });
+  $all('.editClientBtn').forEach(b => b.addEventListener('click', () => openClientForm(b.dataset.id)));
+  $all('.delClientBtn').forEach(b => b.addEventListener('click', () => confirmDeleteClient(b.dataset.id)));
+  $all('.histClientBtn').forEach(b => b.addEventListener('click', () => openClientHistory(b.dataset.id)));
+}
 
-## 1. Login con Supabase
+function confirmDeleteClient(id) {
+  const c = AppState.clients.find(x => x.id === id);
+  if (!c) return;
+  if (confirmDialog(`¿Eliminar a "${c.name}" del directorio? El historial de ventas ya registrado se conserva.`)) {
+    AppState.clients = AppState.clients.filter(x => x.id !== id);
+    DB.delete('clients', id);
+    renderClients();
+    showToast('Cliente eliminado');
+  }
+}
 
-| Verificación | Resultado | Evidencia |
-|---|---|---|
-| Todos los usuarios pueden iniciar sesión | ✅ Confirmado | Admin (acceso inicial), representante recién activado, representante "viejo" no vinculado |
-| Cada usuario queda vinculado a su `auth.uid()` real | ✅ Confirmado | El `id` guardado en `profiles` es exactamente el mismo UUID que devuelve `auth.signUp`/`signInWithPassword` |
-| Segundo dispositivo del mismo usuario entra online (no en modo local) | ✅ Confirmado | Login con el mismo usuario/contraseña desde un "celular" nuevo entra con `online:true` y el mismo `auth.uid()` |
-| Cuenta vieja (de antes de V6.2, nunca vinculada) sigue entrando sin romperse | ✅ Confirmado | Entra en modo local la primera vez, se vincula sola en segundo plano, la siguiente vez entra online |
-| Contraseña incorrecta se rechaza, incluso en un dispositivo nuevo | ✅ Confirmado | No hay forma de "adivinar" acceso por quedar en modo local |
+function openClientHistory(id) {
+  const c = AppState.clients.find(x => x.id === id);
+  if (!c) return;
+  const purchases = AppState.sales.filter(s => s.clientId === id).slice().reverse();
 
-Prueba ejecutada: `test1-login.js` — 17/17 verificaciones pasaron.
+  const html = `
+    <h2>Historial — ${escapeHtml(c.name)} <span class="x" id="closeSheet">✕</span></h2>
+    ${purchases.length === 0 ? `<div class="empty"><span class="ic">📭</span><h3>Sin compras aún</h3></div>` :
+      purchases.map(s => {
+        const items = s.items || [];
+        const summary = items.length === 1 ? items[0].productName : `${items[0] ? items[0].productName : ''} +${items.length - 1} más`;
+        const totalUnits = items.reduce((sum, it) => sum + it.qty, 0);
+        return `
+        <div class="histitem histitem-clickable" data-saleid="${s.id}">
+          <div class="l">
+            <div class="pname">${escapeHtml(summary)}</div>
+            <div class="meta">${s.type === 'unit' ? 'Unitaria' : 'Por mayor'} · ${totalUnits} unid. · ${fmtDate(s.date)}</div>
+          </div>
+          <div class="r">
+            <div>+${fmtMoney(s.total)}</div>
+            <div class="histReceiptHint">🧾 Ver recibo</div>
+          </div>
+        </div>
+      `;
+      }).join('')}
+    <div class="actions">
+      <button class="btn block" id="closeSheet2">Cerrar</button>
+    </div>
+  `;
+  openSheet(html, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#closeSheet2', overlay).addEventListener('click', close);
+    $all('.histitem-clickable', overlay).forEach(el => el.addEventListener('click', () => {
+      const sale = AppState.sales.find(s => s.id === el.dataset.saleid);
+      if (sale) openReceiptPreview(sale);
+    }));
+  });
+}
 
----
+function openClientForm(id, prefill) {
+  const c = id ? AppState.clients.find(x => x.id === id) : null;
+  const pf = prefill || {};
 
-## 2. Descarga inicial — qué tabla sincroniza y cuál no (inventario completo)
+  const html = `
+    <h2>${c ? 'Editar cliente' : 'Nuevo cliente'} <span class="x" id="closeSheet">✕</span></h2>
 
-| Dato local (IndexedDB) | ¿Sincroniza con Supabase? | Detalle |
-|---|---|---|
-| **products** (productos/catálogo) | ✅ Sí, en ambos sentidos | Tabla `products`. Tu pregunta sobre "categorías": no existe una tabla de categorías separada — la categoría es un campo de texto dentro de cada producto, así que viaja junto con él. |
-| **sales** (ventas) | ✅ Sí, hacia arriba (sube a Supabase) | Tabla `sales`. No hay necesidad actual de "descargarlas" de vuelta al mismo dispositivo que las generó. |
-| **purchaseOrders** (pedidos) | ✅ Sí, en ambos sentidos | Tabla `purchase_orders`. Sube siempre; **baja solo al abrir/refrescar la pantalla de Pedidos**, no con el botón general "Actualizar" (ver punto 4). |
-| **messages** (mensajería) | ✅ Sí, en ambos sentidos (recién corregido hoy, ver bug #1) | Tabla `messages`. Baja solo al abrir/refrescar la bandeja de mensajes. |
-| **representative_stock** (stock propio del representante) | ✅ Sí, en ambos sentidos | Vía función RPC atómica, ver punto 6. |
-| **profiles / users** (cuentas) | ⚠️ Parcial | Las cuentas SÍ se crean en `profiles` al activarse (V6.2). Pero la lista local "users" de cada celular nunca se sube — son dos listas relacionadas pero técnicamente separadas, ver detalle en el informe anterior. |
-| **clients** (clientes) | ❌ No sincroniza | No existe tabla de clientes en Supabase en este proyecto. Queda 100% local a cada dispositivo. No genera error al intentarlo, simplemente no hace nada. |
-| **quotes** (cotizaciones) | ❌ No sincroniza | Igual que clientes. |
-| **priceGroups, settings, roles, permissions, commissionRules, reportsCache, auditLog, representatives, dispatches, representativeReports, importedPackages, inventoryMovements, commissions** | ❌ No sincronizan | Ninguna de estas tablas locales tiene conexión con Supabase en el código actual. Son datos 100% del dispositivo. |
+    <div class="field">
+      <label>Nombre completo</label>
+      <input type="text" id="f_cname" placeholder="Ej: María Pérez" value="${c ? escapeHtml(c.name) : escapeHtml(pf.name || '')}">
+    </div>
+    <div class="field">
+      <label>Número de teléfono</label>
+      <input type="tel" inputmode="tel" id="f_cphone" placeholder="Ej: 71234567" value="${c ? escapeHtml(c.phone || '') : escapeHtml(pf.phone || '')}">
+    </div>
+    ${AppState.settings.priceGroupsEnabled ? `
+    <div class="field">
+      <label>Grupo de precio asignado</label>
+      <select id="f_cgroup">
+        <option value="">Sin grupo (precio de abastecimiento)</option>
+        ${AppState.priceGroups.map(g => `<option value="${g.id}" ${c && c.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+      </select>
+    </div>` : ''}
 
-Prueba ejecutada: `test234-tables.js` — confirma con ejecución real que
-productos y pedidos sí llegan y se descargan, y que clientes no llega a
-ninguna tabla remota sin generar error.
+    <div class="actions">
+      <button class="btn outline block" id="cancelForm">Cancelar</button>
+      <button class="btn block" id="saveForm">${c ? 'Guardar cambios' : 'Crear cliente'}</button>
+    </div>
+  `;
 
----
+  return openSheet(html, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#cancelForm', overlay).addEventListener('click', close);
 
-## 3. Sincronización de subida
+    $('#saveForm', overlay).addEventListener('click', async () => {
+      const name = $('#f_cname', overlay).value.trim();
+      if (!name) { showToast('⚠️ Ponle un nombre al cliente', 'error'); return; }
+      const groupSel = $('#f_cgroup', overlay);
 
-✅ **Ventas, pedidos y productos nuevos llegan correctamente a Supabase**, confirmado con prueba real.
+      const data = {
+        id: c ? c.id : uid('cli'),
+        name,
+        phone: $('#f_cphone', overlay).value.trim(),
+        priceGroupId: groupSel ? groupSel.value : '',
+        createdAt: c ? c.createdAt : Date.now()
+      };
+      await DB.put('clients', data);
+      if (c) {
+        const idx = AppState.clients.findIndex(x => x.id === c.id);
+        AppState.clients[idx] = data;
+      } else {
+        AppState.clients.push(data);
+      }
+      AppState.lastClient = data;
+      close();
+      if (window._afterClientSaved) { window._afterClientSaved(data); window._afterClientSaved = null; }
+      if (AppState.currentTab === 'clientes') renderClients();
+      showToast(c ? 'Cliente actualizado' : 'Cliente creado');
+    });
+  });
+}
 
-❌ **Clientes nuevos NO llegan a Supabase** — no porque esté roto, sino
-porque no existe esa tabla remota en este proyecto (ver punto 2). Si
-necesitas que los clientes también se compartan entre dispositivos del
-mismo representante o sean visibles para el administrador, es una
-funcionalidad nueva (tabla nueva en Supabase), no una corrección.
+/* Busca o crea un cliente rápido desde el flujo de venta, sin salir de la pantalla. */
+function findOrCreateClientQuick(name, phone) {
+  name = (name || '').trim();
+  if (!name) return null;
+  let existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
+  if (existing) {
+    if (phone && phone.trim() && existing.phone !== phone.trim()) {
+      existing.phone = phone.trim();
+      DB.put('clients', existing);
+    }
+    AppState.lastClient = existing;
+    return existing;
+  }
+  const data = { id: uid('cli'), name, phone: (phone || '').trim(), priceGroupId: '', createdAt: Date.now() };
+  AppState.clients.push(data);
+  DB.put('clients', data);
+  AppState.lastClient = data;
+  return data;
+}
 
-**Bug encontrado y corregido hoy:** los mensajes nuevos NO estaban
-llegando a Supabase en absoluto desde la versión anterior (V6.2) por un
-error real en el código. Ver sección de bugs más abajo.
-
----
-
-## 4. Sincronización de bajada
-
-✅ **Productos:** confirmado que un producto creado en un celular aparece
-en otro al presionar "Actualizar".
-
-✅ **Pedidos:** confirmado que un pedido creado por un representante
-aparece para el administrador — **pero solo al abrir o refrescar
-específicamente la pantalla de Pedidos**, no con el botón general
-"Actualizar" del panel principal. Esto no es un bug — es así desde antes
-de esta auditoría — pero quería dejarlo confirmado y documentado porque
-puede sentirse como "no sincronizó" si solo se prueba con el botón
-general. Si quieres que el botón general también traiga pedidos y
-mensajes nuevos, dime y lo agrego (sería una pequeña extensión del botón,
-no un cambio de arquitectura).
-
-✅ **Mensajes:** mismo comportamiento que pedidos — bajan al abrir la
-bandeja de mensajes, no con el botón general.
-
----
-
-## 5. Cola offline
-
-| Verificación | Resultado |
-|---|---|
-| Un mensaje creado sin conexión queda en la cola y no se pierde | ✅ Confirmado |
-| Al volver la conexión, se envía solo (sin tener que repetir la acción) | ✅ Confirmado |
-| Reintentar el envío de la cola no duplica filas en Supabase | ✅ Confirmado (gracias a `upsert` con `onConflict:'id'` en ventas/pedidos/mensajes/productos) |
-| Un elemento que el servidor rechaza de verdad no bloquea a los demás elementos de la cola | ✅ Confirmado |
-| Tras varios intentos fallidos seguidos, ese elemento se marca "failed" y deja de reintentarse para siempre (no acumula ruido) | ✅ Confirmado (tope de 8 intentos) |
-
-**Bug encontrado y corregido hoy:** un elemento que el servidor
-rechazaba por una razón real (no de red) se marcaba como "enviado
-correctamente" sin haberse guardado nunca en Supabase. Ver sección de
-bugs.
-
-Prueba ejecutada: `test5-queue.js` — 11/11 verificaciones pasaron.
-
----
-
-## 6. Stock
-
-| Verificación | Resultado |
-|---|---|
-| El mismo representante ve su stock actualizado desde un segundo celular | ✅ Confirmado |
-| Dos celulares del mismo representante vendiendo "al mismo tiempo" (-7 y -12 en paralelo) — el resultado final refleja AMBAS ventas, no solo la última | ✅ Confirmado: 50-7-12=31 exacto |
-| Reintentar el mismo ajuste (mismo `movementId`) no lo aplica dos veces | ✅ Confirmado |
-| Un representante no puede leer el stock de otro, incluso consultando la tabla directamente sin el filtro que pone la app | ✅ Confirmado (RLS) |
-| Un representante no puede escribir el stock de otro mandando un id distinto al suyo a propósito | ✅ Confirmado (RLS + la función ignora cualquier id que no sea su `auth.uid()` real) |
-
-**Nota de comportamiento (no es un bug, pero hay que saberlo):** el piso
-de "nunca menos de 0" se aplica en cada ajuste individual, no solo al
-final. Si una venta intenta descontar más de lo que hay disponible en la
-nube en ese momento, el remanente negativo se "pierde" silenciosamente
-en vez de quedar registrado como sobreventa. Es el comportamiento querido
-(el stock nunca debe verse negativo), solo se documenta para que quede
-claro y consciente.
-
-Prueba ejecutada: `test6-stock.js` — 8/8 verificaciones pasaron.
-
----
-
-## 7. Consola — errores, promesas rechazadas
-
-Se encontraron y corrigieron **3 bugs reales**, dos de ellos exactamente
-de esta categoría (errores que no se manejaban bien). Detalle completo
-abajo. Tras las correcciones, se repitió toda la batería de pruebas con
-un detector de "promesas rechazadas sin manejar" activo — **cero
-incidentes** en la versión corregida.
-
----
-
-# BUGS ENCONTRADOS Y CORREGIDOS HOY (V6.5)
-
-## Bug 1 — Los mensajes nuevos no llegaban a Supabase desde V6.2 (regresión)
-
-**Causa real:** `db.js` tiene una lista interna de qué tablas locales
-disparan el envío a la nube cuando se guarda un registro nuevo
-(`['products', 'sales', 'clients', 'quotes', ...]`). Esa lista **no
-incluía `'messages'`**. En la corrección anterior de esta conversación
-(V6.2), se cambió `inbox.js` para apoyarse en ese mecanismo automático
-en vez de hacer una llamada directa — pero como `'messages'` nunca
-estuvo en esa lista, la condición que dispara el envío era siempre
-falsa. Resultado: ningún mensaje nuevo llegaba a Supabase, ni de
-inmediato ni por la cola, desde que se aplicó esa corrección. Esto es
-peor que el comportamiento original (donde sí llegaban, al menos
-estando en línea) — es exactamente la "regresión" que sospechabas.
-
-**Corrección:** se agregó `'messages'` a esa lista en `db.js` (en las
-funciones `put` y `delete`).
-
-## Bug 2 — Un error real del servidor (no de red) se ocultaba y se marcaba como "enviado"
-
-**Causa real:** las funciones que envían productos, ventas, pedidos y
-mensajes a Supabase (`cloudAfterPut`/`cloudAfterDelete`) atrapaban
-**cualquier** error y solo lo mostraban con `console.warn`, sin avisarle
-a quien las llamaba que algo había fallado. Además, `upsertCloudProduct`
-y `deleteCloudProduct` tenían el mismo problema en su propio interior.
-Resultado: la cola de sincronización marcaba un elemento como "done"
-(enviado con éxito) **incluso cuando el envío real había fallado** —
-por ejemplo, ante un error de validación del servidor. El dato quedaba
-perdido de Supabase sin ningún reintento ni aviso, y sin que nadie se
-enterara.
-
-**Corrección:** esas funciones ahora revisan el resultado real de cada
-envío y, si falló, vuelven a lanzar el error para que la cola lo detecte
-y lo reintente como corresponde (con el mismo tope de reintentos del
-punto 5).
-
-## Bug 3 — El botón de sincronización quedaba colgado para siempre si se usaba sin conexión
-
-**Causa real:** la función que trae el catálogo desde Supabase
-(`fetchCloudProductRows`) podía **lanzar una excepción** en vez de
-devolver un error normal cuando fallaba la conexión. El botón "Recibir
-novedades" / "Actualizar de forma segura" (el que más usan los
-representantes) no estaba preparado para eso: quedaba con el texto
-"Actualizando…" y deshabilitado **para siempre**, sin ningún mensaje de
-error, y dejando una promesa rechazada sin manejar en la consola del
-navegador. Esto es muy probable que haya pasado en la práctica — un
-representante en la calle sin señal presionando ese botón es justamente
-el escenario más común, no uno raro.
-
-**Corrección:** se blindó esa función para que cualquier error de
-conexión devuelva siempre un resultado normal (`{ok:false, mensaje}`), y
-además se envolvió toda la función de sincronización de catálogo en una
-protección adicional, para que ningún error inesperado vuelva a dejar un
-botón colgado sin aviso.
-
----
-
-# Qué NO se tocó (decisiones, no bugs)
-
-- El botón general "Actualizar" del panel principal sigue sin traer
-  pedidos/mensajes nuevos (solo productos) — comportamiento confirmado,
-  no modificado, a la espera de que confirmes si quieres ampliarlo.
-- Clientes y cotizaciones siguen sin sincronizar — no hay tabla remota
-  para ellos en este proyecto.
-- No se hicieron cambios de arquitectura ni funciones nuevas más allá de
-  las correcciones de bugs descritas arriba, según lo pedido.
+window.renderClients = renderClients;
+window.openClientForm = openClientForm;
+window.findOrCreateClientQuick = findOrCreateClientQuick;

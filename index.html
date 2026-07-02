@@ -1,69 +1,56 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>NATURA VIDA — Gestión</title>
-<meta name="theme-color" content="#01773B">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icons/icon-180.png">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
-<body>
-<div id="app">
+# NATURA VIDA V5.0 — Supabase núcleo + caché offline inteligente
 
-  <header class="top">
-    <div class="brandrow">
-      <div class="brand" id="brandClickArea">
-        <div class="logo" id="bizLogo">🏪</div>
-        <div style="min-width:0;">
-          <div class="bizname" id="bizName">NATURA VIDA</div>
-          <div class="bizsub">Tocar para ir a Ajustes</div>
-        </div>
-      </div>
-      <div class="stamp" id="dateStamp"></div>
-    </div>
-  </header>
+## Objetivo
+Transformar la app para que Supabase sea la fuente principal de datos y IndexedDB quede como caché offline, sin perder compatibilidad con respaldos anteriores.
 
-  <main id="mainArea">
-    <div class="loading">Cargando datos…</div>
-  </main>
+## Cambios principales
 
-  <button class="fab hidden" id="fabAdd" aria-label="Agregar">+</button>
+### 1. Sincronización segura
+- La app ya no borra inventario local del representante al recibir catálogo.
+- Si el servidor no tiene productos, no se pisa la base local.
+- Se guarda un snapshot automático antes de sincronizar.
+- Se agrega sincronización incremental basada en `updated_at`.
+- Se agrega cola de pendientes offline con reintento al volver internet.
 
-  <nav class="bottom" id="bottomNav"></nav>
+### 2. Supabase como núcleo práctico
+- Cuando el administrador guarda o edita un producto, la app intenta subirlo automáticamente a Supabase.
+- Los representantes reciben novedades en segundo plano y también mediante el botón “Recibir novedades”.
+- Si el ZIP trae `supabaseUrl` y `supabaseAnonKey` reales en `js/supabase-config.js`, los celulares ya no necesitan configurar manualmente.
 
-</div>
+### 3. Imágenes
+- Se evita enviar base64 en productos, backups y payloads.
+- Se prepara subida de fotos a Supabase Storage en el bucket `product-images`.
+- En la base se almacena `photo_url`/URL, no imagen dentro del JSON.
 
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const d = new Date();
-    document.getElementById('dateStamp').textContent = d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  });
-</script>
-<script src="js/db.js"></script>
-<script src="js/ui-helpers.js"></script>
-<script src="js/state.js"></script>
-<script src="js/products.js"></script>
-<script src="js/pricegroups.js"></script>
-<script src="js/clients.js"></script>
-<script src="js/sales.js"></script>
-<script src="js/quotes.js"></script>
-<script src="js/receipt.js"></script>
-<script src="js/backup.js"></script>
-<script src="js/settings.js"></script>
-<script src="js/supabase-config.js"></script>
-<script src="js/supabase-sync.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/catalog-pdf.js"></script>
-<script src="js/smart-packages.js"></script>
-<script src="js/orders.js"></script>
-<script src="js/inbox.js"></script>
-<script src="js/app.js"></script>
-</body>
-</html>
+### 4. Respaldos livianos
+- El respaldo excluye imágenes base64.
+- El respaldo ahora es de datos esenciales.
+- La restauración combina datos; no borra todo por defecto.
+
+### 5. Pedidos online
+- El representante arma pedido desde la app.
+- El pedido se guarda localmente y se sube online si hay Supabase.
+- El administrador puede ver pedidos y marcarlos como aprobados o rechazados.
+
+### 6. Buzón
+- El buzón puede sincronizar mensajes desde Supabase.
+- Se conserva cache local de mensajes.
+- Se mantiene contador de no leídos.
+
+### 7. SQL
+- Se actualiza `SUPABASE_SCHEMA.sql`.
+- Se agrega `SUPABASE_MIGRACION_V5_NO_BORRA_DATOS.sql`.
+- El SQL no borra datos existentes.
+- Para uso interno, RLS queda desactivado en tablas de negocio para evitar bloqueos operativos.
+
+## Accesos iniciales
+Administrador:
+- usuario: `admin`
+- contraseña: `12345678`
+- código administrador: `27121961`
+
+Vendedor:
+- usuario: `vendedor1`
+- contraseña: `23456`
+
+Después del primer ingreso se usa celular + contraseña personal.

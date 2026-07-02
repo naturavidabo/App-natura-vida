@@ -1,61 +1,111 @@
-# NATURA VIDA V4.1 - Catálogo premium y compartir inmediato
+/* state.js — Estado en memoria compartido entre módulos y configuración del negocio. */
 
-## Objetivo
-Pulir el área de catálogo y ventas para que la aplicación sea útil en la calle, en la universidad o durante una visita comercial, sin tener que buscar manualmente el archivo en el administrador de archivos.
+const AppState = {
+  products: [],
+  priceGroups: [],
+  sales: [],
+  clients: [],
+  quotes: [],
+  messages: [],
+  settings: {
+    businessName: 'NATURA VIDA',
+    businessSlogan: 'Te cuida por dentro y por fuera',
+    logo: 'img/brand/natura-vida-logo.jpeg',
+    lowStockThreshold: 5,
+    priceGroupsEnabled: true,
+    currency: 'Bs',
+    setupRequired: true,
+    cloudSyncPrepared: true,
+    apkPrepared: true,
+    businessModel: 'Administrador → Revendedores → Clientes Finales',
+    contactName: '',
+    contactPhone: '',
+    contactCity: '',
+    catalogContact: '',
+    catalogNote: 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.'
+  },
+  currentTab: 'inicio',
+  lastClient: null,
+  session: {
+    isAuthenticated: false,
+    userId: null,
+    username: null,
+    fullName: null,
+    roleId: null,
+    roleName: null,
+    permissions: []
+  }
+};
 
-## Cambios principales
+async function loadAllState() {
+  const [products, priceGroups, sales, clients, quotes, messages, settingsRows] = await Promise.all([
+    DB.getAll('products'),
+    DB.getAll('priceGroups'),
+    DB.getAll('sales'),
+    DB.getAll('clients'),
+    DB.getAll('quotes'),
+    DB.getAll('messages').catch(() => []),
+    DB.getAll('settings')
+  ]);
+  AppState.products = products.map(p => window.normalizeLegacyProduct ? normalizeLegacyProduct(p) : p);
+  AppState.priceGroups = priceGroups;
+  AppState.sales = sales;
+  AppState.clients = clients;
+  AppState.quotes = quotes;
+  AppState.messages = messages || [];
 
-### 1. Catálogo PDF premium
-Se rediseñó el catálogo PDF con identidad visual Natura Vida:
-- logo corporativo incluido;
-- portada comercial;
-- colores verdes naturales y acento naranja/dorado;
-- diseño más atractivo para WhatsApp;
-- tarjetas de producto con foto, categoría, descripción y precio;
-- cierre con contacto/WhatsApp.
+  const savedSettings = settingsRows.find(r => r.key === 'main');
+  if (savedSettings && savedSettings.value) {
+    AppState.settings = Object.assign({}, AppState.settings, savedSettings.value);
+    if (!AppState.settings.logo || AppState.settings.logo === 'icons/icon-192.png') {
+      AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
+      await saveSettings();
+    }
+  } else {
+    AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
+    await saveSettings();
+  }
+}
 
-### 2. Flujo generar + previsualizar + compartir
-Después de generar el catálogo, la app ahora muestra una pantalla de resultado con:
-- confirmación visible de PDF creado;
-- vista previa integrada;
-- botón Compartir;
-- botón Previsualizar;
-- botón Descargar.
+async function saveSettings() {
+  await DB.put('settings', { key: 'main', value: AppState.settings }, { silent: true });
+}
 
-En celulares compatibles, el botón Compartir usa el menú del sistema para enviar el PDF por WhatsApp u otras aplicaciones.
+function roundBs(n) {
+  const value = Number(n) || 0;
+  return Math.round(value * 100) / 100;
+}
 
-### 3. Mejora del área de ventas
-Se mejoró la presentación del módulo Vender:
-- cabecera comercial;
-- tarjetas de productos más prolijas;
-- categoría visible;
-- descripción breve;
-- precio más destacado;
-- mejor estilo de botones y selector de cantidades.
+function fmtMoney(n) {
+  n = roundBs(n);
+  const decimals = Math.abs(n % 1) > 0.0001 ? 2 : 0;
+  return AppState.settings.currency + ' ' + n.toLocaleString('es-BO', { minimumFractionDigits: decimals, maximumFractionDigits: 2 });
+}
 
-### 4. Cambio de texto
-Se quitó la palabra "mercado" en el selector principal. Ahora queda:
-- Unitaria
-- Mayorista
-- Representantes
+function grossCost(product) {
+  if (!product) return 0;
+  const insumoCost = (product.insumos || []).reduce((sum, i) => {
+    const qty = Number(i.qtyUsed) || 0;
+    const unitCost = Number(i.unitCost) || 0;
+    return sum + (qty * unitCost);
+  }, 0);
+  if (insumoCost > 0) return roundBs(insumoCost);
+  const directCost = Number(product.cost ?? product.baseCost);
+  return Number.isFinite(directCost) ? roundBs(directCost) : 0;
+}
 
-### 5. Archivos de marca
-Se agregaron imágenes de identidad:
-- `img/brand/natura-vida-logo.jpeg`
-- `img/brand/natura-vida-perfil-hojas.jpeg`
+function priceForGroup(product, groupId) {
+  const base = window.marketPrice ? marketPrice(product) : wholesalePrice(product);
+  const g = AppState.priceGroups.find(pg => pg.id === groupId);
+  if (!g) return base;
+  if (g.mode === 'discount') return roundBs(Math.max(0, base - (base * (Number(g.percent) || 0) / 100)));
+  return roundBs(base + (base * (Number(g.percent) || 0) / 100));
+}
 
-### 6. PWA
-Se actualizó la versión de caché del service worker para forzar actualización visual.
-
-## Archivos modificados
-- `js/catalog-pdf.js`
-- `js/sales.js`
-- `js/app.js`
-- `js/state.js`
-- `css/app.css`
-- `service-worker.js`
-
-## Archivos nuevos
-- `img/brand/natura-vida-logo.jpeg`
-- `img/brand/natura-vida-perfil-hojas.jpeg`
-- `CAMBIOS_V4_1_CATALOGO_PREMIUM_COMPARTIR.md`
+window.AppState = AppState;
+window.loadAllState = loadAllState;
+window.saveSettings = saveSettings;
+window.fmtMoney = fmtMoney;
+window.roundBs = roundBs;
+window.grossCost = grossCost;
+window.priceForGroup = priceForGroup;

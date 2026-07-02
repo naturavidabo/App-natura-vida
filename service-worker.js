@@ -1,54 +1,34 @@
-const CACHE_NAME = 'natura-vida-v5-1-estable-ventas-catalogo';
-const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json',
-  './SUPABASE_MIGRACION_V5_NO_BORRA_DATOS.sql',
-  './SUPABASE_MIGRACION_V5_1_ESTABLE.sql',
-  './CAMBIOS_V5_0_SUPABASE_CACHE_OFFLINE.md',
-  './CAMBIOS_V5_1_ESTABLE_VENTAS_CATALOGO.md',
-  './css/app.css',
-  './js/db.js',
-  './js/state.js',
-  './js/ui-helpers.js',
-  './js/products.js',
-  './js/pricegroups.js',
-  './js/sales.js',
-  './js/clients.js',
-  './js/quotes.js',
-  './js/receipt.js',
-  './js/backup.js',
-  './js/settings.js',
-  './js/supabase-config.js',
-  './js/supabase-sync.js',
-  './js/auth.js',
-  './js/catalog-pdf.js',
-  './js/smart-packages.js',
-  './js/orders.js',
-  './js/inbox.js',
-  './js/app.js',
-  './icons/icon-48.png',
-  './icons/icon-72.png',
-  './icons/icon-96.png',
-  './icons/icon-144.png',
-  './icons/icon-180.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './img/brand/natura-vida-logo.jpeg',
-  './img/brand/natura-vida-perfil-hojas.jpeg'
+// service-worker.js — V6.7
+// SOLO cachea assets estaticos (HTML, CSS, JS, iconos).
+// NUNCA cachea datos de negocio ni llamadas a Supabase.
+
+const CACHE_NAME = 'natura-vida-v6-7-assets';
+
+const STATIC_ASSETS = [
+  './', './index.html', './manifest.json', './css/app.css',
+  './js/db.js', './js/state.js', './js/ui-helpers.js', './js/products.js',
+  './js/pricegroups.js', './js/sales.js', './js/clients.js', './js/quotes.js',
+  './js/receipt.js', './js/backup.js', './js/settings.js',
+  './js/supabase-config.js', './js/supabase-sync.js', './js/auth.js',
+  './js/catalog-pdf.js', './js/smart-packages.js', './js/orders.js',
+  './js/inbox.js', './js/app.js',
+  './icons/icon-192.png', './icons/icon-512.png',
+  './img/brand/natura-vida-logo.jpeg'
 ];
+
+const NEVER_CACHE_HOSTS = ['supabase.co', 'supabase.com', 'cdn.jsdelivr.net'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).catch(() => {})
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)).catch(() => {})
   );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
     )
   );
   self.clients.claim();
@@ -56,16 +36,18 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (NEVER_CACHE_HOSTS.some(h => url.hostname.includes(h))) return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    caches.match(event.request).then(cached => {
       if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        if (response && response.status === 200 && (response.type === 'basic' || response.type === 'cors')) {
+      return fetch(event.request).then(response => {
+        if (response && response.status === 200 && response.type === 'basic') {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => cached);
+      }).catch(() => cached || new Response('Sin conexion', { status: 503 }));
     })
   );
 });
