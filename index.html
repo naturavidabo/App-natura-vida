@@ -1,73 +1,153 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<title>NATURA VIDA — Gestión V6.9</title>
-<meta name="theme-color" content="#01773B">
-<link rel="manifest" href="manifest.json?v=6.9.0">
-<link rel="apple-touch-icon" href="icons/icon-180.png">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css?v=6.9.0">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#081f38" />
+  <meta name="description" content="Control local de gastos, presupuestos y proyectos con respaldo reforzado." />
+  <title>Control de Presupuesto</title>
+  <link rel="manifest" href="manifest.json?v=5.1" />
+  <link rel="icon" href="icon-v5.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=5.1" />
 </head>
 <body>
-<div id="app">
-
-  <header class="top">
-    <div class="brandrow">
-      <div class="brand" id="brandClickArea">
-        <div class="logo" id="bizLogo">🏪</div>
-        <div style="min-width:0;">
-          <div class="bizname" id="bizName">NATURA VIDA</div>
-          <div class="bizsub">Tocar para ir a Ajustes</div>
-        </div>
-      </div>
-      <div class="headerStatusGroup">
-        <div class="cloudBadge connecting" id="cloudStatusBadge" title="Estado de conexión"><span></span><b>Conectando</b></div>
-        <div class="stamp" id="dateStamp"></div>
-      </div>
+  <div id="bootOverlay" class="system-overlay" aria-live="polite">
+    <div class="system-card">
+      <div class="loader" aria-hidden="true"></div>
+      <h1>Verificando tus datos</h1>
+      <p id="bootMessage">Abriendo el almacenamiento protegido…</p>
     </div>
-  </header>
+  </div>
 
-  <main id="mainArea">
-    <div class="loading">Cargando datos…</div>
-  </main>
+  <div id="activationOverlay" class="system-overlay" hidden>
+    <div class="system-card activation-card">
+      <div class="lock-mark">🔐</div>
+      <p class="eyebrow dark">ACTIVACIÓN LOCAL</p>
+      <h1>Control de Presupuesto</h1>
+      <p>Ingresa el código autorizado para habilitar el registro y la edición de datos en este dispositivo.</p>
+      <label for="activationCodeInput">Código de activación</label>
+      <input id="activationCodeInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" placeholder="••••••" />
+      <button id="activateBtn" class="main-btn full" type="button">Activar aplicación</button>
+      <p id="activationMessage" class="system-message" aria-live="polite"></p>
+      <small>La activación funciona sin internet y permanece en este dispositivo.</small>
+    </div>
+  </div>
 
-  <button class="fab hidden" id="fabAdd" aria-label="Agregar">+</button>
+  <div id="recoveryOverlay" class="system-overlay" hidden>
+    <div class="system-card recovery-card">
+      <div class="lock-mark">🛟</div>
+      <h1>Protección de datos activada</h1>
+      <p id="recoveryMessage">No se pudo validar la información. La aplicación no iniciará con datos vacíos.</p>
+      <button id="retryRecoveryBtn" class="main-btn full" type="button">Intentar recuperación nuevamente</button>
+      <button id="recoveryImportBtn" class="secondary-btn" type="button">Importar copia de seguridad</button>
+      <input id="recoveryImportFile" type="file" accept="application/json" hidden />
+      <button id="downloadDiagnosticBtn" class="secondary-btn" type="button">Descargar diagnóstico</button>
+      <small>No borres la aplicación ni los datos del navegador mientras esta pantalla esté visible.</small>
+    </div>
+  </div>
 
-  <nav class="bottom" id="bottomNav"></nav>
+  <div id="appRoot" class="app" hidden>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">CONTROL FINANCIERO PERSONAL</p>
+        <h1>Control de Presupuesto</h1>
+        <p id="activeProjectLabel">Gastos generales</p>
+      </div>
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="Abrir configuración">⚙</button>
+    </header>
 
-</div>
+    <div id="storageWarning" class="storage-warning" hidden></div>
 
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const d = new Date();
-    document.getElementById('dateStamp').textContent = d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  });
-</script>
-<script src="js/db.js?v=6.9.0"></script>
-<script src="js/ui-helpers.js?v=6.9.0"></script>
-<script src="js/state.js?v=6.9.0"></script>
-<script src="js/products.js?v=6.9.0"></script>
-<script src="js/pricegroups.js?v=6.9.0"></script>
-<script src="js/clients.js?v=6.9.0"></script>
-<script src="js/sales.js?v=6.9.0"></script>
-<script src="js/quotes.js?v=6.9.0"></script>
-<script src="js/receipt.js?v=6.9.0"></script>
-<script src="js/settings.js?v=6.9.0"></script>
-<script src="js/supabase-config.js?v=6.9.0"></script>
-<script src="js/supabase-sync.js?v=6.9.0"></script>
-<script src="js/auth.js?v=6.9.0"></script>
-<script src="js/catalog-pdf.js?v=6.9.0"></script>
-<script src="js/orders.js?v=6.9.0"></script>
-<script src="js/inbox.js?v=6.9.0"></script>
-<script src="js/app.js?v=6.9.0"></script>
+    <section class="overview">
+      <article class="budget-card featured-card">
+        <div class="budget-head"><span>Disponible de <strong id="currentMonthName">este mes</strong></span><span id="monthProgressBadge" class="badge">Sin configurar</span></div>
+        <strong id="availableMonth" class="main-amount">Bs 0,00</strong>
+        <p id="budgetStatus" class="muted">Configura tu presupuesto mensual.</p>
+        <div class="budget-progress"><span id="monthProgressBar"></span></div>
+        <div class="daily-reference"><span>Referencia diaria</span><strong id="dailyAllowance">—</strong><small id="monthDaysInfo">Se calcula según los días restantes del mes.</small></div>
+      </article>
+
+      <article id="activeProjectCard" class="project-highlight" hidden>
+        <div class="project-highlight-head"><div><span>Proyecto activo</span><strong id="activeProjectName">—</strong></div><button id="finishProjectBtn" class="small-light-btn" type="button">Finalizar</button></div>
+        <div class="project-numbers"><div><span>Presupuesto</span><strong id="activeProjectBudget">Bs 0,00</strong></div><div><span>Gastado</span><strong id="activeProjectSpent">Bs 0,00</strong></div><div><span>Disponible</span><strong id="activeProjectAvailable">Bs 0,00</strong></div></div>
+        <div class="project-progress"><span id="activeProjectProgress"></span></div>
+        <small>Los gastos también forman parte del total mensual general.</small>
+      </article>
+    </section>
+
+    <section class="mini-stats" aria-label="Resumen de gastos">
+      <article><span>Hoy</span><strong id="todayTotal">Bs 0,00</strong></article>
+      <article><span>Semana</span><strong id="weekTotal">Bs 0,00</strong></article>
+      <article><span>Mes</span><strong id="monthTotal">Bs 0,00</strong></article>
+    </section>
+
+    <section id="recentSection" class="panel" hidden>
+      <div class="panel-title"><div><h2>Usadas recientemente</h2><p class="section-help">Acceso rápido sin cambiar el orden principal.</p></div></div>
+      <div id="recentCategories" class="category-shortcuts"></div>
+    </section>
+
+    <section class="panel quick-panel">
+      <div class="panel-title"><div><h2>Favoritos</h2><p class="section-help">Toca, revisa el monto y confirma. Usa ✎ para editar.</p></div><button id="addFavoriteBtn" class="text-btn compact-btn" type="button">+ Favorito</button></div>
+      <div id="quickButtons" class="quick-grid"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Nuevo gasto</h2>
+      <form id="expenseForm" class="form">
+        <div class="field"><label for="amountInput">Monto</label><input id="amountInput" type="text" inputmode="decimal" pattern="[0-9.,]*" autocomplete="off" placeholder="Ej. 15 o 15,50" required /></div>
+        <div class="field"><label>Categoría</label><button id="categoryPickerBtn" class="select-button" type="button"><span id="categoryPickerText">Seleccionar categoría</span><span aria-hidden="true">▾</span></button><input id="categoryInput" type="hidden" value="" /><small>Toca para ver categorías frecuentes y todas las demás.</small></div>
+        <div class="field"><label for="detailInput">Detalle <span class="optional">(opcional)</span></label><input id="detailInput" type="text" autocomplete="off" placeholder="Ej. almuerzo, taxi, fotocopias" /></div>
+        <div class="field"><label for="projectInput">Asignar a</label><select id="projectInput"></select><small id="projectHint">Selecciona gastos generales o un proyecto activo.</small></div>
+        <div class="field date-field"><div class="date-row"><div><label>Fecha y hora</label><small id="autoDatePreview">Se registrará automáticamente.</small></div><button id="toggleDateBtn" class="link-btn" type="button">Cambiar fecha</button></div><div id="manualDateFields" class="manual-date" hidden><input id="expenseDateInput" type="date" /><input id="expenseTimeInput" type="time" /></div></div>
+        <button id="saveExpenseBtn" type="submit" class="main-btn full">Guardar gasto</button>
+      </form>
+    </section>
+
+    <nav class="tabs" aria-label="Secciones"><button class="tab active" data-tab="summary" type="button">Resumen</button><button class="tab" data-tab="history" type="button">Historial</button><button class="tab" data-tab="projects" type="button">Proyectos</button></nav>
+
+    <main>
+      <section id="summaryTab" class="tab-content active">
+        <div class="panel"><div class="panel-title inline-title"><div><h2>Gastos por categoría</h2><p id="categoryPeriodTotal" class="section-help">Total del mes: Bs 0,00</p></div><select id="periodFilter" class="compact-select"><option value="day">Hoy</option><option value="week">Semana</option><option value="month" selected>Mes</option></select></div><div id="categorySummary" class="bars"></div></div>
+        <div class="panel"><h2>Ritmo de gasto</h2><p id="paceMessage" class="pace">Configura tu presupuesto para ver el ritmo de gasto.</p></div>
+      </section>
+
+      <section id="historyTab" class="tab-content"><div class="panel"><div class="history-tools"><div><h2>Historial</h2><p class="section-help">Consulta, edita y exporta tus gastos.</p></div><button id="exportBtn" class="text-btn compact-btn" type="button">Exportar Excel (.xlsx)</button></div><div class="history-filters"><input id="searchInput" class="search" placeholder="Buscar gasto" /><select id="historyMonthFilter"></select></div><div id="historyList" class="history"></div></div></section>
+
+      <section id="projectsTab" class="tab-content"><div class="panel"><h2>Proyecto o viaje</h2><p class="section-help project-help">Separa gastos de viajes, cursos, comisiones u otras actividades sin perder el total general.</p><form id="projectForm" class="form compact-form"><div class="field"><label for="projectNameInput">Nombre</label><input id="projectNameInput" type="text" placeholder="Ej. Viaje a Cochabamba" required /></div><div class="field"><label for="projectBudgetInput">Presupuesto <span class="optional">(opcional)</span></label><input id="projectBudgetInput" type="text" inputmode="decimal" pattern="[0-9.,]*" placeholder="Ej. 1200" /></div><button class="main-btn full" type="submit">Crear y activar proyecto</button></form><div id="projectList" class="project-list"></div></div></section>
+    </main>
+
+    <footer class="app-footer"><span>Control de Presupuesto B5.1 · almacenamiento protegido</span><button id="checkUpdateBtn" class="link-btn" type="button">Buscar actualización</button></footer>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <div id="settingsModal" class="modal" hidden><div class="modal-card"><button class="close" data-close="settingsModal" type="button">×</button><h2>Configuración</h2><p class="modal-help">Presupuesto mensual, seguridad y respaldo.</p>
+    <section class="settings-section"><h3>Presupuesto mensual</h3><label for="settingsMonthInput">Mes</label><input id="settingsMonthInput" type="month" /><label for="monthlyBudgetInput">Presupuesto disponible</label><input id="monthlyBudgetInput" type="text" inputmode="decimal" pattern="[0-9.,]*" /><label for="savingsGoalInput">Objetivo de ahorro</label><input id="savingsGoalInput" type="text" inputmode="decimal" pattern="[0-9.,]*" /><p class="calculation-note">Monto utilizable = presupuesto menos objetivo de ahorro.</p><button id="saveSettingsBtn" class="main-btn full" type="button">Guardar configuración</button></section>
+    <section class="settings-section"><h3>Estado de los datos</h3><div id="storageStatusGrid" class="status-grid"></div><button id="verifyIntegrityBtn" class="secondary-btn" type="button">Comprobar integridad</button></section>
+    <section class="settings-section"><h3>Respaldo y recuperación</h3><button id="backupBtn" class="secondary-btn" type="button">Crear respaldo completo</button><button id="importBtn" class="secondary-btn" type="button">Importar respaldo</button><input id="importFileInput" type="file" accept="application/json" hidden /><button id="openTrashBtn" class="secondary-btn" type="button">Abrir papelera</button></section>
+    <section class="settings-section"><h3>Personalización</h3><button id="openCategoriesBtn" class="secondary-btn" type="button">Administrar categorías</button></section>
+    <section class="settings-section"><h3>Activación</h3><p id="activationStatusText" class="calculation-note">Aplicación activada en este dispositivo.</p><button id="deactivateBtn" class="secondary-btn" type="button">Desactivar aplicación</button></section>
+    <button id="resetBtn" class="danger-btn" type="button">Borrar todos los datos financieros</button>
+  </div></div>
+
+  <div id="categoriesModal" class="modal" hidden><div class="modal-card"><button class="close" data-close="categoriesModal" type="button">×</button><h2>Administrar categorías</h2><p class="modal-help">Cambia el nombre, orden o visibilidad. “Otros” permanece como respaldo.</p><div class="inline-form"><input id="newCategoryInput" type="text" placeholder="Ej. Mascotas" /><button id="addCategoryBtn" class="text-btn" type="button">Agregar</button></div><div id="categoriesList" class="category-list"></div></div></div>
+
+  <div id="categoryPickerModal" class="modal bottom-modal" hidden><div class="modal-card compact-modal"><button class="close" data-close="categoryPickerModal" type="button">×</button><h2>Selecciona una categoría</h2><p class="category-group-title">Frecuentes</p><div id="frequentCategoryOptions" class="category-options"></div><p class="category-group-title">Todas</p><div id="categoryOptions" class="category-options"></div></div></div>
+
+  <div id="favoriteConfirmModal" class="modal" hidden><div class="modal-card compact-modal"><button class="close" data-close="favoriteConfirmModal" type="button">×</button><h2 id="favoriteConfirmTitle">Confirmar gasto</h2><p id="favoriteConfirmInfo" class="modal-help"></p><label for="favoriteConfirmAmount">Monto</label><input id="favoriteConfirmAmount" type="text" inputmode="decimal" pattern="[0-9.,]*" /><label for="favoriteConfirmProject">Asignar a</label><select id="favoriteConfirmProject"></select><div class="modal-actions"><button class="secondary-action" data-close="favoriteConfirmModal" type="button">Cancelar</button><button id="confirmFavoriteBtn" class="main-btn" type="button">Confirmar</button></div></div></div>
+
+  <div id="favoriteEditorModal" class="modal" hidden><div class="modal-card compact-modal"><button class="close" data-close="favoriteEditorModal" type="button">×</button><h2 id="favoriteEditorTitle">Nuevo favorito</h2><label for="favoriteLabelInput">Nombre</label><input id="favoriteLabelInput" type="text" /><label for="favoriteAmountInput">Monto habitual</label><input id="favoriteAmountInput" type="text" inputmode="decimal" pattern="[0-9.,]*" /><label for="favoriteCategoryInput">Categoría</label><select id="favoriteCategoryInput"></select><button id="saveFavoriteBtn" class="main-btn full" type="button">Guardar favorito</button><button id="deleteFavoriteBtn" class="danger-btn" type="button" hidden>Borrar favorito</button></div></div>
+
+  <div id="expenseEditorModal" class="modal" hidden><div class="modal-card compact-modal"><button class="close" data-close="expenseEditorModal" type="button">×</button><h2>Editar gasto</h2><label for="editExpenseAmount">Monto</label><input id="editExpenseAmount" type="text" inputmode="decimal" pattern="[0-9.,]*" /><label for="editExpenseCategory">Categoría</label><select id="editExpenseCategory"></select><label for="editExpenseDetail">Detalle</label><input id="editExpenseDetail" type="text" /><label for="editExpenseProject">Asignar a</label><select id="editExpenseProject"></select><label for="editExpenseDate">Fecha</label><input id="editExpenseDate" type="date" /><label for="editExpenseTime">Hora</label><input id="editExpenseTime" type="time" /><button id="saveExpenseEditBtn" class="main-btn full" type="button">Guardar cambios</button></div></div>
+
+  <div id="projectEditorModal" class="modal" hidden><div class="modal-card compact-modal"><button class="close" data-close="projectEditorModal" type="button">×</button><h2>Editar proyecto</h2><label for="editProjectName">Nombre</label><input id="editProjectName" type="text" /><label for="editProjectBudget">Presupuesto</label><input id="editProjectBudget" type="text" inputmode="decimal" pattern="[0-9.,]*" /><button id="saveProjectEditBtn" class="main-btn full" type="button">Guardar cambios</button></div></div>
+
+  <div id="trashModal" class="modal" hidden><div class="modal-card"><button class="close" data-close="trashModal" type="button">×</button><h2>Papelera</h2><p class="modal-help">Los gastos eliminados pueden restaurarse. No se borran de inmediato.</p><div id="trashList" class="history"></div></div></div>
+
+  <div id="importPreviewModal" class="modal" hidden><div class="modal-card compact-modal"><button class="close" data-close="importPreviewModal" type="button">×</button><h2>Revisar respaldo</h2><div id="importPreview" class="backup-preview"></div><div class="stack-actions"><button id="mergeImportBtn" class="secondary-btn" type="button">Combinar sin duplicar</button><button id="replaceImportBtn" class="main-btn full" type="button">Reemplazar datos actuales</button><button class="secondary-btn" data-close="importPreviewModal" type="button">Cancelar</button></div></div></div>
+
+  <div id="resetModal" class="modal" hidden><div class="modal-card compact-modal"><button class="close" data-close="resetModal" type="button">×</button><h2>Borrar datos financieros</h2><p id="resetWarningText" class="danger-note"></p><p class="modal-help">Se creará una copia interna antes del borrado. Escribe <strong>BORRAR</strong> para confirmar.</p><input id="resetConfirmInput" type="text" autocomplete="off" placeholder="BORRAR" /><button id="confirmResetBtn" class="danger-btn" type="button">Confirmar borrado</button></div></div>
+
+  <script src="app.js?v=5.1"></script>
 </body>
 </html>
