@@ -7,7 +7,7 @@
 
 window.NATURA_ONLINE_CONFIG = {
   enabled: true,
-  supabaseUrl: 'PEGAR_AQUI_SUPABASE_PROJECT_URL',
-  supabaseAnonKey: 'PEGAR_AQUI_SUPABASE_PUBLISHABLE_O_ANON_KEY',
+  supabaseUrl: 'https://ptdvawqjvlsqqynqdxdy.supabase.co',
+  supabaseAnonKey: 'sb_publishable_J5qL2qkklu1tFHJyljrSbQ_VllDwxKTY',
   productImagesBucket: 'product-images'
 };
