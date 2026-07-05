@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>NATURA VIDA — Gestión V6.9</title>
+<meta name="theme-color" content="#01773B">
+<link rel="manifest" href="manifest.json?v=6.9.0">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css?v=6.9.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div id="app">
+
+  <header class="top">
+    <div class="brandrow">
+      <div class="brand" id="brandClickArea">
+        <div class="logo" id="bizLogo">🏪</div>
+        <div style="min-width:0;">
+          <div class="bizname" id="bizName">NATURA VIDA</div>
+          <div class="bizsub">Tocar para ir a Ajustes</div>
+        </div>
+      </div>
+      <div class="headerStatusGroup">
+        <div class="cloudBadge connecting" id="cloudStatusBadge" title="Estado de conexión"><span></span><b>Conectando</b></div>
+        <div class="stamp" id="dateStamp"></div>
+      </div>
+    </div>
+  </header>
+
+  <main id="mainArea">
+    <div class="loading">Cargando datos…</div>
+  </main>
+
+  <button class="fab hidden" id="fabAdd" aria-label="Agregar">+</button>
+
+  <nav class="bottom" id="bottomNav"></nav>
+
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const d = new Date();
+    document.getElementById('dateStamp').textContent = d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  });
+</script>
+<script src="js/db.js?v=6.9.0"></script>
+<script src="js/ui-helpers.js?v=6.9.0"></script>
+<script src="js/state.js?v=6.9.0"></script>
+<script src="js/products.js?v=6.9.0"></script>
+<script src="js/pricegroups.js?v=6.9.0"></script>
+<script src="js/clients.js?v=6.9.0"></script>
+<script src="js/sales.js?v=6.9.0"></script>
+<script src="js/quotes.js?v=6.9.0"></script>
+<script src="js/receipt.js?v=6.9.0"></script>
+<script src="js/settings.js?v=6.9.0"></script>
+<script src="js/supabase-config.js?v=6.9.0"></script>
+<script src="js/supabase-sync.js?v=6.9.0"></script>
+<script src="js/auth.js?v=6.9.0"></script>
+<script src="js/catalog-pdf.js?v=6.9.0"></script>
+<script src="js/orders.js?v=6.9.0"></script>
+<script src="js/inbox.js?v=6.9.0"></script>
+<script src="js/app.js?v=6.9.0"></script>
+</body>
+</html>
