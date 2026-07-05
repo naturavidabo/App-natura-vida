@@ -1,5 +1,5 @@
 'use strict';
-const CACHE_NAME = 'control-presupuesto-b5-1-shell-v1';
+const CACHE_NAME = 'control-presupuesto-b5-2-shell-v1';
 const APP_SHELL = [
   './',
   './index.html',

@@ -1,4 +1,4 @@
-# Control de Presupuesto B5.1
+# Control de Presupuesto B5.2
 
 Aplicación PWA local para gastos, presupuestos y proyectos.
 
@@ -28,9 +28,17 @@ Aplicación PWA local para gastos, presupuestos y proyectos.
 Los documentos Markdown son informativos y no afectan el funcionamiento.
 
 
-## Corrección B5.1
+## Correcciones B5.1 y B5.2
 
 - La exportación ahora genera un archivo `.xlsx` real, no un CSV.
 - Incluye número, fecha, hora, categoría, detalle, monto numérico, proyecto y mes.
 - Valida todos los registros antes de descargar el archivo y muestra cantidad y total exportado.
 - Respeta el mes y la búsqueda seleccionados en Historial.
+
+
+### Corrección B5.2
+
+- Se corrigió la estructura XML de la hoja de Excel.
+- Se eliminó el elemento `autoFilter` que estaba ubicado en un orden no válido dentro de `sheet1.xml` y provocaba que Microsoft Excel reparara o descartara la hoja.
+- La exportación conserva categorías, detalles, montos numéricos, proyectos y fechas.
+- No se modifica IndexedDB ni el sistema de respaldo financiero.
