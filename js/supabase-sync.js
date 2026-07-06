@@ -10,12 +10,41 @@ let _realtimeChannel = null;
 let _realtimeRestartTimer = null;
 let _backgroundStarted = false;
 let _refreshInFlight = null;
+let _deferredRenderPending = false;
 
 const CloudConnection = {
   state: navigator.onLine ? 'connecting' : 'offline',
   detail: '',
   updatedAt: Date.now()
 };
+
+
+function shouldDeferCloudRender() {
+  if (window.V7_FORM_DIRTY) return true;
+  const active = document.activeElement;
+  if (!active) return false;
+  const tag = String(active.tagName || '').toUpperCase();
+  return ['INPUT','TEXTAREA','SELECT'].includes(tag) && !active.readOnly && !active.disabled;
+}
+
+function renderAfterCloudRefresh() {
+  if (!window.render) return;
+  if (shouldDeferCloudRender()) {
+    _deferredRenderPending = true;
+    return;
+  }
+  _deferredRenderPending = false;
+  render();
+}
+
+function flushDeferredCloudRender() {
+  if (!_deferredRenderPending || shouldDeferCloudRender()) return;
+  _deferredRenderPending = false;
+  if (window.render) render();
+}
+
+document.addEventListener('focusout', () => setTimeout(flushDeferredCloudRender, 180));
+window.addEventListener('nv:form-saved', flushDeferredCloudRender);
 
 function effectiveOnlineConfig() {
   return window.NATURA_ONLINE_CONFIG || {};
@@ -777,7 +806,7 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
     ];
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
     await loadAllState();
-    if (window.render) render();
+    renderAfterCloudRefresh();
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
     const failed = results.filter(result => result && result.ok === false);
     if (failed.length) {
@@ -800,8 +829,9 @@ async function refreshAfterEvent(table) {
     else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
     else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
     else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
+    else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
     await loadAllState();
-    if (window.render) render();
+    renderAfterCloudRefresh();
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
     setCloudConnectionState('online', `Realtime: ${table}`);
   } catch (error) {
@@ -834,7 +864,7 @@ function startRealtimeSubscriptions() {
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
   let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
-  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records'].forEach(table => {
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => refreshAfterEvent(table));
   });
   channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
@@ -857,8 +887,8 @@ function startRealtimeSubscriptions() {
           }
         }
       }
-      if (isAdmin() && AppState.currentTab === 'usuarios' && window.renderUsersFoundation) await renderUsersFoundation();
-      else if (window.render) render();
+      if (isAdmin() && AppState.currentTab === 'usuarios' && window.renderUsersFoundation && !shouldDeferCloudRender()) await renderUsersFoundation();
+      else renderAfterCloudRefresh();
     } catch (error) { console.warn('Realtime profiles:', error); }
   });
 
@@ -919,6 +949,9 @@ async function openSafeCloudSyncSheet() { showToast('La actualizaci√≥n es autom√
 
 Object.assign(window, {
   CloudConnection,
+  shouldDeferCloudRender,
+  renderAfterCloudRefresh,
+  flushDeferredCloudRender,
   effectiveOnlineConfig,
   getSavedOnlineConfig,
   getOnlineConfigValue,

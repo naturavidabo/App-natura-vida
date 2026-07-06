@@ -169,7 +169,6 @@ function renderInventario() {
 
   const filtered = AppState.products
     .filter(p => p.status !== 'archived')
-    .filter(p => productMatchesSearch(p, _prodSearch))
     .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
 
   if (filtered.length === 0) {
@@ -235,7 +234,7 @@ function renderInventario() {
   main.innerHTML = html;
   const quickAdd = $('#quickAddProduct');
   if (quickAdd) quickAdd.addEventListener('click', () => openProductForm(null));
-  $('#searchInput').addEventListener('input', e => { _prodSearch = e.target.value; renderInventario(); });
+  bindStableSearch('#searchInput', '#mainArea .invCard', value => { _prodSearch = value; });
   $all('.editBtn').forEach(b => b.addEventListener('click', () => openProductForm(b.dataset.id)));
   $all('.editMyInvBtn').forEach(b => b.addEventListener('click', () => openResellerProductForm(b.dataset.id)));
   $all('.delBtn').forEach(b => b.addEventListener('click', () => confirmDeleteProduct(b.dataset.id)));

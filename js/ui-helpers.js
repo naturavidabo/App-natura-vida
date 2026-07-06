@@ -69,6 +69,25 @@ function matchesSearch(haystack, needle) {
   return normalizeSearch(haystack).includes(normalizeSearch(needle));
 }
 
+
+/* Filtra tarjetas ya dibujadas sin reconstruir la pantalla.
+   Evita que el teclado del celular se cierre mientras el usuario escribe. */
+function bindStableSearch(inputOrSelector, cardSelector, onValue) {
+  const input = typeof inputOrSelector === 'string' ? document.querySelector(inputOrSelector) : inputOrSelector;
+  if (!input) return;
+  const apply = () => {
+    const value = String(input.value || '');
+    if (typeof onValue === 'function') onValue(value);
+    const query = normalizeSearch(value);
+    document.querySelectorAll(cardSelector).forEach(card => {
+      const searchable = normalizeSearch(card.getAttribute('data-search') || card.textContent || '');
+      card.classList.toggle('searchHidden', Boolean(query) && !searchable.includes(query));
+    });
+  };
+  input.addEventListener('input', apply);
+  apply();
+}
+
 window.$ = $;
 window.$all = $all;
 window.escapeHtml = escapeHtml;
@@ -81,6 +100,7 @@ window.fmtDateTime = fmtDateTime;
 window.readImageFile = readImageFile;
 window.matchesSearch = matchesSearch;
 window.normalizeSearch = normalizeSearch;
+window.bindStableSearch = bindStableSearch;
 
 /* Comparte un archivo mediante el menú nativo del dispositivo.
    Si no está disponible, descarga el archivo sin forzar ninguna aplicación. */

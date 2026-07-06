@@ -335,20 +335,14 @@
   }
 
   function startV7Realtime() {
-    const sb = getSupabaseClient();
-    if (!sb || !requireAuth()) return;
-    stopV7Realtime();
-    let channel = sb.channel(`nv7-extra-${AppState.session.onlineUserId}`);
-    ['commercial_profiles', 'profile_change_requests'].forEach(table => {
-      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, scheduleV7Refresh);
-    });
-    v7Channel = channel.subscribe(() => {});
+    // V7.1.1: commercial_profiles y profile_change_requests ya forman parte
+    // del canal Realtime principal. Se evita abrir un segundo canal duplicado.
+    return true;
   }
 
   async function syncAfterLoginV7() {
     const base = originalSyncAfterLogin ? await originalSyncAfterLogin() : { ok: true };
     await syncV7Context();
-    startV7Realtime();
     return base;
   }
 

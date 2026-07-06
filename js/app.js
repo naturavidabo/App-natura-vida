@@ -670,7 +670,7 @@ async function initApp() {
   updateCloudStatusBadge(window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' });
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./service-worker.js?v=7.0.0', { updateViaCache: 'none' }).catch(() => {});
+    navigator.serviceWorker.register('./service-worker.js?v=7.1.1', { updateViaCache: 'none' }).catch(() => {});
   }
 }
 

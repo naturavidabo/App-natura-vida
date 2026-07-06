@@ -7,7 +7,6 @@ function catalogVisibleProducts() {
   const resellerCatalog = window.isReseller && isReseller();
   return (AppState.products || [])
     .filter(p => p.status !== 'archived')
-    .filter(p => !resellerCatalog || Number(p.stock || 0) > 0)
     .sort((a, b) => String(a.category || 'General').localeCompare(String(b.category || 'General')) || String(a.name || '').localeCompare(String(b.name || '')));
 }
 
@@ -464,6 +463,14 @@ async function generateCatalogPdf(options = {}) {
     doc.roundedRect(imgX, imgY, imgW, imgH, 16, 16, 'F');
     const img = await imageInfoForPdf(p.photo);
     if (!drawImageContain(doc, img, imgX + 3, imgY + 3, imgW - 6, imgH - 6)) drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
+    if (Number(p.stock || 0) <= 0) {
+      doc.setFillColor(230,91,91);
+      doc.roundedRect(imgX + imgW - 70, imgY + 8, 58, 18, 9, 9, 'F');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(255,255,255);
+      doc.text('AGOTADO', imgX + imgW - 41, imgY + 20, { align: 'center' });
+    }
 
     let ty = y + 131;
     doc.setFillColor(232,244,236);

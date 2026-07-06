@@ -22,6 +22,7 @@ function applyOnlineSession(user, profile) {
   const roleCanonical = String(profile.role || 'representante').toLowerCase();
   const roleName = roleCanonicalToDisplay(roleCanonical);
   const statusCanonical = String(profile.status || 'pendiente').toLowerCase();
+  const meta = (user && user.user_metadata) || {};
   AppState.session = {
     isAuthenticated: true,
     online: true,
@@ -29,9 +30,9 @@ function applyOnlineSession(user, profile) {
     userId: user.id,
     email: profile.email || user.email || null,
     username: profile.email || user.email,
-    fullName: profile.full_name || user.email,
-    phone: profile.phone || '',
-    city: profile.city || '',
+    fullName: profile.full_name || meta.full_name || user.email,
+    phone: profile.phone || meta.phone || '',
+    city: profile.city || meta.city || '',
     roleId: roleCanonical === 'administrador' ? 'role_admin' : 'role_reseller',
     roleName,
     roleCanonical,
@@ -58,11 +59,28 @@ async function restoreSession() {
   } catch (_) { return false; }
 }
 
+async function clearTransientSessionData() {
+  const stores = ['products','priceGroups','sales','clients','quotes','settings','inventoryMovements',
+    'commissionRules','commissions','representatives','dispatches','representativeReports',
+    'purchaseOrders','messages','syncMeta'];
+  if (window.DB) {
+    for (const store of stores) await DB.clear(store).catch(() => {});
+  }
+  if (window.AppState) {
+    AppState.products = []; AppState.priceGroups = []; AppState.sales = []; AppState.clients = [];
+    AppState.quotes = []; AppState.messages = []; AppState.purchaseOrders = [];
+    AppState.commercialProfiles = []; AppState.profileChangeRequests = []; AppState.allProfiles = [];
+  }
+}
+
 async function logoutSession() {
-  clearSession();
+  if (window.stopRealtimeSubscriptions) stopRealtimeSubscriptions();
+  if (window.stopV7Realtime) stopV7Realtime();
   if (window.isOnlineConfigured && isOnlineConfigured() && window.onlineSignOut) {
     await onlineSignOut().catch(() => {});
   }
+  await clearTransientSessionData();
+  clearSession();
   if (window.render) render();
 }
 
@@ -170,6 +188,7 @@ window.applyOnlineSession = applyOnlineSession;
 window.clearSession = clearSession;
 window.restoreSession = restoreSession;
 window.logoutSession = logoutSession;
+window.clearTransientSessionData = clearTransientSessionData;
 window.hasPermission = hasPermission;
 window.requireAuth = requireAuth;
 window.isAdmin = isAdmin;

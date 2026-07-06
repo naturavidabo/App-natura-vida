@@ -13,7 +13,7 @@ function renderClients() {
     </div>
   `;
 
-  const filtered = AppState.clients.filter(c => matchesSearch(c.name, _clientSearch) || matchesSearch(c.phone, _clientSearch));
+  const filtered = AppState.clients;
 
   if (filtered.length === 0) {
     html += `
@@ -46,7 +46,7 @@ function renderClients() {
   }
 
   main.innerHTML = html;
-  $('#searchInput').addEventListener('input', e => { _clientSearch = e.target.value; renderClients(); });
+  bindStableSearch('#searchInput', '#mainArea .card', value => { _clientSearch = value; });
   $all('.editClientBtn').forEach(b => b.addEventListener('click', () => openClientForm(b.dataset.id)));
   $all('.delClientBtn').forEach(b => b.addEventListener('click', () => confirmDeleteClient(b.dataset.id)));
   $all('.histClientBtn').forEach(b => b.addEventListener('click', () => openClientHistory(b.dataset.id)));

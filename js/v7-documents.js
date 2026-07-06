@@ -46,7 +46,7 @@
     const ownerProfile = documentOwnerProfile(ownerId);
     const ownerName = documentOwnerName(ownerId, documentData.sellerName);
     const qr = await loadImageV7(ownerProfile.qrUrl);
-    const logo = await loadImageV7(AppState.settings.logo);
+    const logo = await loadImageV7(AppState.settings.logo || 'img/brand/natura-vida-logo.jpeg');
     const width = 720;
     const itemHeight = 38;
     const qrBlock = qr ? 250 : 100;

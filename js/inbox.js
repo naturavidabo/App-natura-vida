@@ -104,6 +104,9 @@ async function markLocalMessageRead(id) {
 }
 
 async function openInboxPanel() {
+  if (navigator.onLine && requireAuth() && window.syncInboxFromCloud) {
+    await syncInboxFromCloud().catch(() => {});
+  }
   const messages = (await DB.getAll('messages').catch(() => [])).map(normalizeMessage)
     .filter(messageVisibleForCurrentUser)
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -142,7 +145,7 @@ async function openInboxPanel() {
       close();
       await openInboxPanel();
     }));
-    $all('.openOrdersBtn', overlay).forEach(b => b.addEventListener('click', () => { close(); navigateTo('pedido'); }));
+    $all('.openOrdersBtn', overlay).forEach(b => b.addEventListener('click', () => { close(); navigateTo(isAdmin() ? 'pedidos' : 'compra'); }));
   });
   await refreshInboxBadge({ silent: true }).catch(() => {});
 }

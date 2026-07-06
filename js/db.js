@@ -8,7 +8,7 @@ const DB_VERSION = 9;
 const STORES = [
   'products','priceGroups','sales','clients','quotes','settings','users','roles',
   'permissions','inventoryMovements','commissionRules','commissions','reportsCache',
-  'syncQueue','auditLog','representatives','dispatches','representativeReports',
+  'auditLog','representatives','dispatches','representativeReports',
   'importedPackages','purchaseOrders','messages','syncMeta'
 ];
 

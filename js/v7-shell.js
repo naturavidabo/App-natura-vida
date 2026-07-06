@@ -5,6 +5,23 @@
   const oldRenderResumen = window.renderResumen;
   const oldRenderReports = window.renderReportsFoundation;
 
+  const BRAND_MAIN_LOGO = 'icons/icon-192.png';
+
+  function displayNameV7() {
+    const session = AppState.session || {};
+    const raw = String(session.fullName || session.email || session.username || '').trim();
+    if (!raw) return 'Usuario Natura Vida';
+    if (raw.includes('@')) {
+      const local = raw.split('@')[0].replace(/[._-]+/g, ' ').trim();
+      if (local) return local.replace(/\b\w/g, c => c.toUpperCase());
+    }
+    return raw;
+  }
+
+  function displayInitialV7() {
+    return String(displayNameV7()).trim().charAt(0).toUpperCase() || 'N';
+  }
+
   function v7Icon(name) {
     const paths = {
       home: '<path d="M4 10.8 12 4l8 6.8V20a1 1 0 0 1-1 1h-4.7v-5.4H9.7V21H5a1 1 0 0 1-1-1z"/>',
@@ -38,13 +55,14 @@
 
   function renderTopHeaderV7() {
     const name = AppState.settings.businessName || 'NATURA VIDA';
+    const headerLogo = AppState.settings.logo || BRAND_MAIN_LOGO;
     $('#bizName').textContent = name;
-    $('#bizLogo').innerHTML = AppState.settings.logo ? `<img src="${AppState.settings.logo}" alt="${escapeHtml(name)}">` : '<span class="v7LogoLeaf">NV</span>';
+    $('#bizLogo').innerHTML = `<img src="${headerLogo}" alt="${escapeHtml(name)}">`;
     const subtitle = document.querySelector('header.top .bizsub');
     if (subtitle) {
       subtitle.textContent = requireAuth()
-        ? `${AppState.session.fullName || AppState.session.email || ''} · ${isAdmin() ? 'Administración' : 'Representante'}`
-        : 'Gestión comercial inteligente';
+        ? `${displayNameV7()} · ${isAdmin() ? 'Administración' : 'Representante'}`
+        : 'Te cuida por dentro y por fuera';
     }
     if (window.installInboxButton) {
       installInboxButton();
@@ -63,9 +81,9 @@
     ];
     return [
       ['inicio', 'home', 'Inicio'],
-      ['vender', 'sell', 'Vender'],
-      ['compra', 'buy', 'Compra online'],
-      ['inventario', 'inventory', 'Inventario propio'],
+      ['vender', 'sell', 'Ventas'],
+      ['compra', 'buy', 'Compra'],
+      ['inventario', 'inventory', 'Mi stock'],
       ['mas', 'more', 'Más']
     ];
   }
@@ -92,8 +110,14 @@
   }
 
   function navigateToV7(tab) {
+    // Compatibilidad con botones antiguos: el módulo se llama distinto según el rol.
+    if (tab === 'pedido') tab = isAdmin() ? 'pedidos' : 'compra';
+    if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
     if (!canAccessV7(tab)) return;
     if (tab === 'ajustes' && !isAdmin()) tab = 'perfil';
+    // Al cambiar de módulo se descarta únicamente el borrador visual no guardado.
+    // Los datos oficiales siguen estando en Supabase.
+    window.V7_FORM_DIRTY = false;
     AppState.currentTab = tab;
     highlightActiveV7();
     renderV7();
@@ -131,7 +155,7 @@
   function roleGreeting() {
     const hour = new Date().getHours();
     const greet = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
-    const firstName = String(AppState.session.fullName || '').trim().split(/\s+/)[0] || 'bienvenido';
+    const firstName = String(displayNameV7()).trim().split(/\s+/)[0] || 'bienvenido';
     return `${greet}, ${firstName}`;
   }
 
@@ -156,7 +180,7 @@
     const unread = (AppState.messages || []).filter(m => messageVisibleForCurrentUser(m) && m.status !== 'read').length;
     const ownOrders = isAdmin() ? orders : orders.filter(o => o.representativeId === AppState.session.userId);
     const ownStock = AppState.products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
-    const name = AppState.session.fullName || AppState.session.email || '';
+    const name = displayNameV7();
 
     main.innerHTML = `
       <section class="v7Hero">
@@ -201,8 +225,8 @@
     main.innerHTML = `
       <section class="v7PageHead"><span class="v7Eyebrow">Configuración y herramientas</span><h1>Más opciones</h1><p>Solo se muestran funciones disponibles para tu rol.</p></section>
       <section class="v7ProfileSummary">
-        <div class="v7Avatar">${escapeHtml((AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
-        <div><strong>${escapeHtml(AppState.session.fullName || '')}</strong><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : (cp.businessName || 'Representante Natura Vida')}</small></div>
+        <div class="v7Avatar">${escapeHtml(displayInitialV7())}</div>
+        <div><strong>${escapeHtml(displayNameV7())}</strong><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : (cp.businessName || 'Representante Natura Vida')}</small></div>
       </section>
       <section class="v7MoreList">
         ${moreItem('v7MoreInbox', 'bell', 'Bandeja y actividad', 'Avisos, aprobaciones y comprobantes')}
@@ -215,7 +239,7 @@
         ${isAdmin() ? moreItem('v7MoreSettings', 'settings', 'Configuración del negocio', 'Marca, contacto y parámetros') : ''}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V7.0 · Supabase Only · Realtime</div>
+      <div class="v7Version">Natura Vida V7.1.1 · Supabase Only · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
@@ -243,6 +267,8 @@
 
   Object.assign(window, {
     v7Icon,
+    displayNameV7,
+    displayInitialV7,
     updateCloudStatusBadge: updateCloudStatusBadgeV7,
     renderTopHeader: renderTopHeaderV7,
     renderBottomNav: renderBottomNavV7,

@@ -20,12 +20,12 @@
     $('#mainArea').innerHTML = `
       <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Los datos comerciales son libres. WhatsApp y ciudad requieren aprobación del administrador.'}</p></section>
       <section class="v7ProfileCardMain">
-        <div class="v7Avatar large">${escapeHtml((AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
-        <div><h2>${escapeHtml(AppState.session.fullName || '')}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</small></div>
+        <div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
+        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</small></div>
       </section>
       <section class="v7Panel">
         <div class="v7PanelHead"><div><span class="v7Eyebrow">Datos oficiales</span><h2>Registro verificado</h2></div><span class="v7Lock">Protegido</span></div>
-        <div class="v7ReadonlyGrid"><label>Nombre completo<input value="${escapeHtml(AppState.session.fullName || '')}" readonly></label><label>Correo Gmail<input value="${escapeHtml(AppState.session.email || '')}" readonly></label><label>WhatsApp actual<input value="${escapeHtml(AppState.session.phone || '')}" readonly>${phoneReq ? `<small class="pendingText">Cambio pendiente: ${escapeHtml(phoneReq.newValue)}</small>` : ''}</label><label>Ciudad actual<input value="${escapeHtml(AppState.session.city || '')}" readonly>${cityReq ? `<small class="pendingText">Cambio pendiente: ${escapeHtml(cityReq.newValue)}</small>` : ''}</label></div>
+        <div class="v7ReadonlyGrid"><label>Nombre completo<input value="${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}" readonly></label><label>Correo Gmail<input value="${escapeHtml(AppState.session.email || '')}" readonly></label><label>WhatsApp actual<input value="${escapeHtml(AppState.session.phone || '')}" readonly>${phoneReq ? `<small class="pendingText">Cambio pendiente: ${escapeHtml(phoneReq.newValue)}</small>` : ''}</label><label>Ciudad actual<input value="${escapeHtml(AppState.session.city || '')}" readonly>${cityReq ? `<small class="pendingText">Cambio pendiente: ${escapeHtml(cityReq.newValue)}</small>` : ''}</label></div>
         <button class="btn outline block" id="requestOfficialChangeV7">${isAdmin() ? 'Editar WhatsApp o ciudad' : 'Solicitar cambio de WhatsApp o ciudad'}</button>
       </section>
       <section class="v7Panel">

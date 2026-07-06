@@ -1,5 +1,5 @@
 // NATURA VIDA V7 — red obligatoria, sin base local ni caché persistente.
-const VERSION = 'natura-vida-v7-online-only-20260705';
+const VERSION = 'natura-vida-v7-1-1-online-only-20260706';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key)))).then(() => self.clients.claim()));

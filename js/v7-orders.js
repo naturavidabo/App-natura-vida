@@ -83,7 +83,7 @@
     if (isAdmin()) return renderAdminOrdersInboxV7();
     $('#fabAdd').classList.add('hidden');
     const orders = (await currentOrders()).filter(o => o.representativeId === AppState.session.userId).sort((a,b)=>b.createdAt-a.createdAt);
-    const products = AppState.products.filter(p => p.status !== 'archived' && matchesSearch(`${p.name} ${p.category || ''}`, orderSearch));
+    const products = AppState.products.filter(p => p.status !== 'archived');
     const discount = Number(AppState.session.discountPercent || 0);
     $('#mainArea').innerHTML = `
       <section class="v7PageHead v7BuyHead"><span class="v7Eyebrow">Catálogo central</span><h1>Compra online</h1><p>Elige productos, envía tu solicitud y recibe el stock cuando el administrador confirme el pago.</p>${discount > 0 ? `<span class="v7DiscountChip">Descuento personal: ${discount}%</span>` : ''}</section>
@@ -100,7 +100,7 @@
         }).join('') || `<div class="v7Empty"><span>🌿</span><h3>No hay productos disponibles</h3><p>El catálogo aparecerá cuando el administrador publique productos activos.</p></div>`}
       </section>
       <section class="v7Panel v7OrderHistory"><div class="v7PanelHead"><div><span class="v7Eyebrow">Registro permanente</span><h2>Mis pedidos</h2></div><span>${orders.length}</span></div>${orders.map(o=>orderCard(o,true)).join('') || '<div class="v7EmptyInline"><span>🛒</span><div><strong>Aún no hiciste pedidos</strong><small>Tu historial aparecerá aquí.</small></div></div>'}</section>`;
-    $('#v7OrderSearch').addEventListener('input', e => { orderSearch = e.target.value; renderOrderRequestV7(); });
+    bindStableSearch('#v7OrderSearch', '#mainArea .v7ProductCard', value => { orderSearch = value; });
     $all('[data-plus]').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.plus, 1)));
     $all('[data-minus]').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.minus, -1)));
     if ($('#cancelEditOrderV7')) $('#cancelEditOrderV7').addEventListener('click', () => { editingOrderId = null; orderCart = {}; orderNote = ''; renderOrderRequestV7(); });
