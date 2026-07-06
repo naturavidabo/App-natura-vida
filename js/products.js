@@ -30,8 +30,12 @@ function resellerAdditionalCost(product) {
   return roundBs(safeNumber(product.resellerAdditionalCost ?? product.localAdditionalCost ?? 0, 0));
 }
 
+function resellerAcquisitionCost(product) {
+  return roundBs(safeNumber(product.resellerAcquisitionCost ?? product.acquisitionCost ?? representativePrice(product), 0));
+}
+
 function resellerEffectiveCost(product) {
-  return roundBs(representativePrice(product) + resellerAdditionalCost(product));
+  return roundBs(resellerAcquisitionCost(product) + resellerAdditionalCost(product));
 }
 
 function resellerLocalUnitPrice(product) {

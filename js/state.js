@@ -17,7 +17,7 @@ const AppState = {
     setupRequired: true,
     cloudSyncPrepared: true,
     apkPrepared: true,
-    businessModel: 'Administrador → Revendedores → Clientes Finales',
+    businessModel: 'Administrador → Representantes → Clientes Finales',
     contactName: '',
     contactPhone: '',
     contactCity: '',

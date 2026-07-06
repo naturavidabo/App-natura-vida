@@ -1,4 +1,4 @@
-/* settings.js — NATURA VIDA V6.9
+/* settings.js — NATURA VIDA V7
    Ajustes funcionales guardados en Supabase. Sin importación, respaldo local
    ni edición de credenciales desde el celular. */
 
@@ -60,7 +60,7 @@ function renderSettings() {
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V6.9 Supabase Only + Realtime</div>
+      <div class="costline">NATURA VIDA — V7 · Supabase + Realtime</div>
       <div class="costline">Sin IndexedDB, sin cola offline, sin sincronización manual y sin bases separadas por celular.</div>
     </div>
   `;

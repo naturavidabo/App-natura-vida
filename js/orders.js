@@ -24,7 +24,7 @@ function renderOrderRequest() {
   $('#mainArea').innerHTML = `
     <section class="dashboardPanel orderHero">
       <div class="panelHeader"><div><span class="eyebrow">Pedido al administrador</span><h2>Solicitar reposición</h2></div></div>
-      <div class="banner">Arma tu pedido con los productos del catálogo. Puedes enviarlo online si el servidor está activo o generar un archivo para compartir por WhatsApp.</div>
+      <div class="banner">Arma tu pedido con los productos del catálogo y envíalo directamente al administrador mediante Supabase.</div>
       <div class="miniStats">
         <div><span>Ítems</span><strong>${orderCount()}</strong></div>
         <div><span>Total base</span><strong>${fmtMoney(orderTotalBase())}</strong></div>

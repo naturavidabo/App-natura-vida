@@ -23,7 +23,7 @@ function renderTopHeader() {
   if (subtitle) {
     subtitle.textContent = requireAuth()
       ? `${AppState.session.fullName || AppState.session.username} · ${AppState.session.roleName}`
-      : (AppState.settings.businessModel || 'Administrador → Revendedores → Clientes');
+      : (AppState.settings.businessModel || 'Administrador → Representantes → Clientes');
   }
   if (window.installInboxButton) {
     installInboxButton();
@@ -442,7 +442,7 @@ function renderMas() {
     <div class="moreList proMore">
       <div class="moreItem" id="moreClients"><span class="ic svgic">${icon('clients')}</span><span>Directorio de clientes</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreGroups"><span class="ic svgic">${icon('tag')}</span><span>Grupos de precio</span><span class="arrow">›</span></div>
-      <div class="moreItem" id="moreCatalogPdf"><span class="ic svgic">${icon('quote')}</span><span>Catálogo PDF para WhatsApp</span><span class="tagSoon">PDF</span><span class="arrow">›</span></div>
+      <div class="moreItem" id="moreCatalogPdf"><span class="ic svgic">${icon('quote')}</span><span>Catálogo PDF para compartir</span><span class="tagSoon">PDF</span><span class="arrow">›</span></div>
       ${isReseller && isReseller() ? `<div class="moreItem" id="moreOrder"><span class="ic svgic">${icon('box')}</span><span>Pedido online al administrador</span><span class="tagSoon">Nuevo</span><span class="arrow">›</span></div>` : ''}
       <div class="moreItem" id="moreUsers"><span class="ic svgic">${icon('users')}</span><span>Usuarios, roles y permisos</span><span class="tagSoon">Activo</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreReports"><span class="ic svgic">${icon('reports')}</span><span>Reportes comerciales</span><span class="tagSoon">Base</span><span class="arrow">›</span></div>
@@ -637,7 +637,7 @@ async function renderReportsFoundation() {
 }
 
 async function initApp() {
-  // V6.9: elimina rastros locales antiguos y utiliza memoria transitoria.
+  // V7: elimina rastros locales antiguos y utiliza memoria transitoria.
   // Supabase es la única fuente persistente.
   await openDB();
   await loadAllState();
@@ -670,7 +670,7 @@ async function initApp() {
   updateCloudStatusBadge(window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' });
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./service-worker.js?v=6.9.0', { updateViaCache: 'none' }).catch(() => {});
+    navigator.serviceWorker.register('./service-worker.js?v=7.0.0', { updateViaCache: 'none' }).catch(() => {});
   }
 }
 

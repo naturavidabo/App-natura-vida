@@ -1,13 +1,13 @@
 {
-  "name": "NATURA VIDA V6.9 — Gestión Online",
+  "name": "NATURA VIDA V7 — Gestión Online",
   "short_name": "NaturaVida",
-  "description": "Gestión de inventario, ventas, clientes y pedidos con Supabase y Realtime.",
+  "description": "Gestión comercial Natura Vida con catálogo, ventas, pedidos, recibos, QR, Supabase y Realtime.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#FFFFFF",
-  "theme_color": "#01773B",
+  "background_color": "#F4FBF7",
+  "theme_color": "#064B2E",
   "icons": [
     {
       "src": "icons/icon-48.png",

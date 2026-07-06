@@ -348,7 +348,7 @@ function generateQuoteImage(q, total) {
     <div class="receiptCanvasWrap" id="quoteCanvasWrap"></div>
     <div class="exportRow">
       <div class="exportBtn" id="downloadQuoteImg"><span class="ic">🖼️</span><span class="lbl">Guardar imagen</span><span class="sub">JPG</span></div>
-      <div class="exportBtn" id="shareQuoteImg"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / sistema</span></div>
+      <div class="exportBtn" id="shareQuoteImg"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
     </div>
   `, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close);

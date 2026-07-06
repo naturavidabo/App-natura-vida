@@ -254,6 +254,10 @@ function openCheckoutSheet() {
       btn.textContent = 'Guardando en Supabase…';
       try {
         const client = await findOrCreateClientQuick(clientName, clientPhone);
+        const documentResult = window.nextDocumentNumberV7
+          ? await nextDocumentNumberV7('NV-VTA')
+          : { ok: false, message: 'No está disponible la numeración V7.' };
+        if (!documentResult.ok) throw new Error(documentResult.message || 'No se pudo generar el número de recibo.');
         const groupName = _saleSelectedGroup ? (AppState.priceGroups.find(g => g.id === _saleSelectedGroup) || {}).name : null;
         const saleId = uid('sale');
         const saleItems = items.map(it => {
@@ -283,6 +287,10 @@ function openCheckoutSheet() {
 
         const sale = {
           id: saleId,
+          documentNumber: documentResult.number,
+          receiptNumber: documentResult.number,
+          paymentMethod: 'cash',
+          paymentStatus: 'paid',
           type: _saleType,
           role: AppState.session ? AppState.session.roleName : '',
           sellerId: AppState.session ? AppState.session.userId : null,
@@ -308,7 +316,8 @@ function openCheckoutSheet() {
 
         showToast('Venta registrada en Supabase.');
         close();
-        openReceiptPreview(sale);
+        if (window.openV7ReceiptPreview) openV7ReceiptPreview(sale, 'sale');
+        else openReceiptPreview(sale);
         _cart = {};
         _cartPrices = {};
         renderVender();

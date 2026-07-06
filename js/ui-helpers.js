@@ -82,49 +82,39 @@ window.readImageFile = readImageFile;
 window.matchesSearch = matchesSearch;
 window.normalizeSearch = normalizeSearch;
 
-/* Comparte un Blob como archivo. Si el navegador no permite compartir archivos,
-   descarga el archivo y ofrece abrir WhatsApp para enviarlo manualmente como documento. */
+/* Comparte un archivo mediante el menú nativo del dispositivo.
+   Si no está disponible, descarga el archivo sin forzar ninguna aplicación. */
 async function shareBlobFile(blob, filename, mimeType, title, text) {
   const safeTitle = title || 'Archivo Natura Vida';
   const safeText = text || 'Archivo generado desde Natura Vida.';
   const file = new File([blob], filename, { type: mimeType || blob.type || 'application/octet-stream' });
 
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
     try {
       await navigator.share({ files: [file], title: safeTitle, text: safeText });
-      return { ok: true, method: 'fileshare' };
+      return { ok: true, method: 'native-share' };
     } catch (err) {
-      if (err && err.name === 'AbortError') return { ok: false, cancelled: true, method: 'fileshare' };
+      if (err && err.name === 'AbortError') return { ok: false, cancelled: true, method: 'native-share' };
     }
-  }
-
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: safeTitle, text: `${safeText}\n\nArchivo: ${filename}` });
-    } catch (_) {}
   }
 
   downloadGenericBlob(blob, filename);
   openSheet(`
-    <h2>Archivo preparado <span class="x" id="closeSheet">✕</span></h2>
+    <h2>Archivo descargado <span class="x" id="closeSheet">✕</span></h2>
     <div class="catalogReadyHero">
       <div class="readyMark">✓</div>
       <div>
-        <div class="eyebrow">Compartir manual</div>
+        <div class="eyebrow">Compartir libremente</div>
         <h3>${escapeHtml(filename)}</h3>
-        <p>Tu navegador no permitió adjuntar el archivo de forma automática. Ya se descargó; abre WhatsApp y adjúntalo como documento.</p>
+        <p>El navegador no permitió abrir el menú nativo. El archivo fue descargado y puedes adjuntarlo desde WhatsApp, Gmail, Telegram, Drive o cualquier aplicación compatible.</p>
       </div>
     </div>
-    <button class="btn block" id="openWhatsAppManual">Abrir WhatsApp</button>
-    <button class="btn outline block" id="closeManualShare" style="margin-top:10px;">Cerrar</button>
+    <button class="btn block" id="closeManualShare">Entendido</button>
   `, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close);
     $('#closeManualShare', overlay).addEventListener('click', close);
-    $('#openWhatsAppManual', overlay).addEventListener('click', () => {
-      window.open(`https://wa.me/?text=${encodeURIComponent(safeText + '\nAdjunto el archivo: ' + filename)}`, '_blank');
-    });
   });
-  return { ok: false, method: 'download_fallback' };
+  return { ok: false, method: 'download-fallback' };
 }
 
 function downloadGenericBlob(blob, filename) {

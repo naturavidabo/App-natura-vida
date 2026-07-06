@@ -1,4 +1,4 @@
-/* supabase-config.js — NATURA VIDA V6.9
+/* supabase-config.js — NATURA VIDA V7
    Configuración oficial única. No se reemplaza con valores guardados en el celular.
    Esta es una Publishable key pública; nunca colocar service_role ni sb_secret_. */
 
@@ -8,5 +8,5 @@ window.NATURA_ONLINE_CONFIG = Object.freeze({
   supabaseAnonKey: 'sb_publishable_J5qL2qkklu1tFHJyljrSbQ_VllDwxKT',
   productImagesBucket: 'product-images',
   mode: 'supabase-only-realtime',
-  version: '6.9.0'
+  version: '7.0.0'
 });

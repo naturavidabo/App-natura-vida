@@ -131,7 +131,7 @@ async function openReceiptPreview(sale) {
       <div class="exportBtn" id="btnPdf"><span class="ic">📄</span><span class="lbl">Guardar PDF</span><span class="sub">Documento PDF</span></div>
     </div>
     <div class="exportRow">
-      <div class="exportBtn" id="btnShare"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / correo</span></div>
+      <div class="exportBtn" id="btnShare"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
       <div class="exportBtn" id="btnPrint"><span class="ic">🖨️</span><span class="lbl">Imprimir</span><span class="sub">Diálogo del sistema</span></div>
     </div>
     <div class="actions"><button class="btn outline block" id="closeSheet2">Cerrar</button></div>

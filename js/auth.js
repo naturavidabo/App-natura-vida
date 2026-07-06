@@ -1,4 +1,4 @@
-// auth.js — V6.9 — Supabase Auth es la única identidad.
+// auth.js — V7 — Supabase Auth es la única identidad.
 // No existe inicio de sesión offline ni usuario local alternativo.
 
 
@@ -15,7 +15,7 @@ function permissionsForRole(roleName) {
 }
 
 function roleCanonicalToDisplay(roleCanonical) {
-  return String(roleCanonical || '').toLowerCase() === 'administrador' ? 'Administrador' : 'Revendedor';
+  return String(roleCanonical || '').toLowerCase() === 'administrador' ? 'Administrador' : 'Representante';
 }
 
 function applyOnlineSession(user, profile) {
@@ -99,12 +99,13 @@ async function registerNewAccount({ fullName, email, phone, city, password } = {
   const cleanPhone = String(phone || '').trim().replace(/\s+/g, '');
   const cleanCity  = String(city || '').trim();
 
-  if (!isGmailAddress(cleanEmail))      return { ok: false, message: 'Ingresa un correo de Gmail valido (@gmail.com).' };
+  if (!isGmailAddress(cleanEmail))      return { ok: false, message: 'Ingresa un correo de Gmail válido (@gmail.com).' };
   if (!cleanName)                       return { ok: false, message: 'Ingresa tu nombre completo.' };
-  if (!cleanPhone)                      return { ok: false, message: 'Ingresa tu numero de celular.' };
-  if (!password || password.length < 6) return { ok: false, message: 'La contrasena debe tener al menos 6 caracteres.' };
+  if (!cleanPhone)                      return { ok: false, message: 'Ingresa tu número de celular.' };
+  if (!cleanCity)                       return { ok: false, message: 'Ingresa tu ciudad.' };
+  if (!password || password.length < 6) return { ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
   if (!window.isOnlineConfigured || !isOnlineConfigured()) {
-    return { ok: false, message: 'Se necesita conexion a internet para crear una cuenta.' };
+    return { ok: false, message: 'Se necesita conexión a internet para crear una cuenta.' };
   }
 
   const res = await signUpEmailAccount(cleanEmail, password, cleanName, {
@@ -114,7 +115,7 @@ async function registerNewAccount({ fullName, email, phone, city, password } = {
   if (!res.ok) return res;
   if (res.needsEmailConfirmation) {
     return { ok: true, needsEmailConfirmation: true,
-      message: 'Cuenta creada. Revisa tu Gmail para confirmar antes de iniciar sesion.' };
+      message: 'Cuenta creada. Revisa tu Gmail para confirmar antes de iniciar sesión.' };
   }
   applyOnlineSession(res.user, res.profile);
   if (window.writeAudit) writeAudit('signup:gmail', 'user', res.user.id, null, { email: cleanEmail }).catch(() => {});
@@ -125,7 +126,7 @@ async function loginWithEmail(email, password) {
   const cleanEmail = String(email || '').trim().toLowerCase();
   if (!cleanEmail || !password) return { ok: false, message: 'Ingresa tu correo y tu contrasena.' };
   if (!window.isOnlineConfigured || !isOnlineConfigured()) {
-    return { ok: false, message: 'Se necesita conexion a internet para iniciar sesion.' };
+    return { ok: false, message: 'Se necesita conexión a internet para iniciar sesión.' };
   }
   const res = await onlineSignIn(cleanEmail, password).catch(err => ({ ok: false, message: err && err.message }));
   if (!res.ok) return res;
@@ -138,27 +139,27 @@ async function loginWithEmail(email, password) {
 async function requestPasswordRecovery(email) {
   const cleanEmail = String(email || '').trim().toLowerCase();
   if (!isGmailAddress(cleanEmail)) return { ok: false, message: 'Ingresa tu correo de Gmail.' };
-  if (!window.isOnlineConfigured || !isOnlineConfigured()) return { ok: false, message: 'Se necesita conexion a internet.' };
-  if (!window.sendPasswordRecoveryEmail) return { ok: false, message: 'Funcion no disponible.' };
+  if (!window.isOnlineConfigured || !isOnlineConfigured()) return { ok: false, message: 'Se necesita conexión a internet.' };
+  if (!window.sendPasswordRecoveryEmail) return { ok: false, message: 'Función no disponible.' };
   const res = await sendPasswordRecoveryEmail(cleanEmail).catch(err => ({ ok: false, message: err && err.message }));
   if (!res.ok) return res;
   return { ok: true, message: 'Te enviamos un correo a ' + cleanEmail + ' con instrucciones para recuperar tu acceso.' };
 }
 
 async function adminApproveUser(userId) {
-  if (!window.setProfileStatus) return { ok: false, message: 'Funcion no disponible.' };
+  if (!window.setProfileStatus) return { ok: false, message: 'Función no disponible.' };
   const res = await setProfileStatus(userId, 'activo').catch(err => ({ ok: false, message: err && err.message }));
   if (res.ok && window.writeAudit) writeAudit('admin:approve_user', 'profiles', userId, null, {}).catch(() => {});
   return res;
 }
 async function adminBlockUser(userId) {
-  if (!window.setProfileStatus) return { ok: false, message: 'Funcion no disponible.' };
+  if (!window.setProfileStatus) return { ok: false, message: 'Función no disponible.' };
   const res = await setProfileStatus(userId, 'bloqueado').catch(err => ({ ok: false, message: err && err.message }));
   if (res.ok && window.writeAudit) writeAudit('admin:block_user', 'profiles', userId, null, {}).catch(() => {});
   return res;
 }
 async function adminUnblockUser(userId) {
-  if (!window.setProfileStatus) return { ok: false, message: 'Funcion no disponible.' };
+  if (!window.setProfileStatus) return { ok: false, message: 'Función no disponible.' };
   const res = await setProfileStatus(userId, 'activo').catch(err => ({ ok: false, message: err && err.message }));
   if (res.ok && window.writeAudit) writeAudit('admin:unblock_user', 'profiles', userId, null, {}).catch(() => {});
   return res;

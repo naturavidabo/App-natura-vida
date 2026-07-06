@@ -1,4 +1,4 @@
-/* db.js — NATURA VIDA V6.9
+/* db.js — NATURA VIDA V7
    Almacenamiento TRANSITORIO en memoria.
    Supabase es la única fuente persistente de datos.
    No se usa IndexedDB, no hay cola offline y no se guardan inventarios,

@@ -1,4 +1,4 @@
-/* Natura Vida V6.9 — Supabase único + Realtime.
+/* Natura Vida V7 — Supabase único + Realtime.
    - Supabase Auth/PostgreSQL/Storage son la única fuente persistente.
    - No lee URL/key desde el teléfono.
    - No existe cola offline ni sincronización manual.
@@ -62,7 +62,7 @@ function getSupabaseClient() {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storageKey: 'nv69-auth'
+      storageKey: 'nv7-auth'
     },
     realtime: { params: { eventsPerSecond: 10 } }
   });
@@ -121,7 +121,7 @@ async function onlineSignIn(email, password) {
     const { error: ensureError } = await sb.rpc('ensure_my_profile');
     if (ensureError) return { ok: false, message: messageFromError(ensureError) };
     const profile = await fetchCurrentProfile(data.user.id);
-    if (!profile) return { ok: false, message: 'La cuenta existe, pero su perfil no fue creado. Ejecuta el SQL V6.9.' };
+    if (!profile) return { ok: false, message: 'La cuenta existe, pero su perfil no fue creado. Ejecuta la migración SQL de Natura Vida V7.' };
     if (String(profile.status).toLowerCase() === 'bloqueado') {
       await sb.auth.signOut();
       return { ok: false, message: 'Esta cuenta está bloqueada. Contacta al administrador.' };
@@ -325,7 +325,9 @@ async function mapProductToCloud(product) {
 function mapProductFromCloud(row, repStockMap = null, repPrefsMap = null) {
   const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
   const centralStock = Number(row.stock || 0);
-  const ownStock = repStockMap && repStockMap.has(row.id) ? Number(repStockMap.get(row.id) || 0) : 0;
+  const stockEntry = repStockMap && repStockMap.has(row.id) ? repStockMap.get(row.id) : null;
+  const ownStock = stockEntry && typeof stockEntry === 'object' ? Number(stockEntry.stock || 0) : Number(stockEntry || 0);
+  const acquisitionCost = stockEntry && typeof stockEntry === 'object' ? Number(stockEntry.acquisitionCost || 0) : 0;
   const prefs = repPrefsMap && repPrefsMap.has(row.id) ? repPrefsMap.get(row.id) : {};
   return normalizeLegacyProduct(Object.assign({}, payload, prefs, {
     id: row.id,
@@ -343,6 +345,7 @@ function mapProductFromCloud(row, repStockMap = null, repPrefsMap = null) {
     unitPriceFixed: Number(row.public_price || 0),
     stock: window.isReseller && isReseller() ? ownStock : centralStock,
     adminStock: centralStock,
+    resellerAcquisitionCost: acquisitionCost || Number(row.reseller_price || 0),
     photo: row.photo_url || null,
     status: row.status || 'active',
     syncStatus: 'cloud',
@@ -354,10 +357,13 @@ async function fetchRepresentativeStockMap() {
   if (!AppState.session || !AppState.session.onlineUserId) return new Map();
   const sb = await requireClient();
   const { data, error } = await sb.from('representative_stock')
-    .select('product_id,stock')
+    .select('product_id,stock,acquisition_cost')
     .eq('representative_user_id', AppState.session.onlineUserId);
   if (error) throw new Error(messageFromError(error));
-  return new Map((data || []).map(row => [row.product_id, Number(row.stock || 0)]));
+  return new Map((data || []).map(row => [row.product_id, {
+    stock: Number(row.stock || 0),
+    acquisitionCost: Number(row.acquisition_cost || 0)
+  }]));
 }
 
 async function syncCloudProductsToLocal() {
@@ -827,7 +833,7 @@ function startRealtimeSubscriptions() {
   stopRealtimeSubscriptions();
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
-  let channel = sb.channel(`nv69-main-${AppState.session.onlineUserId}`);
+  let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
   ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => refreshAfterEvent(table));
   });

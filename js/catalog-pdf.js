@@ -4,9 +4,27 @@ const NATURA_BRAND_LOGO = 'img/brand/natura-vida-logo.jpeg';
 let _lastCatalogPdf = null;
 
 function catalogVisibleProducts() {
+  const resellerCatalog = window.isReseller && isReseller();
   return (AppState.products || [])
     .filter(p => p.status !== 'archived')
+    .filter(p => !resellerCatalog || Number(p.stock || 0) > 0)
     .sort((a, b) => String(a.category || 'General').localeCompare(String(b.category || 'General')) || String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+function catalogPrimaryPrice(product) {
+  return window.isReseller && isReseller() ? resellerLocalUnitPrice(product) : publicPrice(product);
+}
+
+function catalogSecondaryPrice(product) {
+  return window.isReseller && isReseller() ? resellerLocalWholesalePrice(product) : representativePrice(product);
+}
+
+function catalogPrimaryLabel() {
+  return window.isReseller && isReseller() ? 'Precio unitario' : 'Precio';
+}
+
+function catalogSecondaryLabel() {
+  return window.isReseller && isReseller() ? 'Mayorista' : 'Representante';
 }
 
 function cleanPdfText(value, max = 500) {
@@ -180,7 +198,7 @@ async function shareCatalogPdf() {
     } catch (_) {}
   }
   downloadBlob(_lastCatalogPdf.blob, _lastCatalogPdf.filename);
-  showToast('Catálogo descargado. Adjunta el PDF por WhatsApp como documento.');
+  showToast('Catálogo descargado. Puedes adjuntarlo en cualquier aplicación compatible.');
 }
 
 function openCatalogResultSheet(blob, filename, productsCount) {
@@ -202,14 +220,14 @@ function openCatalogResultSheet(blob, filename, productsCount) {
       <iframe src="${url}" class="pdfPreviewFrame" title="Vista previa del catálogo"></iframe>
     </div>
     <div class="exportRow catalogExportRow">
-      <div class="exportBtn primaryShare" id="btnShareCatalog"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">WhatsApp / sistema</span></div>
+      <div class="exportBtn primaryShare" id="btnShareCatalog"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
       <div class="exportBtn" id="btnOpenCatalog"><span class="ic">◫</span><span class="lbl">Previsualizar</span><span class="sub">Abrir PDF</span></div>
     </div>
     <div class="exportRow catalogExportRow">
       <div class="exportBtn" id="btnDownloadCatalog"><span class="ic">↓</span><span class="lbl">Descargar</span><span class="sub">Guardar archivo</span></div>
       <div class="exportBtn" id="btnCloseCatalog"><span class="ic">×</span><span class="lbl">Cerrar</span><span class="sub">Volver</span></div>
     </div>
-    <div class="banner catalogShareNote">En celular, <strong>Compartir</strong> abre el menú para WhatsApp. Si tu navegador no lo permite, descarga el PDF y envíalo como documento.</div>
+    <div class="banner catalogShareNote">En celular, <strong>Compartir</strong> abre el menú nativo para elegir WhatsApp, Gmail, Telegram, Drive u otra aplicación. Si el navegador no lo permite, descargará el PDF.</div>
   `, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close);
     $('#btnCloseCatalog', overlay).addEventListener('click', close);
@@ -240,7 +258,7 @@ async function generateCatalogPdf(options = {}) {
 
   const includePrices = options.includePrices !== false;
   const includeStock = !!options.includeStock;
-  const includeResellerPrice = !!options.includeResellerPrice && isAdmin();
+  const includeResellerPrice = (window.isReseller && isReseller()) || (!!options.includeResellerPrice && isAdmin());
   const title = cleanPdfText(options.title || `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`, 120);
   const subtitle = cleanPdfText(options.subtitle || AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 160);
   const contact = cleanPdfText(catalogContactLine(options.contact || AppState.settings.catalogContact || ''), 180);
@@ -473,12 +491,12 @@ async function generateCatalogPdf(options = {}) {
       doc.setTextColor(255,255,255);
       doc.setFont('helvetica','bold');
       doc.setFontSize(12.2);
-      doc.text(`Precio: ${safePdfMoney(publicPrice(p))}`, x + cardW / 2, priceY + 21, { align: 'center' });
+      doc.text(`${catalogPrimaryLabel()}: ${safePdfMoney(catalogPrimaryPrice(p))}`, x + cardW / 2, priceY + 21, { align: 'center' });
       if (includeResellerPrice) {
         doc.setTextColor(...orange);
         doc.setFont('helvetica','bold');
         doc.setFontSize(7.4);
-        doc.text(`Revendedor: ${safePdfMoney(representativePrice(p))}`, x + 14, y + cardH - 8);
+        doc.text(`${catalogSecondaryLabel()}: ${safePdfMoney(catalogSecondaryPrice(p))}`, x + 14, y + cardH - 8);
       }
     } else {
       doc.setFillColor(255,248,235);
@@ -548,13 +566,13 @@ async function generateCatalogPdf(options = {}) {
 function openCatalogPdfOptions() {
   const defaultTitle = `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`;
   openSheet(`
-    <h2>Catálogo PDF para WhatsApp <span class="x" id="closeSheet">✕</span></h2>
+    <h2>Catálogo PDF para compartir <span class="x" id="closeSheet">✕</span></h2>
     <div class="catalogOptionsHero">
       <img src="${NATURA_BRAND_LOGO}" alt="Natura Vida">
       <div>
         <div class="eyebrow">Pieza comercial</div>
         <h3>Genera un catálogo listo para enviar</h3>
-        <p>PDF con identidad Natura Vida, beneficios, fotos reales de tus productos, descripción y precio público. Sin textos internos ni explicación técnica.</p>
+        <p>${isReseller() ? 'PDF con los productos de tu inventario propio y tus precios unitario y mayorista.' : 'PDF con identidad Natura Vida, beneficios, fotos reales, descripción y precios comerciales.'} Sin textos internos ni explicación técnica.</p>
       </div>
     </div>
     <div class="field">
@@ -566,7 +584,7 @@ function openCatalogPdfOptions() {
       <input type="text" id="cat_subtitle" value="${escapeHtml(AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera')}">
     </div>
     <div class="field">
-      <label>Contacto o WhatsApp para pedidos</label>
+      <label>Contacto para pedidos</label>
       <input type="text" id="cat_contact" placeholder="Ej.: WhatsApp 7xxxxxxx" value="${escapeHtml(catalogContactLine(AppState.settings.catalogContact || ''))}">
     </div>
     <div class="field">
@@ -574,7 +592,7 @@ function openCatalogPdfOptions() {
       <textarea id="cat_note" placeholder="Ej.: Productos naturales para bienestar y belleza.">${escapeHtml(AppState.settings.catalogNote || 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.')}</textarea>
     </div>
     <div class="catalogOptionRow">
-      <label><input type="checkbox" id="cat_prices" checked> Mostrar precio público</label>
+      <label><input type="checkbox" id="cat_prices" checked> ${isReseller() ? 'Mostrar mis precios' : 'Mostrar precio público'}</label>
       <label><input type="checkbox" id="cat_stock"> Mostrar stock referencial</label>
       ${isAdmin() ? `<label><input type="checkbox" id="cat_reseller"> Incluir precio revendedor interno</label>` : ''}
     </div>
