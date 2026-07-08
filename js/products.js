@@ -448,7 +448,8 @@ function openProductForm(id) {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
       try {
-        photoData = await readImageFile(file);
+        photoData = await readProductImageFile(file);
+        showToast('Imagen optimizada en alta calidad para catálogo.');
         $('#photoPreview', overlay).src = photoData;
         $('#photoPreview', overlay).classList.remove('hidden');
         $('#photoPlaceholder', overlay).classList.add('hidden');
@@ -556,7 +557,7 @@ function openResellerProductForm(id) {
     <h2>Mi inventario <span class="x" id="closeSheet">✕</span></h2>
     <div class="formNotice">Edita tu stock personal, transporte/costos operativos y precios de venta. Todo se guarda en Supabase y se refleja automáticamente en tus dispositivos.</div>
     <div class="resellerProductHeader">
-      <div class="thumb">${p.photo ? `<img src="${p.photo}" alt="">` : '🌿'}</div>
+      <div class="thumb">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '🌿'}</div>
       <div><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category || 'General')}</small></div>
     </div>
     <div class="field-row">

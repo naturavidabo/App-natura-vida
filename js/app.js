@@ -412,7 +412,7 @@ function renderInicio() {
     <section class="dashboardPanel alertPanel">
       <div class="panelHeader"><div><span class="eyebrow">Atención</span><h2>Productos con stock bajo</h2></div></div>
       ${lowStock.slice(0, 6).map(p => `
-        <div class="stockAlertRow"><div class="thumb">${p.photo ? `<img src="${p.photo}" alt="">` : '🌿'}</div><div><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category || 'General')} · quedan ${p.stock}</small></div></div>
+        <div class="stockAlertRow"><div class="thumb">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '🌿'}</div><div><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category || 'General')} · quedan ${p.stock}</small></div></div>
       `).join('')}
     </section>` : ''}
   `;

@@ -70,7 +70,7 @@ function renderSettings() {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     try {
-      newLogo = await readImageFile(file);
+      newLogo = await readLogoImageFile(file);
       $('#logoPreview').src = newLogo;
       $('#logoPreview').classList.remove('hidden');
       $('#logoPlaceholder').classList.add('hidden');

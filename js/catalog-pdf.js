@@ -436,12 +436,11 @@ async function generateCatalogPdf(options = {}) {
   doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 690, { align: 'center' });
   footer(pageNo++);
 
-  // Productos.
+  // Productos: V7.1.2 prioriza imagen completa y texto más compacto.
   doc.addPage();
   header('Productos disponibles');
-  const cardW = (pageW - (margin * 2) - 14) / 2;
-  const cardH = 258;
-  let x = margin;
+  const cardW = pageW - margin * 2;
+  const cardH = 292;
   let y = 94;
 
   for (let i = 0; i < products.length; i++) {
@@ -450,77 +449,78 @@ async function generateCatalogPdf(options = {}) {
       footer(pageNo++);
       doc.addPage();
       header('Productos disponibles');
-      x = margin; y = 94;
+      y = 94;
     }
+
     doc.setFillColor(255,255,255);
     doc.setDrawColor(...line);
-    doc.roundedRect(x, y, cardW, cardH, 20, 20, 'FD');
+    doc.roundedRect(margin, y, cardW, cardH, 24, 24, 'FD');
     doc.setFillColor(...green);
-    doc.roundedRect(x, y, cardW, 6, 6, 6, 'F');
+    doc.roundedRect(margin, y, 8, cardH, 6, 6, 'F');
 
-    const imgX = x + 12, imgY = y + 15, imgW = cardW - 24, imgH = 96;
+    const imgX = margin + 22, imgY = y + 22, imgW = 190, imgH = 190;
     doc.setFillColor(248, 252, 249);
-    doc.roundedRect(imgX, imgY, imgW, imgH, 16, 16, 'F');
+    doc.roundedRect(imgX, imgY, imgW, imgH, 22, 22, 'F');
     const img = await imageInfoForPdf(p.photo);
-    if (!drawImageContain(doc, img, imgX + 3, imgY + 3, imgW - 6, imgH - 6)) drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
+    if (!drawImageContain(doc, img, imgX + 10, imgY + 10, imgW - 20, imgH - 20)) drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
     if (Number(p.stock || 0) <= 0) {
       doc.setFillColor(230,91,91);
-      doc.roundedRect(imgX + imgW - 70, imgY + 8, 58, 18, 9, 9, 'F');
+      doc.roundedRect(imgX + imgW - 82, imgY + 12, 68, 22, 11, 11, 'F');
       doc.setFont('helvetica','bold');
-      doc.setFontSize(7.5);
+      doc.setFontSize(8.2);
       doc.setTextColor(255,255,255);
-      doc.text('AGOTADO', imgX + imgW - 41, imgY + 20, { align: 'center' });
+      doc.text('AGOTADO', imgX + imgW - 48, imgY + 27, { align: 'center' });
     }
 
-    let ty = y + 131;
+    let tx = imgX + imgW + 24;
+    let ty = y + 34;
     doc.setFillColor(232,244,236);
-    doc.roundedRect(x + 14, ty - 12, Math.min(120, cardW - 28), 18, 9, 9, 'F');
+    doc.roundedRect(tx, ty - 13, Math.min(160, cardW - 250), 22, 11, 11, 'F');
     doc.setFont('helvetica','bold');
-    doc.setFontSize(7.5);
+    doc.setFontSize(8.2);
     doc.setTextColor(...green);
-    doc.text(cleanPdfText(p.category || 'General', 26).toUpperCase(), x + 22, ty);
+    doc.text(cleanPdfText(p.category || 'General', 32).toUpperCase(), tx + 10, ty + 2);
 
-    ty += 21;
+    ty += 32;
     doc.setFont('helvetica','bold');
-    doc.setFontSize(11.8);
+    doc.setFontSize(18);
     doc.setTextColor(...dark);
-    ty = addWrappedText(doc, cleanPdfText(p.name, 86), x + 14, ty, cardW - 28, 13, 2) + 5;
+    ty = addWrappedText(doc, cleanPdfText(p.name, 95), tx, ty, cardW - 250, 21, 2) + 8;
 
     doc.setFont('helvetica','normal');
-    doc.setFontSize(8.4);
+    doc.setFontSize(10.2);
     doc.setTextColor(...gray);
-    ty = addWrappedText(doc, cleanPdfText(p.description || 'Producto natural disponible. Consulta presentación y recomendaciones de uso.', 220), x + 14, ty, cardW - 28, 10.5, 4);
+    ty = addWrappedText(doc, cleanPdfText(p.description || 'Producto natural disponible. Consulta presentación y recomendaciones de uso.', 260), tx, ty, cardW - 250, 13, 4);
 
-    const priceY = y + cardH - 54;
+    const priceY = y + cardH - 72;
     if (includePrices) {
       doc.setFillColor(...green);
-      doc.roundedRect(x + 14, priceY, cardW - 28, 32, 16, 16, 'F');
+      doc.roundedRect(tx, priceY, cardW - 250, 42, 20, 20, 'F');
       doc.setTextColor(255,255,255);
       doc.setFont('helvetica','bold');
-      doc.setFontSize(12.2);
-      doc.text(`${catalogPrimaryLabel()}: ${safePdfMoney(catalogPrimaryPrice(p))}`, x + cardW / 2, priceY + 21, { align: 'center' });
+      doc.setFontSize(15.5);
+      doc.text(`${catalogPrimaryLabel()}: ${safePdfMoney(catalogPrimaryPrice(p))}`, tx + (cardW - 250) / 2, priceY + 27, { align: 'center' });
       if (includeResellerPrice) {
         doc.setTextColor(...orange);
         doc.setFont('helvetica','bold');
-        doc.setFontSize(7.4);
-        doc.text(`${catalogSecondaryLabel()}: ${safePdfMoney(catalogSecondaryPrice(p))}`, x + 14, y + cardH - 8);
+        doc.setFontSize(8.2);
+        doc.text(`${catalogSecondaryLabel()}: ${safePdfMoney(catalogSecondaryPrice(p))}`, tx, y + cardH - 14);
       }
     } else {
       doc.setFillColor(255,248,235);
-      doc.roundedRect(x + 14, priceY, cardW - 28, 32, 16, 16, 'F');
+      doc.roundedRect(tx, priceY, cardW - 250, 42, 20, 20, 'F');
       doc.setTextColor(...orange);
       doc.setFont('helvetica','bold');
-      doc.setFontSize(10.5);
-      doc.text('Consultar precio', x + cardW / 2, priceY + 21, { align: 'center' });
+      doc.setFontSize(13);
+      doc.text('Consultar precio', tx + (cardW - 250) / 2, priceY + 27, { align: 'center' });
     }
     if (includeStock) {
       doc.setFont('helvetica','normal');
-      doc.setFontSize(7.3);
+      doc.setFontSize(8);
       doc.setTextColor(...gray);
-      doc.text(`Stock ref.: ${Number(p.stock || 0)}`, x + cardW - 14, y + cardH - 8, { align: 'right' });
+      doc.text(`Stock ref.: ${Number(p.stock || 0)}`, margin + cardW - 24, y + cardH - 14, { align: 'right' });
     }
-    if (x === margin) x = margin + cardW + 14;
-    else { x = margin; y += cardH + 14; }
+    y += cardH + 16;
   }
   footer(pageNo++);
 

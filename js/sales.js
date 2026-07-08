@@ -127,7 +127,7 @@ function renderCatalogGrid() {
     const low = p.stock <= AppState.settings.lowStockThreshold;
     return `
     <div class="catalogCard cleanSaleCard ${sellerMode() ? 'resellerCatalogCard' : ''}" data-id="${p.id}">
-      <div class="catalogPhoto cleanSalePhoto">${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
+      <div class="catalogPhoto cleanSalePhoto">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
       <div class="catalogBody cleanSaleBody">
         <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span></div>
         <div class="catalogName">${escapeHtml(p.name)}</div>

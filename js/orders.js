@@ -36,7 +36,7 @@ function renderOrderRequest() {
       ${products.map(p => {
         const qty = _orderCart[p.id] || 0;
         return `<div class="catalogCard orderProductCard">
-          <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
+          <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
           <div class="catalogBody">
             <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span></div>
             <div class="catalogName">${escapeHtml(p.name)}</div>

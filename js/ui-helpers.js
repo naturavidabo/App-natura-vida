@@ -47,16 +47,80 @@ function fmtDateTime(timestamp) {
     ' ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
 }
 
-/* Lee un archivo de imagen (input file) y devuelve un dataURL, con manejo de errores. */
-function readImageFile(file) {
+/* Lee un archivo de imagen (input file) y devuelve un dataURL, con manejo de errores.
+   V7.1.2: también puede optimizar imágenes grandes sin destruir calidad.
+   Para productos se usa alta calidad porque se reutilizan en catálogo PDF. */
+function imageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo abrir la imagen'));
+    img.src = dataUrl;
+  });
+}
+
+function canvasToDataUrl(canvas, mimeType = 'image/jpeg', quality = 0.9) {
+  try { return canvas.toDataURL(mimeType, quality); }
+  catch (_) { return canvas.toDataURL('image/jpeg', quality); }
+}
+
+async function optimizeImageDataUrl(dataUrl, options = {}) {
+  const maxEdge = Number(options.maxEdge || 1800);
+  const quality = Number(options.quality || 0.9);
+  const mimeType = options.mimeType || 'image/jpeg';
+  const img = await imageFromDataUrl(dataUrl);
+  const width = img.naturalWidth || img.width || 1;
+  const height = img.naturalHeight || img.height || 1;
+  const largest = Math.max(width, height);
+  if (!options.force && largest <= maxEdge && String(dataUrl).length < 950000) {
+    return { dataUrl, width, height, optimized: false };
+  }
+  const ratio = Math.min(1, maxEdge / largest);
+  const targetW = Math.max(1, Math.round(width * ratio));
+  const targetH = Math.max(1, Math.round(height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, targetW, targetH);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+  return { dataUrl: canvasToDataUrl(canvas, mimeType, quality), width: targetW, height: targetH, optimized: true };
+}
+
+function readImageFile(file, options = {}) {
   return new Promise((resolve, reject) => {
     if (!file) return reject(new Error('Sin archivo'));
     if (!file.type.startsWith('image/')) return reject(new Error('No es una imagen'));
     const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
+    reader.onload = async (e) => {
+      try {
+        const raw = e.target.result;
+        if (options && options.optimize) {
+          const optimized = await optimizeImageDataUrl(raw, options);
+          return resolve(optimized.dataUrl);
+        }
+        resolve(raw);
+      } catch (error) { reject(error); }
+    };
     reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
     reader.readAsDataURL(file);
   });
+}
+
+async function readProductImageFile(file) {
+  if (!file) throw new Error('Sin archivo');
+  if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
+  if (file.size > 15 * 1024 * 1024) throw new Error('La imagen supera 15 MB. Usa una foto más liviana.');
+  return readImageFile(file, { optimize: true, maxEdge: 1800, quality: 0.9, mimeType: 'image/jpeg' });
+}
+
+async function readLogoImageFile(file) {
+  if (!file) throw new Error('Sin archivo');
+  if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
+  return readImageFile(file, { optimize: true, maxEdge: 1200, quality: 0.92, mimeType: 'image/jpeg' });
 }
 
 /* Búsqueda predictiva simple: filtra por substring, sin distinción de mayúsculas/acentos básicos. */
@@ -98,6 +162,9 @@ window.todayISO = todayISO;
 window.fmtDate = fmtDate;
 window.fmtDateTime = fmtDateTime;
 window.readImageFile = readImageFile;
+window.readProductImageFile = readProductImageFile;
+window.readLogoImageFile = readLogoImageFile;
+window.optimizeImageDataUrl = optimizeImageDataUrl;
 window.matchesSearch = matchesSearch;
 window.normalizeSearch = normalizeSearch;
 window.bindStableSearch = bindStableSearch;

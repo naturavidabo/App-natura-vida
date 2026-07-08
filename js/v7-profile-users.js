@@ -18,15 +18,21 @@
     const cityReq = pendingOwnChange('city');
     window.V7_FORM_DIRTY = false;
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Los datos comerciales son libres. WhatsApp y ciudad requieren aprobación del administrador.'}</p></section>
+      <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Puedes actualizar tus datos de perfil y presentación comercial. El correo, rol y estado permanecen protegidos.'}</p></section>
       <section class="v7ProfileCardMain">
         <div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
         <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</small></div>
       </section>
       <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Datos oficiales</span><h2>Registro verificado</h2></div><span class="v7Lock">Protegido</span></div>
-        <div class="v7ReadonlyGrid"><label>Nombre completo<input value="${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}" readonly></label><label>Correo Gmail<input value="${escapeHtml(AppState.session.email || '')}" readonly></label><label>WhatsApp actual<input value="${escapeHtml(AppState.session.phone || '')}" readonly>${phoneReq ? `<small class="pendingText">Cambio pendiente: ${escapeHtml(phoneReq.newValue)}</small>` : ''}</label><label>Ciudad actual<input value="${escapeHtml(AppState.session.city || '')}" readonly>${cityReq ? `<small class="pendingText">Cambio pendiente: ${escapeHtml(cityReq.newValue)}</small>` : ''}</label></div>
-        <button class="btn outline block" id="requestOfficialChangeV7">${isAdmin() ? 'Editar WhatsApp o ciudad' : 'Solicitar cambio de WhatsApp o ciudad'}</button>
+        <div class="v7PanelHead"><div><span class="v7Eyebrow">Datos de perfil</span><h2>Identificación</h2></div><span class="v7Lock">Correo protegido</span></div>
+        <div class="v7ReadonlyGrid">
+          <label>Nombre completo<input id="v7FullName" value="${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}" placeholder="Nombre y apellidos"></label>
+          <label>Correo Gmail<input value="${escapeHtml(AppState.session.email || '')}" readonly></label>
+          <label>WhatsApp<input id="v7OfficialPhone" inputmode="tel" value="${escapeHtml(AppState.session.phone || '')}" placeholder="Ej.: 70700000"></label>
+          <label>Ciudad<input id="v7OfficialCity" value="${escapeHtml(AppState.session.city || '')}" placeholder="Ej.: Santa Cruz"></label>
+        </div>
+        <div class="v7CashNotice">Puedes editar tu nombre, WhatsApp y ciudad. El correo, rol y estado no se modifican desde la app.</div>
+        <button class="btn outline block" id="saveOfficialProfileV7">Guardar datos de perfil</button>
       </section>
       <section class="v7Panel">
         <div class="v7PanelHead"><div><span class="v7Eyebrow">Presentación en recibos</span><h2>Mi negocio</h2></div></div>
@@ -47,7 +53,23 @@
     `;
 
     $all('#mainArea input:not([readonly]), #mainArea textarea').forEach(el => el.addEventListener('input', () => { window.V7_FORM_DIRTY = true; }));
-    $('#requestOfficialChangeV7').addEventListener('click', isAdmin() ? openAdminOfficialEditV7 : openOfficialChangeRequest);
+    $('#saveOfficialProfileV7').addEventListener('click', async () => {
+      const btn = $('#saveOfficialProfileV7');
+      const fullName = $('#v7FullName').value.trim();
+      const phone = $('#v7OfficialPhone').value.trim();
+      const city = $('#v7OfficialCity').value.trim();
+      if (!fullName || fullName.length < 3) return showToast('Ingresa un nombre completo válido.', 'error');
+      btn.disabled = true; btn.textContent = 'Guardando perfil…';
+      const res = await upsertCloudProfileForUser(AppState.session.userId, AppState.session.email, { fullName, phone, city });
+      btn.disabled = false; btn.textContent = 'Guardar datos de perfil';
+      if (!res.ok) return showToast(res.message || 'No se pudo guardar el perfil.', 'error');
+      AppState.session.fullName = res.profile.full_name || fullName;
+      AppState.session.phone = res.profile.phone || phone;
+      AppState.session.city = res.profile.city || city;
+      window.V7_FORM_DIRTY = false;
+      showToast('Perfil actualizado correctamente.');
+      renderProfileV7();
+    });
     $('#openQrCropV7').addEventListener('click', () => openQrCropper(cp.qrUrl || ''));
     $('#useLocationV7').addEventListener('click', () => {
       if (!navigator.geolocation) return showToast('El dispositivo no permite obtener ubicación.', 'error');
@@ -72,13 +94,18 @@
       };
       if (qrDataUrl && qrDataUrl.startsWith('data:image/')) {
         const upload = await uploadPaymentQrV7(qrDataUrl);
-        if (!upload.ok) { btn.disabled = false; btn.textContent = 'Guardar perfil comercial'; return showToast(upload.message, 'error'); }
-        profile.qrUrl = upload.url;
+        if (upload.ok) {
+          profile.qrUrl = upload.url;
+        } else {
+          // Fallback seguro: si Storage falla, guardamos el QR recortado en el perfil para que no desaparezca.
+          profile.qrUrl = qrDataUrl;
+          showToast('Storage no aceptó el QR; se guardará como imagen interna del perfil.', 'error');
+        }
       }
       const res = await saveCommercialProfileV7(profile);
       btn.disabled = false; btn.textContent = 'Guardar perfil comercial';
       if (!res.ok) return showToast(res.message, 'error');
-      qrDataUrl = ''; window.V7_FORM_DIRTY = false; showToast('Perfil comercial actualizado.'); renderProfileV7();
+      qrDataUrl = ''; window.V7_FORM_DIRTY = false; await fetchCommercialProfilesV7().catch(() => {}); showToast('Perfil comercial actualizado.'); renderProfileV7();
     });
   }
 

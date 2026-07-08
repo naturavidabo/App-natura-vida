@@ -93,7 +93,7 @@
         ${products.map(p => {
           const stock = centralStock(p); const qty = Number(orderCart[p.id] || 0); const price = representativeOrderPrice(p);
           return `<article class="v7ProductCard ${stock === 0 ? 'soldout' : ''}">
-            <div class="v7ProductImage">${p.photo ? `<img src="${p.photo}" alt="">` : '<span>NV</span>'}${stock === 0 ? '<em>AGOTADO</em>' : ''}</div>
+            <div class="v7ProductImage">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span>NV</span>'}${stock === 0 ? '<em>AGOTADO</em>' : ''}</div>
             <div class="v7ProductBody"><small>${escapeHtml(p.category || 'General')}</small><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.description || '')}</p><div class="v7ProductPrice"><strong>${fmtMoney(price)}</strong><span>${stock} disponibles</span></div>
             <div class="v7Stepper"><button data-minus="${p.id}" ${stock===0?'disabled':''}>−</button><b>${qty}</b><button data-plus="${p.id}" ${stock===0?'disabled':''}>+</button></div></div>
           </article>`;

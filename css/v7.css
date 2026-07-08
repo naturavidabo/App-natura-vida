@@ -138,3 +138,41 @@ nav.bottom button.active{background:linear-gradient(180deg,#eaf8f0 0%,#f8fdfa 10
 .searchHidden{display:none!important}
 nav.bottom{margin:0 auto}
 .v7ProductGrid>.v7ProductCard:only-child{grid-column:1/-1;width:min(100%,340px);justify-self:center}
+
+
+/* ===== V7.1.2 — imágenes completas, catálogo premium y perfil editable ===== */
+.v7ProductImage img,
+.invPhoto img,
+.catalogPhoto img,
+.card .photo img,
+.selectprod .thumb img,
+.resellerProductHeader .thumb img,
+.photopick img,
+.v7QrCurrent img{
+  object-fit:contain!important;
+  background:linear-gradient(180deg,#f7fcf9 0%,#eef8f2 100%);
+}
+.v7ProductImage,
+.invPhoto,
+.catalogPhoto,
+.card .photo,
+.selectprod .thumb,
+.resellerProductHeader .thumb{
+  background:linear-gradient(180deg,#f7fcf9 0%,#eef8f2 100%)!important;
+}
+.v7ProductCard.soldout .v7ProductImage img{opacity:.62;filter:saturate(.7)}
+.v7SaveProfile{margin-bottom:18px}
+.v7ReadonlyGrid input:not([readonly]){
+  background:#fff;
+  border-color:#cae3d3;
+}
+.v7ReadonlyGrid input:not([readonly]):focus{
+  border-color:#10a963;
+  box-shadow:0 0 0 4px rgba(16,169,99,.10);
+}
+.catalogReadyHero{
+  background:linear-gradient(135deg,#ecfbf3,#fff9ec)!important;
+}
+.pdfPreviewBox{
+  background:#f2faf5!important;
+}
