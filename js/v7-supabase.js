@@ -125,12 +125,23 @@
       const { error } = await sb.storage.from('payment-assets').upload(path, blob, {
         upsert: true,
         contentType: 'image/jpeg',
-        cacheControl: '0'
+        cacheControl: '86400'
       });
       if (error) return { ok: false, message: v7Error(error) };
       const { data } = sb.storage.from('payment-assets').getPublicUrl(path);
       if (!data || !data.publicUrl) return { ok: false, message: 'No se obtuvo la dirección pública del QR.' };
       return { ok: true, url: `${data.publicUrl}?v=${Date.now()}` };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function deletePaymentQrV7() {
+    try {
+      const sb = await requireClient();
+      const userId = AppState.session && AppState.session.onlineUserId;
+      if (!userId) return { ok: false, message: 'La sesión no está activa.' };
+      const { error } = await sb.storage.from('payment-assets').remove([`${userId}/qr-current.jpg`]);
+      if (error) return { ok: false, message: v7Error(error) };
+      return { ok: true };
     } catch (error) { return { ok: false, message: v7Error(error) }; }
   }
 
@@ -374,6 +385,7 @@
     syncV7Context,
     saveCommercialProfileV7,
     uploadPaymentQrV7,
+    deletePaymentQrV7,
     requestProfileChangeV7,
     reviewProfileChangeV7,
     mapV7OrderRow,

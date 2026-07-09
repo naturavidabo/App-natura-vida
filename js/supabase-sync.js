@@ -105,11 +105,16 @@ function appRedirectUrl() {
 
 function messageFromError(error, fallback = 'No se pudo completar la operación.') {
   const raw = String((error && error.message) || error || fallback);
+  if (/audit_log.*user_id|column ["']?user_id["']? of relation ["']?audit_log/i.test(raw)) {
+    return 'La base de datos de ventas necesita la migración V7.2. La venta no fue registrada ni debe repetirse hasta aplicar el archivo SQL incluido.';
+  }
   if (/invalid api key/i.test(raw)) return 'La Publishable key de Supabase no es válida o no pertenece a este proyecto.';
-  if (/failed to fetch|networkerror|load failed/i.test(raw)) return 'No se pudo conectar con Supabase. Revisa internet y vuelve a intentar.';
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) return 'Se perdió la conexión con Supabase. Se verificará si la operación alcanzó a guardarse antes de permitir reintentar.';
   if (/email not confirmed/i.test(raw)) return 'Confirma primero el mensaje enviado a tu Gmail.';
   if (/invalid login credentials/i.test(raw)) return 'Correo o contraseña incorrectos.';
-  return raw;
+  if (/row-level security|violates row level security|permission denied/i.test(raw)) return 'Supabase rechazó la operación por permisos. Revisa las políticas RLS de la migración V7.2.';
+  if (/duplicate key|already exists/i.test(raw)) return 'La operación ya existe y no se volverá a registrar.';
+  return raw.length > 220 ? fallback : raw;
 }
 
 async function requireClient() {
@@ -308,18 +313,18 @@ async function uploadProductPhotoIfNeeded(product) {
   if (!product || !isDataUrlImage(product.photo)) return product && product.photo ? product.photo : null;
   const sb = await requireClient();
   const bucket = effectiveOnlineConfig().productImagesBucket || 'product-images';
-  const ext = product.photo.includes('image/png') ? 'png' : 'jpg';
   const safeId = String(product.id || uid('prod')).replace(/[^a-z0-9_-]/gi, '_');
-  const path = `${safeId}/${Date.now()}.${ext}`;
+  const path = `${safeId}/main.jpg`;
   const blob = dataUrlToBlob(product.photo);
   const { error } = await sb.storage.from(bucket).upload(path, blob, {
     upsert: true,
-    contentType: blob.type
+    contentType: 'image/jpeg',
+    cacheControl: '86400'
   });
   if (error) throw new Error(`No se pudo subir la imagen: ${messageFromError(error)}`);
   const { data } = sb.storage.from(bucket).getPublicUrl(path);
   if (!data || !data.publicUrl) throw new Error('Supabase Storage no devolvió la URL de la imagen.');
-  return data.publicUrl;
+  return `${data.publicUrl}?v=${Date.now()}`;
 }
 
 function stripEmbeddedImages(value) {
@@ -568,6 +573,15 @@ async function syncCloudSalesToLocal() {
   return { ok: true, count: rows.length };
 }
 
+async function findCloudSaleById(saleId) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('sales').select('*').eq('id', String(saleId)).maybeSingle();
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, sale: data || null };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
 async function insertCloudSale(sale) {
   try {
     const sb = await requireClient();
@@ -579,8 +593,24 @@ async function insertCloudSale(sale) {
       p_sale: sale,
       p_items: items
     });
-    return error ? { ok: false, message: messageFromError(error) } : { ok: true, sale: data };
-  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+    if (!error) return { ok: true, sale: data };
+
+    // Una respuesta puede perderse después de que PostgreSQL confirmó la venta.
+    // Antes de permitir un reintento se consulta el mismo ID, evitando duplicados.
+    const uncertain = /failed to fetch|networkerror|load failed|fetch failed|timeout|duplicate key|already exists/i.test(String(error.message || error));
+    if (uncertain && sale && sale.id && navigator.onLine) {
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const check = await findCloudSaleById(sale.id);
+      if (check.ok && check.sale) return { ok: true, sale: check.sale, recovered: true };
+    }
+    return { ok: false, message: messageFromError(error) };
+  } catch (error) {
+    if (sale && sale.id && navigator.onLine) {
+      const check = await findCloudSaleById(sale.id);
+      if (check.ok && check.sale) return { ok: true, sale: check.sale, recovered: true };
+    }
+    return { ok: false, message: messageFromError(error) };
+  }
 }
 
 const CLOUD_GENERIC_STORES = [

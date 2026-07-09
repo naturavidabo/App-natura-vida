@@ -59,12 +59,126 @@
   }
 
   function openSaleCheckoutV7(){
-    const items=saleItems();
-    if(!items.length)return showToast('Selecciona al menos un producto.','error');
-    if(items.some(i=>Number(i.unitPrice||0)<=0)||saleTotal()<=0)return showToast('Todos los productos deben tener un precio de venta válido.','error');
-    openSheet(`<h2>Confirmar venta al contado <span class="x" id="closeSheet">✕</span></h2><div class="v7CartList">${items.map(i=>`<div><span><strong>${escapeHtml(i.productName)}</strong><small>${i.qty} × ${fmtMoney(i.unitPrice)}</small></span><b>${fmtMoney(i.subtotal)}</b></div>`).join('')}</div><div class="v7TotalLine"><span>Total a cobrar</span><strong>${fmtMoney(saleTotal())}</strong></div><div class="v7CashNotice">Esta venta descontará inmediatamente tu inventario propio.</div><div class="sectiontitle2"><span>Cliente</span></div><div class="field"><label>Nombre *</label><input id="v7ClientName" list="v7ClientList" placeholder="Nombre del cliente"><datalist id="v7ClientList">${AppState.clients.map(c=>`<option value="${escapeHtml(c.name)}">`).join('')}</datalist></div><div class="field-row"><div class="field"><label>WhatsApp</label><input id="v7ClientPhone" inputmode="tel"></div><div class="field"><label>Tipo de cliente</label><select id="v7ClientType"><option value="unit">Unitario</option><option value="wholesale" ${saleType==='reseller_wholesale'?'selected':''}>Mayorista</option></select></div></div><details class="v7OptionalDetails"><summary>Datos opcionales del cliente</summary><div class="field"><label>Nombre del negocio</label><input id="v7ClientBusiness"></div><div class="field"><label>Dirección</label><input id="v7ClientAddress"></div><div class="field-row"><div class="field"><label>Ciudad</label><input id="v7ClientCity"></div><div class="field"><label>Ubicación / referencia</label><input id="v7ClientLocation"></div></div><div class="field"><label>Observaciones</label><textarea id="v7ClientNotes"></textarea></div></details><button class="btn block" id="confirmSaleV7">Confirmar pago y generar recibo</button>`,(overlay,close)=>{
-      $('#closeSheet',overlay).addEventListener('click',close);$('#v7ClientName',overlay).addEventListener('change',()=>{const c=AppState.clients.find(x=>normalizeSearch(x.name)===normalizeSearch($('#v7ClientName',overlay).value));if(c){$('#v7ClientPhone',overlay).value=c.phone||'';$('#v7ClientBusiness',overlay).value=c.businessName||'';$('#v7ClientAddress',overlay).value=c.address||'';$('#v7ClientCity',overlay).value=c.city||'';$('#v7ClientLocation',overlay).value=c.location||'';$('#v7ClientNotes',overlay).value=c.notes||'';}});
-      $('#confirmSaleV7',overlay).addEventListener('click',async()=>{const name=$('#v7ClientName',overlay).value.trim();if(!name)return showToast('Ingresa el nombre del cliente.','error');if(!navigator.onLine)return showToast('Se necesita internet para registrar la venta.','error');const btn=$('#confirmSaleV7',overlay);btn.disabled=true;btn.textContent='Guardando en Supabase…';try{const client=await saveV7Client({name,phone:$('#v7ClientPhone',overlay).value.trim(),customerType:$('#v7ClientType',overlay).value,businessName:$('#v7ClientBusiness',overlay).value.trim(),address:$('#v7ClientAddress',overlay).value.trim(),city:$('#v7ClientCity',overlay).value.trim(),location:$('#v7ClientLocation',overlay).value.trim(),notes:$('#v7ClientNotes',overlay).value.trim()});const num=await nextDocumentNumberV7('NV-VTA');if(!num.ok)throw new Error(num.message);const sale={id:uid('sale'),documentNumber:num.number,receiptNumber:num.number,type:saleType,role:AppState.session.roleName,sellerId:AppState.session.userId,sellerName:AppState.session.fullName,items:saleItems(),total:saleTotal(),sellerProfit:saleItems().reduce((s,i)=>s+Number(i.profit||0),0),clientId:client.id,clientName:client.name,clientPhone:client.phone,clientCity:client.city||'',clientAddress:client.address||'',clientBusinessName:client.businessName||'',customerType:client.customerType||'',paymentMethod:'cash',paymentStatus:'paid',date:Date.now(),syncStatus:'cloud'};await DB.put('sales',sale);AppState.sales.push(sale);await syncCloudProductsToLocal();close();saleCart={};showToast('Venta registrada y stock actualizado.');openV7ReceiptPreview(sale,'sale');renderRepresentativeSalesV7();}catch(err){btn.disabled=false;btn.textContent='Reintentar';showToast(err.message||'No se pudo guardar la venta.','error');}});
+    const items = saleItems();
+    const total = saleTotal();
+    if (!items.length) return showToast('Selecciona al menos un producto.', 'error');
+    if (items.some(i => Number(i.unitPrice || 0) <= 0) || total <= 0) return showToast('Todos los productos deben tener un precio de venta válido.', 'error');
+
+    const operation = {
+      id: uid('sale'),
+      documentNumber: '',
+      client: null,
+      sale: null,
+      submitting: false
+    };
+
+    openSheet(`
+      <h2>Confirmar venta al contado <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7CartList">${items.map(i => `<div><span><strong>${escapeHtml(i.productName)}</strong><small>${i.qty} × ${fmtMoney(i.unitPrice)}</small></span><b>${fmtMoney(i.subtotal)}</b></div>`).join('')}</div>
+      <div class="v7TotalLine"><span>Total a cobrar</span><strong>${fmtMoney(total)}</strong></div>
+      <div class="v7CashNotice">Esta venta se registrará una sola vez y descontará inmediatamente tu inventario propio.</div>
+      <div class="sectiontitle2"><span>Cliente</span></div>
+      <div class="field"><label>Nombre *</label><input id="v7ClientName" list="v7ClientList" placeholder="Nombre del cliente"><datalist id="v7ClientList">${AppState.clients.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist></div>
+      <div class="field-row"><div class="field"><label>WhatsApp</label><input id="v7ClientPhone" inputmode="tel"></div><div class="field"><label>Tipo de cliente</label><select id="v7ClientType"><option value="unit">Unitario</option><option value="wholesale" ${saleType === 'reseller_wholesale' ? 'selected' : ''}>Mayorista</option></select></div></div>
+      <details class="v7OptionalDetails"><summary>Datos opcionales del cliente</summary><div class="field"><label>Nombre del negocio</label><input id="v7ClientBusiness"></div><div class="field"><label>Dirección</label><input id="v7ClientAddress"></div><div class="field-row"><div class="field"><label>Ciudad</label><input id="v7ClientCity"></div><div class="field"><label>Ubicación / referencia</label><input id="v7ClientLocation"></div></div><div class="field"><label>Observaciones</label><textarea id="v7ClientNotes"></textarea></div></details>
+      <div class="actions stickyActions"><button class="btn block" id="confirmSaleV7">Confirmar pago y generar recibo</button></div>
+    `, (overlay, close) => {
+      $('#closeSheet', overlay).addEventListener('click', () => {
+        if (!operation.submitting) close();
+      });
+      $('#v7ClientName', overlay).addEventListener('change', () => {
+        const c = AppState.clients.find(x => normalizeSearch(x.name) === normalizeSearch($('#v7ClientName', overlay).value));
+        if (!c) return;
+        $('#v7ClientPhone', overlay).value = c.phone || '';
+        $('#v7ClientBusiness', overlay).value = c.businessName || '';
+        $('#v7ClientAddress', overlay).value = c.address || '';
+        $('#v7ClientCity', overlay).value = c.city || '';
+        $('#v7ClientLocation', overlay).value = c.location || '';
+        $('#v7ClientNotes', overlay).value = c.notes || '';
+      });
+
+      $('#confirmSaleV7', overlay).addEventListener('click', async () => {
+        if (operation.submitting) return;
+        const name = $('#v7ClientName', overlay).value.trim();
+        if (!name) return showToast('Ingresa el nombre del cliente.', 'error');
+        if (!navigator.onLine) return showToast('Se necesita internet para registrar la venta.', 'error');
+
+        const btn = $('#confirmSaleV7', overlay);
+        operation.submitting = true;
+        btn.disabled = true;
+        btn.textContent = 'Verificando stock y guardando…';
+        try {
+          const productRefresh = await syncCloudProductsToLocal();
+          if (productRefresh && productRefresh.ok === false) throw new Error(productRefresh.message);
+          for (const item of items) {
+            const current = AppState.products.find(p => p.id === item.productId);
+            if (!current || Number(current.stock || 0) < Number(item.qty || 0)) {
+              throw new Error(`Stock insuficiente para ${item.productName}. Actualiza el carrito y vuelve a intentarlo.`);
+            }
+          }
+
+          if (!operation.client) {
+            operation.client = await saveV7Client({
+              name,
+              phone: $('#v7ClientPhone', overlay).value.trim(),
+              customerType: $('#v7ClientType', overlay).value,
+              businessName: $('#v7ClientBusiness', overlay).value.trim(),
+              address: $('#v7ClientAddress', overlay).value.trim(),
+              city: $('#v7ClientCity', overlay).value.trim(),
+              location: $('#v7ClientLocation', overlay).value.trim(),
+              notes: $('#v7ClientNotes', overlay).value.trim()
+            });
+          }
+          if (!operation.documentNumber) {
+            const num = await nextDocumentNumberV7('NV-VTA');
+            if (!num.ok) throw new Error(num.message);
+            operation.documentNumber = num.number;
+          }
+          if (!operation.sale) {
+            operation.sale = {
+              id: operation.id,
+              documentNumber: operation.documentNumber,
+              receiptNumber: operation.documentNumber,
+              type: saleType,
+              role: AppState.session.roleName,
+              sellerId: AppState.session.onlineUserId || AppState.session.userId,
+              sellerName: AppState.session.fullName,
+              items,
+              total,
+              sellerProfit: items.reduce((sum, item) => sum + Number(item.profit || 0), 0),
+              clientId: operation.client.id,
+              clientName: operation.client.name,
+              clientPhone: operation.client.phone,
+              clientCity: operation.client.city || '',
+              clientAddress: operation.client.address || '',
+              clientBusinessName: operation.client.businessName || '',
+              customerType: operation.client.customerType || '',
+              paymentMethod: 'cash',
+              paymentStatus: 'paid',
+              date: Date.now(),
+              syncStatus: 'cloud'
+            };
+          }
+
+          await DB.put('sales', operation.sale);
+          await Promise.all([
+            syncCloudProductsToLocal().catch(() => null),
+            window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()
+          ]);
+          if (!AppState.sales.some(s => s.id === operation.sale.id)) AppState.sales.push(operation.sale);
+          close();
+          saleCart = {};
+          showToast('Venta registrada y stock actualizado.');
+          openV7ReceiptPreview(operation.sale, 'sale');
+          renderRepresentativeSalesV7();
+        } catch (err) {
+          operation.submitting = false;
+          btn.disabled = false;
+          btn.textContent = 'Reintentar la misma operación';
+          const message = window.messageFromError ? messageFromError(err, 'No se pudo guardar la venta.') : (err.message || 'No se pudo guardar la venta.');
+          showToast(message, 'error');
+        }
+      });
     });
   }
 

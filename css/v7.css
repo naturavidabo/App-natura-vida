@@ -176,3 +176,93 @@ nav.bottom{margin:0 auto}
 .pdfPreviewBox{
   background:#f2faf5!important;
 }
+
+/* ===== V7.2.0 — estabilización móvil, imágenes y actualización visible ===== */
+body.nv-sheet-open{overflow:hidden;touch-action:none}
+.overlay{
+  height:var(--nv-visual-height,100dvh);
+  max-height:var(--nv-visual-height,100dvh);
+  min-height:320px;
+  overflow:hidden;
+  overscroll-behavior:contain;
+}
+.sheet{
+  width:min(100%,540px);
+  max-height:calc(var(--nv-visual-height,100dvh) - 6px)!important;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scroll-padding-top:24px;
+  scroll-padding-bottom:150px;
+  padding-bottom:calc(28px + env(safe-area-inset-bottom));
+}
+.sheet.keyboard-open{
+  max-height:calc(var(--nv-visual-height,100dvh) - 2px)!important;
+  border-radius:20px 20px 0 0;
+}
+.sheet input,.sheet textarea,.sheet select{scroll-margin-top:80px;scroll-margin-bottom:140px}
+.sheet .stickyActions{
+  position:sticky;
+  z-index:8;
+  bottom:calc(-28px - env(safe-area-inset-bottom));
+  margin:18px -17px calc(-28px - env(safe-area-inset-bottom));
+  padding:12px 17px calc(14px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,rgba(249,252,250,.72),#f9fcfa 22%);
+  border-top:1px solid rgba(7,75,46,.08);
+  backdrop-filter:blur(12px);
+}
+
+/* Las fotos comerciales llenan el cuadro; el QR conserva todo el código. */
+.v7ProductImage img,
+.invPhoto img,
+.catalogPhoto img,
+.card .photo img,
+.selectprod .thumb img,
+.resellerProductHeader .thumb img,
+.photopick.productPhotoPick img{
+  object-fit:cover!important;
+  background:#f3f8f5;
+}
+.v7QrCurrent img{object-fit:contain!important;background:#fff!important}
+.v7ProductImage,.catalogPhoto,.cleanSalePhoto{aspect-ratio:1/1!important}
+.v7ProductImage img,.catalogPhoto img,.invPhoto img{transition:opacity .2s ease,transform .25s ease}
+.v7ProductImage img[loading="lazy"],.catalogPhoto img[loading="lazy"],.invPhoto img[loading="lazy"]{content-visibility:auto}
+.v2Grid{grid-template-columns:1fr!important}
+.v2ProductCard{grid-template-columns:minmax(145px,42%) 1fr!important;min-height:210px}
+.v2ProductCard .invPhoto{width:100%!important;height:100%!important;min-height:210px!important;aspect-ratio:auto!important}
+@media(max-width:380px){
+  .v2ProductCard{grid-template-columns:132px 1fr!important}
+  .v2ProductCard .invPhoto{min-height:190px!important}
+}
+.productPhotoPick{height:min(78vw,360px)!important;min-height:260px;aspect-ratio:1/1;margin-bottom:9px}
+.v7PhotoActions{display:flex;align-items:center;gap:10px;margin-top:8px}
+.v7PhotoActions small{font-size:10px;line-height:1.4;color:#6d8478;flex:1}
+.v7PhotoActions .btn{flex:0 0 auto}
+.v7CropHelp{font-size:11px;line-height:1.5;color:#547064;background:#edf8f2;border:1px solid #d3ebdc;border-radius:14px;padding:11px 12px;margin-bottom:12px}
+.v7ImageCropCanvas{display:block;width:100%;height:auto;max-height:52vh;border-radius:18px;border:1px solid var(--nv-line);background:#f4faf6;box-shadow:inset 0 0 0 1px rgba(255,255,255,.8);touch-action:none}
+
+.v7UpdateHero{display:flex;align-items:center;gap:13px;padding:15px;border-radius:18px;background:linear-gradient(135deg,#e9f8f0,#fff);border:1px solid #d8eadf}
+.v7UpdateMark{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;background:linear-gradient(135deg,#075b35,#11a060);color:#fff;font-size:28px;font-weight:900;box-shadow:0 10px 24px rgba(7,91,53,.2)}
+.v7UpdateHero span,.v7UpdateHero strong,.v7UpdateHero small{display:block}
+.v7UpdateHero span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#648072;font-weight:800}
+.v7UpdateHero strong{font-size:22px;color:var(--nv-deep);margin:2px 0}
+.v7UpdateHero small{font:600 9px JetBrains Mono,monospace;color:#789084}
+.v7UpdateStatus{margin:12px 0;padding:11px 12px;border-radius:13px;background:#f6faf7;color:#486656;font-size:11px;font-weight:700}
+.v7UpdateGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px}
+.v7UpdateGrid>div{padding:11px;border-radius:13px;background:#f2f7f4}
+.v7UpdateGrid span,.v7UpdateGrid strong{display:block}
+.v7UpdateGrid span{font-size:9px;color:#789084;text-transform:uppercase;letter-spacing:.06em}
+.v7UpdateGrid strong{font-size:12px;color:var(--nv-deep);margin-top:4px}
+
+/* Buzón y acciones de formularios siempre visibles sobre el teclado. */
+.nvSheetActions{
+  position:sticky;z-index:9;bottom:calc(-28px - env(safe-area-inset-bottom));
+  margin:18px -17px calc(-28px - env(safe-area-inset-bottom));
+  padding:12px 17px calc(14px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,rgba(249,252,250,.72),#f9fcfa 24%);
+  border-top:1px solid rgba(7,75,46,.08);backdrop-filter:blur(12px)
+}
+.inboxComposeBtn{margin:12px 0 14px}
+.messageActions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.v7QrCurrent img{image-rendering:auto}
+.v7QrCurrent>div{background:linear-gradient(145deg,#eef8f2,#fff)!important;color:#0b7144!important}

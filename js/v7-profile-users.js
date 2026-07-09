@@ -6,12 +6,17 @@
   let qrOffsetX = 0;
   let qrOffsetY = 0;
   let qrDataUrl = '';
+  let removeQrRequested = false;
 
   function pendingOwnChange(field) {
     return (AppState.profileChangeRequests || []).find(r => r.userId === AppState.session.userId && r.fieldName === field && r.status === 'pending');
   }
 
   function renderProfileV7() {
+    // Cada entrada al módulo comienza con el estado confirmado en Supabase.
+    // Así un recorte o eliminación no guardados no reaparecen al volver más tarde.
+    qrDataUrl = '';
+    removeQrRequested = false;
     $('#fabAdd').classList.add('hidden');
     const cp = myCommercialProfile();
     const phoneReq = pendingOwnChange('phone');
@@ -46,8 +51,9 @@
       <section class="v7Panel">
         <div class="v7PanelHead"><div><span class="v7Eyebrow">Cobro al contado</span><h2>Mi QR</h2></div></div>
         <div class="v7QrWarning"><strong>Importante:</strong> sube solamente el QR limpio. No uses capturas completas del banco, marcos, saldos, logotipos decorativos ni información adicional.</div>
-        <div class="v7QrCurrent">${cp.qrUrl ? `<img src="${cp.qrUrl}" alt="QR actual"><span>QR actual</span>` : '<div>QR</div><span>Aún no configurado</span>'}</div>
+        <div class="v7QrCurrent">${cp.qrUrl ? `<img src="${escapeHtml(cp.qrUrl)}" alt="QR actual" loading="lazy" decoding="async"><span>QR actual guardado</span>` : '<div>QR</div><span>Aún no configurado</span>'}</div>
         <button class="btn outline block" id="openQrCropV7">Cargar y recortar QR</button>
+        <button class="btn ghost block ${cp.qrUrl ? '' : 'hidden'}" id="removeQrV7">Eliminar QR guardado</button>
       </section>
       <button class="btn block v7SaveProfile" id="saveCommercialProfileV7">Guardar perfil comercial</button>
     `;
@@ -70,7 +76,21 @@
       showToast('Perfil actualizado correctamente.');
       renderProfileV7();
     });
-    $('#openQrCropV7').addEventListener('click', () => openQrCropper(cp.qrUrl || ''));
+    $('#openQrCropV7').addEventListener('click', () => openQrCropper(qrDataUrl || cp.qrUrl || ''));
+    const currentQrImg = $('.v7QrCurrent img');
+    if (currentQrImg) currentQrImg.addEventListener('error', () => {
+      const box = $('.v7QrCurrent');
+      if (box) box.innerHTML = '<div>!</div><span>No se pudo cargar el QR guardado</span>';
+    }, { once: true });
+    $('#removeQrV7').addEventListener('click', async () => {
+      if (!confirm('¿Eliminar el QR de cobro de tu perfil y de los próximos recibos?')) return;
+      qrDataUrl = '';
+      removeQrRequested = true;
+      window.V7_FORM_DIRTY = true;
+      $('.v7QrCurrent').innerHTML = '<div>QR</div><span>Se eliminará al guardar</span>';
+      $('#removeQrV7').classList.add('hidden');
+      showToast('QR marcado para eliminar. Pulsa Guardar perfil comercial.');
+    });
     $('#useLocationV7').addEventListener('click', () => {
       if (!navigator.geolocation) return showToast('El dispositivo no permite obtener ubicación.', 'error');
       const btn = $('#useLocationV7'); btn.disabled = true; btn.textContent = 'Obteniendo ubicación…';
@@ -90,22 +110,35 @@
         latitude: $('#v7Lat').value,
         longitude: $('#v7Lng').value,
         receiptMessage: $('#v7ReceiptMessage').value.trim(),
-        qrUrl: qrDataUrl || cp.qrUrl || ''
+        qrUrl: removeQrRequested ? '' : (qrDataUrl || cp.qrUrl || '')
       };
       if (qrDataUrl && qrDataUrl.startsWith('data:image/')) {
         const upload = await uploadPaymentQrV7(qrDataUrl);
-        if (upload.ok) {
-          profile.qrUrl = upload.url;
-        } else {
-          // Fallback seguro: si Storage falla, guardamos el QR recortado en el perfil para que no desaparezca.
-          profile.qrUrl = qrDataUrl;
-          showToast('Storage no aceptó el QR; se guardará como imagen interna del perfil.', 'error');
+        if (!upload.ok) {
+          btn.disabled = false; btn.textContent = 'Reintentar guardado';
+          return showToast(upload.message || 'No se pudo subir el QR. No se guardó ningún cambio.', 'error');
         }
+        profile.qrUrl = upload.url;
       }
       const res = await saveCommercialProfileV7(profile);
+      if (!res.ok) {
+        btn.disabled = false; btn.textContent = 'Reintentar guardado';
+        return showToast(res.message, 'error');
+      }
+      const verify = await fetchCommercialProfilesV7();
+      const persisted = myCommercialProfile();
+      const qrVerified = verify.ok && (removeQrRequested ? !persisted.qrUrl : String(persisted.qrUrl || '') === String(profile.qrUrl || ''));
+      if (!qrVerified) {
+        btn.disabled = false; btn.textContent = 'Verificar y reintentar';
+        return showToast('Supabase no confirmó el QR guardado. No cierres esta pantalla y vuelve a intentarlo.', 'error');
+      }
+      if (removeQrRequested && window.deletePaymentQrV7) await deletePaymentQrV7().catch(() => {});
       btn.disabled = false; btn.textContent = 'Guardar perfil comercial';
-      if (!res.ok) return showToast(res.message, 'error');
-      qrDataUrl = ''; window.V7_FORM_DIRTY = false; await fetchCommercialProfilesV7().catch(() => {}); showToast('Perfil comercial actualizado.'); renderProfileV7();
+      qrDataUrl = '';
+      removeQrRequested = false;
+      window.V7_FORM_DIRTY = false;
+      showToast('Perfil comercial y QR verificados correctamente.');
+      renderProfileV7();
     });
   }
 
@@ -239,7 +272,13 @@
       $('#useQrCropV7', overlay).addEventListener('click', () => {
         if (!qrImage) return;
         qrDataUrl = cleanQrCropDataUrl(qrImage, qrZoom, qrOffsetX, qrOffsetY);
-        window.V7_FORM_DIRTY = true; close(); showToast('QR limpio preparado. Guarda el perfil para subirlo.');
+        removeQrRequested = false;
+        window.V7_FORM_DIRTY = true;
+        const box = $('.v7QrCurrent');
+        if (box) box.innerHTML = `<img src="${qrDataUrl}" alt="Vista previa del QR recortado"><span>Vista previa lista para guardar</span>`;
+        const removeBtn = $('#removeQrV7');
+        if (removeBtn) removeBtn.classList.remove('hidden');
+        close(); showToast('QR limpio preparado. Guarda el perfil para subirlo y verificarlo.');
       });
     });
   }

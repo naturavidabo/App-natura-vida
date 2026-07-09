@@ -115,8 +115,10 @@
     if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
     if (!canAccessV7(tab)) return;
     if (tab === 'ajustes' && !isAdmin()) tab = 'perfil';
-    // Al cambiar de módulo se descarta únicamente el borrador visual no guardado.
-    // Los datos oficiales siguen estando en Supabase.
+    if (window.V7_FORM_DIRTY && tab !== AppState.currentTab) {
+      const leave = window.confirm('Hay cambios sin guardar en esta pantalla. ¿Salir y descartarlos?');
+      if (!leave) return;
+    }
     window.V7_FORM_DIRTY = false;
     AppState.currentTab = tab;
     highlightActiveV7();
@@ -237,9 +239,10 @@
         ${isAdmin() ? moreItem('v7MoreUsers', 'users', 'Representantes', 'Aprobar, bloquear y personalizar descuento') : ''}
         ${isAdmin() ? moreItem('v7MoreGroups', 'tag', 'Grupos de precios', 'Reglas generales de precios') : ''}
         ${isAdmin() ? moreItem('v7MoreSettings', 'settings', 'Configuración del negocio', 'Marca, contacto y parámetros') : ''}
+        ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V7.1.1 · Supabase Only · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.2.0')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
@@ -249,6 +252,7 @@
     if ($('#v7MoreUsers')) $('#v7MoreUsers').addEventListener('click', () => navigateToV7('usuarios'));
     if ($('#v7MoreGroups')) $('#v7MoreGroups').addEventListener('click', () => navigateToV7('grupos'));
     if ($('#v7MoreSettings')) $('#v7MoreSettings').addEventListener('click', () => navigateToV7('ajustes'));
+    if ($('#v7MoreUpdates')) $('#v7MoreUpdates').addEventListener('click', () => window.openUpdateCenter ? openUpdateCenter() : showToast('El módulo de actualización no está disponible.', 'error'));
     $('#v7LogoutBtn').addEventListener('click', logoutSession);
   }
 

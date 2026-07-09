@@ -669,8 +669,8 @@ async function initApp() {
   window.addEventListener('nv:connection', (event) => updateCloudStatusBadge(event.detail));
   updateCloudStatusBadge(window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' });
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./service-worker.js?v=7.1.1', { updateViaCache: 'none' }).catch(() => {});
+  if (window.installAppUpdateManager) {
+    installAppUpdateManager().catch(() => {});
   }
 }
 

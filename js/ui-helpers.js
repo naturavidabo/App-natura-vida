@@ -20,12 +20,52 @@ function showToast(msg, kind) {
 function openSheet(innerHtml, onMount) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
-  overlay.innerHTML = `<div class="sheet">${innerHtml}</div>`;
+  overlay.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${innerHtml}</div>`;
+  const sheet = overlay.firstElementChild;
   document.body.appendChild(overlay);
-  function close() { overlay.remove(); }
+  document.body.classList.add('nv-sheet-open');
+
+  const viewport = window.visualViewport;
+  let closed = false;
+  const syncViewport = () => {
+    const height = Math.max(320, Math.round(viewport ? viewport.height : window.innerHeight));
+    const top = Math.max(0, Math.round(viewport ? viewport.offsetTop : 0));
+    overlay.style.setProperty('--nv-visual-height', `${height}px`);
+    overlay.style.transform = `translateY(${top}px)`;
+    sheet.classList.toggle('keyboard-open', height < window.innerHeight * 0.82);
+  };
+  const keepFocusedVisible = event => {
+    const target = event.target;
+    if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    setTimeout(() => {
+      try { target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); }
+      catch (_) { target.scrollIntoView(false); }
+    }, 220);
+  };
+  const cleanup = () => {
+    if (viewport) {
+      viewport.removeEventListener('resize', syncViewport);
+      viewport.removeEventListener('scroll', syncViewport);
+    }
+    overlay.removeEventListener('focusin', keepFocusedVisible);
+    if (!document.querySelector('.overlay')) document.body.classList.remove('nv-sheet-open');
+  };
+  function close() {
+    if (closed) return;
+    closed = true;
+    overlay.remove();
+    cleanup();
+  }
+
+  syncViewport();
+  if (viewport) {
+    viewport.addEventListener('resize', syncViewport);
+    viewport.addEventListener('scroll', syncViewport);
+  }
+  overlay.addEventListener('focusin', keepFocusedVisible);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   if (onMount) onMount(overlay, close);
-  return { overlay, close };
+  return { overlay, close, sheet };
 }
 
 function confirmDialog(message) {
@@ -114,13 +154,111 @@ async function readProductImageFile(file) {
   if (!file) throw new Error('Sin archivo');
   if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
   if (file.size > 15 * 1024 * 1024) throw new Error('La imagen supera 15 MB. Usa una foto más liviana.');
-  return readImageFile(file, { optimize: true, maxEdge: 1800, quality: 0.9, mimeType: 'image/jpeg' });
+  return readImageFile(file, { optimize: true, maxEdge: 1400, quality: 0.84, mimeType: 'image/jpeg' });
 }
 
 async function readLogoImageFile(file) {
   if (!file) throw new Error('Sin archivo');
   if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
   return readImageFile(file, { optimize: true, maxEdge: 1200, quality: 0.92, mimeType: 'image/jpeg' });
+}
+
+
+/* Editor de encuadre reutilizable. Produce una imagen cuadrada optimizada
+   para tarjetas, catálogo y PDF sin guardar capturas gigantes. */
+function loadEditableImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    if (!String(src || '').startsWith('data:')) img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo abrir la imagen para encuadrarla.'));
+    img.src = src;
+  });
+}
+
+function drawCoverImage(canvas, image, zoom = 1, offsetX = 0, offsetY = 0, guide = true) {
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const width = canvas.width, height = canvas.height;
+  ctx.fillStyle = '#f4faf6';
+  ctx.fillRect(0, 0, width, height);
+  const baseScale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const scale = baseScale * zoom;
+  const drawW = image.naturalWidth * scale;
+  const drawH = image.naturalHeight * scale;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, (width - drawW) / 2 + offsetX, (height - drawH) / 2 + offsetY, drawW, drawH);
+  if (guide) {
+    ctx.strokeStyle = 'rgba(16,169,99,.95)';
+    ctx.lineWidth = Math.max(3, width / 180);
+    ctx.setLineDash([14, 10]);
+    ctx.strokeRect(7, 7, width - 14, height - 14);
+    ctx.setLineDash([]);
+  }
+}
+
+async function openImageCropper(options = {}) {
+  const src = options.src || '';
+  if (!src) throw new Error('No hay una imagen para encuadrar.');
+  const image = await loadEditableImage(src);
+  const outputWidth = Math.max(480, Number(options.outputWidth || 1400));
+  const outputHeight = Math.max(480, Number(options.outputHeight || 1400));
+  const previewWidth = 720;
+  const previewHeight = Math.round(previewWidth * outputHeight / outputWidth);
+  let zoom = 1;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  return new Promise(resolve => {
+    openSheet(`
+      <h2>${escapeHtml(options.title || 'Encuadrar fotografía')} <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7CropHelp">Arrastra la fotografía para centrar el producto. El cuadro quedará completamente lleno; solo se recortarán los bordes necesarios.</div>
+      <canvas class="v7ImageCropCanvas" id="imageCropCanvas" width="${previewWidth}" height="${previewHeight}"></canvas>
+      <div class="field"><label>Acercar / alejar</label><input id="imageCropZoom" type="range" min="1" max="3.5" step="0.02" value="1"></div>
+      <button class="btn ghost block" id="resetImageCrop">Centrar nuevamente</button>
+      <button class="btn block" id="confirmImageCrop">Usar este encuadre</button>
+    `, (overlay, close) => {
+      const canvas = $('#imageCropCanvas', overlay);
+      let dragging = false, lastX = 0, lastY = 0;
+      const redraw = () => drawCoverImage(canvas, image, zoom, offsetX, offsetY, true);
+      redraw();
+      canvas.style.touchAction = 'none';
+      canvas.addEventListener('pointerdown', event => {
+        dragging = true; lastX = event.clientX; lastY = event.clientY;
+        try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+      });
+      canvas.addEventListener('pointermove', event => {
+        if (!dragging) return;
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / Math.max(1, rect.width);
+        offsetX += (event.clientX - lastX) * scale;
+        offsetY += (event.clientY - lastY) * scale;
+        lastX = event.clientX; lastY = event.clientY;
+        redraw();
+      });
+      const stop = () => { dragging = false; };
+      canvas.addEventListener('pointerup', stop);
+      canvas.addEventListener('pointercancel', stop);
+      $('#imageCropZoom', overlay).addEventListener('input', event => {
+        zoom = Number(event.target.value || 1); redraw();
+      });
+      $('#resetImageCrop', overlay).addEventListener('click', () => {
+        zoom = 1; offsetX = 0; offsetY = 0;
+        $('#imageCropZoom', overlay).value = '1'; redraw();
+      });
+      $('#closeSheet', overlay).addEventListener('click', () => { close(); resolve(null); });
+      $('#confirmImageCrop', overlay).addEventListener('click', () => {
+        const output = document.createElement('canvas');
+        output.width = outputWidth; output.height = outputHeight;
+        const factorX = outputWidth / previewWidth;
+        const factorY = outputHeight / previewHeight;
+        drawCoverImage(output, image, zoom, offsetX * factorX, offsetY * factorY, false);
+        const dataUrl = canvasToDataUrl(output, 'image/jpeg', Number(options.quality || 0.84));
+        close();
+        resolve(dataUrl);
+      });
+    });
+  });
 }
 
 /* Búsqueda predictiva simple: filtra por substring, sin distinción de mayúsculas/acentos básicos. */
@@ -165,6 +303,8 @@ window.readImageFile = readImageFile;
 window.readProductImageFile = readProductImageFile;
 window.readLogoImageFile = readLogoImageFile;
 window.optimizeImageDataUrl = optimizeImageDataUrl;
+window.openImageCropper = openImageCropper;
+window.drawCoverImage = drawCoverImage;
 window.matchesSearch = matchesSearch;
 window.normalizeSearch = normalizeSearch;
 window.bindStableSearch = bindStableSearch;

@@ -196,7 +196,7 @@ function renderInventario() {
       const localWholesaleMargin = marginAmount(localWholesale, localCost);
       html += `
       <article class="invCard v2ProductCard ${seller ? 'resellerInventoryCard' : ''}" data-id="${p.id}">
-        <div class="invPhoto">${p.photo ? `<img src="${p.photo}" alt="${escapeHtml(p.name)}">` : '<span class="invPhotoFallback">🌿</span>'}</div>
+        <div class="invPhoto">${p.photo ? `<img src="${p.photo}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async">` : '<span class="invPhotoFallback">🌿</span>'}</div>
         <div class="invBody">
           <div class="productLineTop">
             <span class="categoryBadge">${escapeHtml(p.category || 'General')}</span>
@@ -275,14 +275,18 @@ function openProductForm(id) {
 
     <div class="field">
       <label>Fotografía</label>
-      <label class="photopick" id="photoPick">
-        <input type="file" id="photoInput" accept="image/*">
+      <label class="photopick productPhotoPick" id="photoPick">
+        <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp">
         <span id="photoPlaceholder" class="${p && p.photo ? 'hidden' : ''}">
           <span class="ic" style="display:block;text-align:center;">📷</span>
-          <span style="display:block;text-align:center;">Tocar para elegir foto</span>
+          <span style="display:block;text-align:center;">Elegir y encuadrar fotografía</span>
         </span>
         <img id="photoPreview" src="${p && p.photo ? p.photo : ''}" alt="" class="${p && p.photo ? '' : 'hidden'}">
       </label>
+      <div class="v7PhotoActions">
+        <button type="button" class="btn ghost sm" id="reframeProductPhoto" ${p && p.photo ? '' : 'disabled'}>Reencuadrar foto</button>
+        <small>La imagen llenará el cuadro sin deformarse y se optimizará para cargar más rápido.</small>
+      </div>
     </div>
 
     <div class="field">
@@ -444,18 +448,45 @@ function openProductForm(id) {
     });
 
     let photoData = p ? (p.photo || null) : null;
+    const applyPhotoPreview = dataUrl => {
+      if (!dataUrl) return;
+      photoData = dataUrl;
+      $('#photoPreview', overlay).src = dataUrl;
+      $('#photoPreview', overlay).classList.remove('hidden');
+      $('#photoPlaceholder', overlay).classList.add('hidden');
+      $('#reframeProductPhoto', overlay).disabled = false;
+    };
+    const cropProductPhoto = async source => {
+      const cropped = await openImageCropper({
+        src: source,
+        title: 'Encuadrar producto',
+        outputWidth: 1400,
+        outputHeight: 1400,
+        quality: 0.84
+      });
+      if (cropped) {
+        applyPhotoPreview(cropped);
+        showToast('Fotografía encuadrada y optimizada.');
+      }
+    };
     $('#photoInput', overlay).addEventListener('change', async (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
       try {
-        photoData = await readProductImageFile(file);
-        showToast('Imagen optimizada en alta calidad para catálogo.');
-        $('#photoPreview', overlay).src = photoData;
-        $('#photoPreview', overlay).classList.remove('hidden');
-        $('#photoPlaceholder', overlay).classList.add('hidden');
+        if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type || '')) throw new Error('Usa una imagen PNG, JPG o WEBP.');
+        if (file.size > 15 * 1024 * 1024) throw new Error('La imagen supera 15 MB.');
+        const raw = await readImageFile(file);
+        await cropProductPhoto(raw);
       } catch (err) {
         showToast('⚠️ ' + err.message, 'error');
+      } finally {
+        e.target.value = '';
       }
+    });
+    $('#reframeProductPhoto', overlay).addEventListener('click', async () => {
+      if (!photoData) return;
+      try { await cropProductPhoto(photoData); }
+      catch (err) { showToast(err.message || 'No se pudo reencuadrar la imagen.', 'error'); }
     });
 
     $('#closeSheet', overlay).addEventListener('click', close);

@@ -103,6 +103,65 @@ async function markLocalMessageRead(id) {
   if (window.markCloudMessageRead && isOnlineConfigured()) await markCloudMessageRead(id).catch(() => {});
 }
 
+async function openMessageComposer(options = {}) {
+  if (!requireAuth()) return;
+  const adminMode = isAdmin && isAdmin();
+  const replyTo = options.replyTo || null;
+  const recipientUserId = options.recipientUserId || (replyTo ? replyTo.senderUserId : null);
+  const recipientName = options.recipientName || (replyTo ? replyTo.senderName : 'Administrador');
+  if (adminMode && !recipientUserId) {
+    showToast('Abre un mensaje de un representante para responderle.', 'error');
+    return;
+  }
+  const suggestedTitle = replyTo ? `Respuesta: ${String(replyTo.title || 'Mensaje').replace(/^Respuesta:\s*/i, '')}` : 'Consulta al administrador';
+  openSheet(`
+    <h2>${replyTo ? 'Responder mensaje' : 'Escribir al administrador'} <span class="x" id="closeSheet">✕</span></h2>
+    <div class="v7CashNotice">Destino: <strong>${escapeHtml(recipientName || (adminMode ? 'Representante' : 'Administrador'))}</strong>. Este buzón es para pedidos, consultas breves y coordinación comercial.</div>
+    <div class="field"><label>Tipo de mensaje</label><select id="messageType"><option value="general">Consulta general</option><option value="pedido">Pedido o producto</option><option value="soporte">Problema con la aplicación</option><option value="pago">Pago o comprobante</option></select></div>
+    <div class="field"><label>Asunto</label><input id="messageTitle" maxlength="100" value="${escapeHtml(suggestedTitle)}" placeholder="Resume el motivo"></div>
+    <div class="field"><label>Mensaje</label><textarea id="messageBody" rows="6" maxlength="1200" placeholder="Escribe aquí el detalle necesario…"></textarea></div>
+    <div class="nvSheetActions"><button class="btn block" id="sendDirectMessage">Enviar mensaje</button></div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const body = $('#messageBody', overlay);
+    setTimeout(() => body && body.focus(), 120);
+    $('#sendDirectMessage', overlay).addEventListener('click', async () => {
+      if (!navigator.onLine) return showToast('Necesitas internet para enviar el mensaje.', 'error');
+      const title = $('#messageTitle', overlay).value.trim();
+      const text = body.value.trim();
+      if (title.length < 3) return showToast('Escribe un asunto breve.', 'error');
+      if (text.length < 3) return showToast('Escribe el mensaje.', 'error');
+      const btn = $('#sendDirectMessage', overlay);
+      btn.disabled = true;
+      btn.textContent = 'Enviando…';
+      try {
+        await saveLocalMessage({
+          id: uid('msg'),
+          type: $('#messageType', overlay).value,
+          title,
+          body: text,
+          senderUserId: AppState.session.onlineUserId || AppState.session.userId,
+          senderName: AppState.session.fullName || AppState.session.email || '',
+          senderRole: AppState.session.roleName || '',
+          recipientRole: adminMode ? 'Representante' : 'Administrador',
+          recipientUserId: adminMode ? recipientUserId : null,
+          status: 'unread',
+          payload: replyTo ? { replyToMessageId: replyTo.id } : {}
+        });
+        await syncInboxFromCloud().catch(() => {});
+        await refreshInboxBadge({ silent: true }).catch(() => {});
+        close();
+        showToast('Mensaje enviado correctamente.');
+        setTimeout(() => openInboxPanel(), 80);
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = 'Reintentar envío';
+        showToast((window.messageFromError ? messageFromError(error) : error.message) || 'No se pudo enviar el mensaje.', 'error');
+      }
+    });
+  });
+}
+
 async function openInboxPanel() {
   if (navigator.onLine && requireAuth() && window.syncInboxFromCloud) {
     await syncInboxFromCloud().catch(() => {});
@@ -123,6 +182,7 @@ async function openInboxPanel() {
       </div>
     </div>
     <div class="livePill inboxLivePill">Mensajes en tiempo real</div>
+    ${!isAdmin() ? '<button class="btn block inboxComposeBtn" id="composeAdminMessage">Escribir al administrador</button>' : ''}
     ${messages.length ? messages.map(m => `
       <div class="messageCard ${m.status !== 'read' ? 'unread' : ''}">
         <div class="messageTop">
@@ -134,11 +194,20 @@ async function openInboxPanel() {
         <div class="messageActions">
           ${m.status !== 'read' ? `<button class="btn sm outline markReadBtn" data-id="${m.id}">Marcar leído</button>` : `<span class="tinytag">Leído</span>`}
           ${m.type === 'purchase_order' && isAdmin() ? `<button class="btn sm openOrdersBtn">Ver pedidos</button>` : ''}
+          ${isAdmin() && m.senderUserId && m.senderUserId !== (AppState.session.onlineUserId || AppState.session.userId) ? `<button class="btn sm replyMessageBtn" data-id="${m.id}">Responder</button>` : ''}
         </div>
       </div>
     `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin mensajes</h3><p>Cuando llegue un pedido o aviso aparecerá aquí.</p></div>`}
   `, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close);
+    const composeBtn = $('#composeAdminMessage', overlay);
+    if (composeBtn) composeBtn.addEventListener('click', () => { close(); setTimeout(() => openMessageComposer(), 80); });
+    $all('.replyMessageBtn', overlay).forEach(b => b.addEventListener('click', () => {
+      const message = messages.find(m => m.id === b.dataset.id);
+      if (!message) return;
+      close();
+      setTimeout(() => openMessageComposer({ replyTo: message, recipientUserId: message.senderUserId, recipientName: message.senderName }), 80);
+    }));
     $all('.markReadBtn', overlay).forEach(b => b.addEventListener('click', async () => {
       await markLocalMessageRead(b.dataset.id);
       await refreshInboxBadge({ silent: true });
@@ -159,5 +228,6 @@ window.refreshInboxBadge = refreshInboxBadge;
 window.installInboxButton = installInboxButton;
 window.openInboxPanel = openInboxPanel;
 window.markLocalMessageRead = markLocalMessageRead;
+window.openMessageComposer = openMessageComposer;
 
 window.fetchAndCacheInboxMessages = syncInboxFromCloud;

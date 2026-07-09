@@ -67,6 +67,32 @@ async function imageInfoForPdf(src) {
   });
 }
 
+async function imageCoverInfoForPdf(src, outputWidth = 900, outputHeight = 900) {
+  const data = await imageForPdf(src);
+  if (!data) return null;
+  return await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, outputWidth, outputHeight);
+        const scale = Math.max(outputWidth / (img.naturalWidth || 1), outputHeight / (img.naturalHeight || 1));
+        const width = (img.naturalWidth || 1) * scale;
+        const height = (img.naturalHeight || 1) * scale;
+        ctx.drawImage(img, (outputWidth - width) / 2, (outputHeight - height) / 2, width, height);
+        const cover = canvas.toDataURL('image/jpeg', 0.88);
+        resolve({ data: cover, type: 'JPEG', width: outputWidth, height: outputHeight });
+      } catch (_) { resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 }); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = data;
+  });
+}
+
 function drawImageContain(doc, img, x, y, w, h) {
   if (!img || !img.data) return false;
   const ratio = Math.min(w / img.width, h / img.height);
@@ -276,6 +302,11 @@ async function generateCatalogPdf(options = {}) {
   const soft = [246, 251, 247];
   const line = [222, 234, 225];
   const brandLogo = await imageInfoForPdf(NATURA_BRAND_LOGO) || await imageInfoForPdf(AppState.settings.logo);
+  const commercialProfile = window.myCommercialProfile ? myCommercialProfile() : null;
+  const includePaymentQr = options.includePaymentQr !== false;
+  const paymentQr = includePaymentQr && commercialProfile && commercialProfile.qrUrl
+    ? await imageInfoForPdf(commercialProfile.qrUrl)
+    : null;
 
   function footer(pageNo) {
     doc.setDrawColor(...line);
@@ -461,7 +492,7 @@ async function generateCatalogPdf(options = {}) {
     const imgX = margin + 22, imgY = y + 22, imgW = 190, imgH = 190;
     doc.setFillColor(248, 252, 249);
     doc.roundedRect(imgX, imgY, imgW, imgH, 22, 22, 'F');
-    const img = await imageInfoForPdf(p.photo);
+    const img = await imageCoverInfoForPdf(p.photo, 900, 900);
     if (!drawImageContain(doc, img, imgX + 10, imgY + 10, imgW - 20, imgH - 20)) drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
     if (Number(p.stock || 0) <= 0) {
       doc.setFillColor(230,91,91);
@@ -544,7 +575,34 @@ async function generateCatalogPdf(options = {}) {
   chip(pageW / 2 - 156, 420, 92, 'Orgánico', [235,245,238], [0,91,48]);
   chip(pageW / 2 - 54, 420, 108, 'Sin químicos', [235,245,238], [0,91,48]);
   chip(pageW / 2 + 64, 420, 92, 'Bienestar', [235,245,238], [0,91,48]);
-  if (contact) {
+  if (paymentQr) {
+    const qrX = margin + 28;
+    const qrY = 510;
+    const qrSize = 112;
+    doc.setFillColor(255,255,255);
+    doc.setDrawColor(...line);
+    doc.roundedRect(qrX, qrY, qrSize, qrSize, 16, 16, 'FD');
+    drawImageContain(doc, paymentQr, qrX + 9, qrY + 9, qrSize - 18, qrSize - 18);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8.8);
+    doc.setTextColor(...green);
+    doc.text('QR para pagos', qrX + qrSize / 2, qrY + qrSize + 18, { align: 'center' });
+    if (contact) {
+      const cx = qrX + qrSize + 18;
+      const cw = pageW - margin - 28 - cx;
+      doc.setFillColor(255,248,235);
+      doc.setDrawColor(244,217,169);
+      doc.roundedRect(cx, qrY + 8, cw, 94, 18, 18, 'FD');
+      doc.setTextColor(...orange);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(11.2);
+      doc.text('Pide información o realiza tu pedido', cx + cw / 2, qrY + 36, { align: 'center', maxWidth: cw - 26 });
+      doc.setTextColor(...dark);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(10.2);
+      doc.text(contact, cx + cw / 2, qrY + 68, { align: 'center', maxWidth: cw - 30 });
+    }
+  } else if (contact) {
     doc.setFillColor(255,248,235);
     doc.setDrawColor(244,217,169);
     doc.roundedRect(margin + 28, 532, pageW - margin * 2 - 56, 58, 18, 18, 'FD');
@@ -572,6 +630,8 @@ async function generateCatalogPdf(options = {}) {
 
 function openCatalogPdfOptions() {
   const defaultTitle = `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`;
+  const currentCommercialProfile = window.myCommercialProfile ? myCommercialProfile() : null;
+  const hasPaymentQr = !!(currentCommercialProfile && currentCommercialProfile.qrUrl);
   openSheet(`
     <h2>Catálogo PDF para compartir <span class="x" id="closeSheet">✕</span></h2>
     <div class="catalogOptionsHero">
@@ -602,6 +662,7 @@ function openCatalogPdfOptions() {
       <label><input type="checkbox" id="cat_prices" checked> ${isReseller() ? 'Mostrar mis precios' : 'Mostrar precio público'}</label>
       <label><input type="checkbox" id="cat_stock"> Mostrar stock referencial</label>
       ${isAdmin() ? `<label><input type="checkbox" id="cat_reseller"> Incluir precio revendedor interno</label>` : ''}
+      ${hasPaymentQr ? `<label><input type="checkbox" id="cat_payment_qr" checked> Incluir mi QR de pago</label>` : ''}
     </div>
     <button class="btn block" id="generateCatalogBtn">Generar catálogo y compartir</button>
   `, (overlay, close) => {
@@ -622,7 +683,8 @@ function openCatalogPdfOptions() {
         note,
         includePrices: $('#cat_prices', overlay).checked,
         includeStock: $('#cat_stock', overlay).checked,
-        includeResellerPrice: isAdmin() && $('#cat_reseller', overlay) && $('#cat_reseller', overlay).checked
+        includeResellerPrice: isAdmin() && $('#cat_reseller', overlay) && $('#cat_reseller', overlay).checked,
+        includePaymentQr: hasPaymentQr && $('#cat_payment_qr', overlay) ? $('#cat_payment_qr', overlay).checked : false
       }).catch(err => {
         console.error(err);
         showToast('No se pudo generar el catálogo.', 'error');

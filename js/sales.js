@@ -193,25 +193,31 @@ function renderCartBar() {
 }
 
 function openCheckoutSheet() {
-  // V6.7: bloquear ventas si el usuario está pendiente de aprobación o bloqueado.
   if (window.canOperate && !canOperate()) {
     showToast('Tu cuenta aún no fue aprobada por el administrador. No puedes registrar ventas.', 'error');
     return;
   }
+
   const items = Object.entries(_cart).map(([id, qty]) => {
     const p = AppState.products.find(x => x.id === id);
     return { product: p, qty, price: p ? priceForCurrentMode(p) : 0 };
   }).filter(i => i.product);
+  if (!items.length) return showToast('Selecciona al menos un producto.', 'error');
 
-  // La venta no se bloquea por margen negativo. Si un precio queda bajo el costo,
-  // se registra igual y la utilidad saldrá negativa en Resumen/Inventario.
-  const total = items.reduce((s, i) => s + (i.price * i.qty), 0);
+  const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const sellerProfit = sellerMode()
-    ? items.reduce((s, i) => s + ((i.price - sellerBaseCost(i.product)) * i.qty), 0)
+    ? items.reduce((sum, item) => sum + ((item.price - sellerBaseCost(item.product)) * item.qty), 0)
     : 0;
+  const operation = {
+    id: uid('sale'),
+    documentNumber: '',
+    client: null,
+    sale: null,
+    submitting: false
+  };
+
   const html = `
     <h2>Confirmar venta <span class="x" id="closeSheet">✕</span></h2>
-
     <div class="sectiontitle2"><span>Productos (${items.length})</span></div>
     ${items.map(i => `
       <div class="histitem">
@@ -219,7 +225,6 @@ function openCheckoutSheet() {
         <div class="r">${fmtMoney(i.price * i.qty)}</div>
       </div>
     `).join('')}
-
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
     <div class="field">
       <label>Nombre del cliente</label>
@@ -230,13 +235,15 @@ function openCheckoutSheet() {
       <label>Número de teléfono</label>
       <input type="tel" inputmode="tel" id="ck_clientphone" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}">
     </div>
-
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
-    <button class="btn block" id="confirmSale">Confirmar venta y generar recibo</button>
+    <div class="v7CashNotice">La operación usa un identificador único. Si se corta la conexión, se verificará primero si la venta ya quedó guardada para evitar duplicarla.</div>
+    <div class="actions stickyActions"><button class="btn block" id="confirmSale">Confirmar venta y generar recibo</button></div>
   `;
 
   openSheet(html, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#closeSheet', overlay).addEventListener('click', () => {
+      if (!operation.submitting) close();
+    });
     $('#ck_clientname', overlay).addEventListener('input', () => {
       const name = $('#ck_clientname', overlay).value.trim();
       const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
@@ -244,87 +251,105 @@ function openCheckoutSheet() {
     });
 
     $('#confirmSale', overlay).addEventListener('click', async () => {
+      if (operation.submitting) return;
       const btn = $('#confirmSale', overlay);
       const clientName = $('#ck_clientname', overlay).value.trim();
       const clientPhone = $('#ck_clientphone', overlay).value.trim();
-      if (!clientName) { showToast('⚠️ Ingresa el nombre del cliente', 'error'); return; }
-      if (!navigator.onLine) { showToast('Sin internet. La venta no fue registrada.', 'error'); return; }
+      if (!clientName) return showToast('⚠️ Ingresa el nombre del cliente', 'error');
+      if (!navigator.onLine) return showToast('Sin internet. La venta no fue registrada.', 'error');
 
+      operation.submitting = true;
       btn.disabled = true;
-      btn.textContent = 'Guardando en Supabase…';
+      btn.textContent = 'Verificando stock y guardando…';
       try {
-        const client = await findOrCreateClientQuick(clientName, clientPhone);
-        const documentResult = window.nextDocumentNumberV7
-          ? await nextDocumentNumberV7('NV-VTA')
-          : { ok: false, message: 'No está disponible la numeración V7.' };
-        if (!documentResult.ok) throw new Error(documentResult.message || 'No se pudo generar el número de recibo.');
-        const groupName = _saleSelectedGroup ? (AppState.priceGroups.find(g => g.id === _saleSelectedGroup) || {}).name : null;
-        const saleId = uid('sale');
-        const saleItems = items.map(it => {
-          const resellerBase = representativePrice(it.product);
-          const resellerRealCost = sellerMode() ? sellerBaseCost(it.product) : resellerBase;
-          const unitCost = sellerMode() ? resellerRealCost : grossCost(it.product);
-          const sellerUnitProfit = sellerMode() ? (it.price - resellerRealCost) : 0;
-          return {
-            productId: it.product.id,
-            productName: it.product.name,
-            category: it.product.category || 'General',
-            qty: it.qty,
-            unitCost,
-            resellerBase,
-            suggestedPublicPrice: publicPrice(it.product),
-            marketPrice: marketPrice(it.product),
-            representativePrice: representativePrice(it.product),
-            resellerRealCost,
-            resellerSaleChannel: sellerMode() ? _saleType : null,
-            unitPrice: it.price,
-            subtotal: it.price * it.qty,
-            profit: (it.price - unitCost) * it.qty,
-            sellerUnitProfit,
-            sellerProfit: sellerUnitProfit * it.qty
+        const refresh = await syncCloudProductsToLocal();
+        if (refresh && refresh.ok === false) throw new Error(refresh.message);
+        for (const item of items) {
+          const current = AppState.products.find(product => product.id === item.product.id);
+          if (!current || Number(current.stock || 0) < Number(item.qty || 0)) {
+            throw new Error(`Stock insuficiente para ${item.product.name}. Actualiza la venta y vuelve a intentarlo.`);
+          }
+        }
+
+        if (!operation.client) operation.client = await findOrCreateClientQuick(clientName, clientPhone);
+        if (!operation.documentNumber) {
+          const result = window.nextDocumentNumberV7
+            ? await nextDocumentNumberV7('NV-VTA')
+            : { ok: false, message: 'No está disponible la numeración V7.' };
+          if (!result.ok) throw new Error(result.message || 'No se pudo generar el número de recibo.');
+          operation.documentNumber = result.number;
+        }
+
+        if (!operation.sale) {
+          const groupName = _saleSelectedGroup ? (AppState.priceGroups.find(g => g.id === _saleSelectedGroup) || {}).name : null;
+          const saleItems = items.map(it => {
+            const resellerBase = representativePrice(it.product);
+            const resellerRealCost = sellerMode() ? sellerBaseCost(it.product) : resellerBase;
+            const unitCost = sellerMode() ? resellerRealCost : grossCost(it.product);
+            const sellerUnitProfit = sellerMode() ? (it.price - resellerRealCost) : 0;
+            return {
+              productId: it.product.id,
+              productName: it.product.name,
+              category: it.product.category || 'General',
+              qty: it.qty,
+              unitCost,
+              resellerBase,
+              suggestedPublicPrice: publicPrice(it.product),
+              marketPrice: marketPrice(it.product),
+              representativePrice: representativePrice(it.product),
+              resellerRealCost,
+              resellerSaleChannel: sellerMode() ? _saleType : null,
+              unitPrice: it.price,
+              subtotal: it.price * it.qty,
+              profit: (it.price - unitCost) * it.qty,
+              sellerUnitProfit,
+              sellerProfit: sellerUnitProfit * it.qty
+            };
+          });
+          operation.sale = {
+            id: operation.id,
+            documentNumber: operation.documentNumber,
+            receiptNumber: operation.documentNumber,
+            paymentMethod: 'cash',
+            paymentStatus: 'paid',
+            type: _saleType,
+            role: AppState.session ? AppState.session.roleName : '',
+            sellerId: AppState.session ? (AppState.session.onlineUserId || AppState.session.userId) : null,
+            sellerName: AppState.session ? AppState.session.fullName : null,
+            groupId: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? _saleSelectedGroup : null,
+            groupName: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? groupName : null,
+            items: saleItems,
+            total,
+            sellerProfit,
+            clientId: operation.client ? operation.client.id : null,
+            clientName,
+            clientPhone,
+            date: Date.now(),
+            syncStatus: 'cloud'
           };
-        });
+        }
 
-        const sale = {
-          id: saleId,
-          documentNumber: documentResult.number,
-          receiptNumber: documentResult.number,
-          paymentMethod: 'cash',
-          paymentStatus: 'paid',
-          type: _saleType,
-          role: AppState.session ? AppState.session.roleName : '',
-          sellerId: AppState.session ? AppState.session.userId : null,
-          sellerName: AppState.session ? AppState.session.fullName : null,
-          groupId: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? _saleSelectedGroup : null,
-          groupName: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? groupName : null,
-          items: saleItems,
-          total,
-          sellerProfit,
-          clientId: client ? client.id : null,
-          clientName,
-          clientPhone,
-          date: Date.now(),
-          syncStatus: 'cloud'
-        };
-
-        // La función SQL registra la venta y descuenta el stock en una sola
-        // transacción. Si algo falla, no queda una venta a medias.
-        await DB.put('sales', sale);
-        if (!AppState.sales.some(x => x.id === sale.id)) AppState.sales.push(sale);
-        await syncCloudProductsToLocal({ full: true }).catch(() => {});
-        await writeAudit('sale:create', 'sales', sale.id, null, sale).catch(() => {});
+        await DB.put('sales', operation.sale);
+        await Promise.all([
+          syncCloudProductsToLocal().catch(() => null),
+          window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()
+        ]);
+        if (!AppState.sales.some(x => x.id === operation.sale.id)) AppState.sales.push(operation.sale);
+        await writeAudit('sale:create', 'sales', operation.sale.id, null, operation.sale).catch(() => {});
 
         showToast('Venta registrada en Supabase.');
         close();
-        if (window.openV7ReceiptPreview) openV7ReceiptPreview(sale, 'sale');
-        else openReceiptPreview(sale);
+        if (window.openV7ReceiptPreview) openV7ReceiptPreview(operation.sale, 'sale');
+        else openReceiptPreview(operation.sale);
         _cart = {};
         _cartPrices = {};
         renderVender();
       } catch (err) {
-        showToast(err.message || 'No se pudo registrar la venta.', 'error');
+        operation.submitting = false;
         btn.disabled = false;
-        btn.textContent = 'Confirmar venta y generar recibo';
+        btn.textContent = 'Reintentar la misma operación';
+        const message = window.messageFromError ? messageFromError(err, 'No se pudo registrar la venta.') : (err.message || 'No se pudo registrar la venta.');
+        showToast(message, 'error');
       }
     });
   });
