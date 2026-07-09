@@ -1,6 +1,6 @@
 {
   "version": "7.2.0",
-  "build": "2026-07-09-stabilization-1",
-  "releasedAt": "2026-07-09T04:30:00Z",
+  "build": "2026-07-09-stabilization-2-pages-node24",
+  "releasedAt": "2026-07-09T18:00:00Z",
   "channel": "stable"
 }
