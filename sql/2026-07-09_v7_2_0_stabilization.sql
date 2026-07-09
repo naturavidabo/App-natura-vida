@@ -69,7 +69,11 @@ begin
   end if;
 end $$;
 
-create or replace function public.log_audit_event(
+-- PostgreSQL no permite cambiar el tipo de retorno de una función existente
+-- mediante CREATE OR REPLACE. Se elimina únicamente esta firma y se reconstruye.
+drop function if exists public.log_audit_event(text,text,text,jsonb);
+
+create function public.log_audit_event(
   p_action text,
   p_table_name text,
   p_record_id text,
@@ -97,9 +101,11 @@ revoke all on function public.log_audit_event(text,text,text,jsonb) from public;
 grant execute on function public.log_audit_event(text,text,text,jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 2) FUNCIÓN AUXILIAR DE ADMINISTRADOR (para políticas RLS)
+-- 2) FUNCIÓN AUXILIAR DE ADMINISTRADOR (nombre exclusivo para evitar sobrecargas antiguas)
 -- ---------------------------------------------------------------------------
-create or replace function public.is_admin_v7()
+drop function if exists public.nv72_is_admin_20260709();
+
+create function public.nv72_is_admin_20260709()
 returns boolean
 language sql
 stable
@@ -115,8 +121,8 @@ as $$
   );
 $$;
 
-revoke all on function public.is_admin_v7() from public;
-grant execute on function public.is_admin_v7() to authenticated;
+revoke all on function public.nv72_is_admin_20260709() from public;
+grant execute on function public.nv72_is_admin_20260709() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3) PERFIL COMERCIAL Y QR PERSONAL POR USUARIO
@@ -156,20 +162,20 @@ drop policy if exists nv72_commercial_profiles_insert on public.commercial_profi
 create policy nv72_commercial_profiles_insert
 on public.commercial_profiles for insert
 to authenticated
-with check (user_id = auth.uid() or public.is_admin_v7());
+with check (user_id = auth.uid() or public.nv72_is_admin_20260709());
 
 drop policy if exists nv72_commercial_profiles_update on public.commercial_profiles;
 create policy nv72_commercial_profiles_update
 on public.commercial_profiles for update
 to authenticated
-using (user_id = auth.uid() or public.is_admin_v7())
-with check (user_id = auth.uid() or public.is_admin_v7());
+using (user_id = auth.uid() or public.nv72_is_admin_20260709())
+with check (user_id = auth.uid() or public.nv72_is_admin_20260709());
 
 drop policy if exists nv72_commercial_profiles_delete on public.commercial_profiles;
 create policy nv72_commercial_profiles_delete
 on public.commercial_profiles for delete
 to authenticated
-using (user_id = auth.uid() or public.is_admin_v7());
+using (user_id = auth.uid() or public.nv72_is_admin_20260709());
 
 -- Elimina posibles sobrecargas antiguas para que PostgREST no devuelva ambigüedad.
 do $$
@@ -274,11 +280,11 @@ on storage.objects for update
 to authenticated
 using (
   bucket_id = 'payment-assets'
-  and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin_v7())
+  and ((storage.foldername(name))[1] = auth.uid()::text or public.nv72_is_admin_20260709())
 )
 with check (
   bucket_id = 'payment-assets'
-  and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin_v7())
+  and ((storage.foldername(name))[1] = auth.uid()::text or public.nv72_is_admin_20260709())
 );
 
 drop policy if exists nv72_payment_assets_delete on storage.objects;
@@ -287,7 +293,7 @@ on storage.objects for delete
 to authenticated
 using (
   bucket_id = 'payment-assets'
-  and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin_v7())
+  and ((storage.foldername(name))[1] = auth.uid()::text or public.nv72_is_admin_20260709())
 );
 
 -- ---------------------------------------------------------------------------
@@ -335,7 +341,7 @@ to authenticated
 using (
   sender_user_id = auth.uid()
   or recipient_user_id = auth.uid()
-  or (lower(coalesce(recipient_role,'')) = 'administrador' and public.is_admin_v7())
+  or (lower(coalesce(recipient_role,'')) = 'administrador' and public.nv72_is_admin_20260709())
 );
 
 drop policy if exists nv72_messages_insert on public.messages;
@@ -356,11 +362,11 @@ on public.messages for update
 to authenticated
 using (
   recipient_user_id = auth.uid()
-  or (lower(coalesce(recipient_role,'')) = 'administrador' and public.is_admin_v7())
+  or (lower(coalesce(recipient_role,'')) = 'administrador' and public.nv72_is_admin_20260709())
 )
 with check (
   recipient_user_id = auth.uid()
-  or (lower(coalesce(recipient_role,'')) = 'administrador' and public.is_admin_v7())
+  or (lower(coalesce(recipient_role,'')) = 'administrador' and public.nv72_is_admin_20260709())
 );
 
 commit;

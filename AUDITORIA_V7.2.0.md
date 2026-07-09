@@ -135,7 +135,7 @@ La migración incluida actúa sobre:
 
 - `public.audit_log`;
 - función `public.log_audit_event`;
-- función auxiliar `public.is_admin_v7`;
+- función auxiliar `public.nv72_is_admin_20260709`;
 - `public.commercial_profiles`;
 - función `public.update_my_commercial_profile_v7`;
 - bucket `payment-assets` y políticas de Storage;
