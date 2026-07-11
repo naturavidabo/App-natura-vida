@@ -1,5 +1,5 @@
 /* NATURA VIDA V7 — inventario propio y ventas al contado del representante.
-   V7.2.2: precios manuales por producto, grupos y trazabilidad. */
+   V7.2.3: precios manuales por producto, grupos y trazabilidad. */
 
 (() => {
   const originalRenderInventario = window.renderInventario;
@@ -82,8 +82,10 @@
   }
 
   async function saveV7Client(data){
-    let client=AppState.clients.find(c=>(data.phone&&c.phone===data.phone)||normalizeSearch(c.name)===normalizeSearch(data.name));
-    const row=Object.assign({},client||{id:uid('cli'),createdAt:Date.now()},{name:data.name,phone:data.phone||'',customerType:data.customerType,businessName:data.businessName||'',address:data.address||'',city:data.city||'',location:data.location||'',notes:data.notes||'',updatedAt:Date.now()});
+    let phone = window.normalizePhoneV723 ? normalizePhoneV723(data.phone || '') : String(data.phone || '').trim();
+    let client=AppState.clients.find(c=>(phone && window.normalizePhoneV723 && normalizePhoneV723(c.phone)===phone)||normalizeSearch(c.name)===normalizeSearch(data.name));
+    if (window.buildClientRecordV723 && window.saveClientV723) return saveClientV723(buildClientRecordV723(client || {}, Object.assign({}, data, { phone })));
+    const row=Object.assign({},client||{id:uid('cli'),createdAt:Date.now()},{name:data.name,phone:phone||'',customerType:data.customerType,businessName:data.businessName||'',address:data.address||'',city:data.city||'',locationLabel:data.locationLabel||data.location||'',notes:data.notes||'',updatedAt:Date.now()});
     await DB.put('clients',row); const idx=AppState.clients.findIndex(c=>c.id===row.id);if(idx>=0)AppState.clients[idx]=row;else AppState.clients.push(row);return row;
   }
 
@@ -100,20 +102,24 @@
       <div class="v7TotalLine"><span>Total a cobrar</span><strong>${fmtMoney(total)}</strong></div>
       <div class="v7CashNotice">Esta venta se registrará una sola vez y descontará inmediatamente tu inventario propio.</div>
       <div class="sectiontitle2"><span>Cliente</span></div>
-      <div class="field"><label>Nombre *</label><input id="v7ClientName" list="v7ClientList" placeholder="Nombre del cliente"><datalist id="v7ClientList">${AppState.clients.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist></div>
-      <div class="field-row"><div class="field"><label>WhatsApp</label><input id="v7ClientPhone" inputmode="tel"></div><div class="field"><label>Tipo de cliente</label><select id="v7ClientType"><option value="unit">Unitario</option><option value="wholesale" ${saleType === 'reseller_wholesale' ? 'selected' : ''}>Mayorista</option></select></div></div>
-      <details class="v7OptionalDetails"><summary>Datos opcionales del cliente</summary><div class="field"><label>Nombre del negocio</label><input id="v7ClientBusiness"></div><div class="field"><label>Dirección</label><input id="v7ClientAddress"></div><div class="field-row"><div class="field"><label>Ciudad</label><input id="v7ClientCity"></div><div class="field"><label>Ubicación / referencia</label><input id="v7ClientLocation"></div></div><div class="field"><label>Observaciones</label><textarea id="v7ClientNotes"></textarea></div></details>
+      <div class="field"><label>Nombre *</label><div class="clientInputRow"><input id="v7ClientName" autocomplete="off" placeholder="Nombre del cliente o tienda"><button type="button" class="miniClientPick" id="pickRepClientV723">▾</button></div><small>${saleType === 'reseller_wholesale' ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
+      <div class="field"><label>WhatsApp</label><div class="clientInputRow"><input id="v7ClientPhone" inputmode="tel" autocomplete="off"><button type="button" class="waIconBtnV723" id="v7ClientWaV723">WA</button></div></div>
+      <input type="hidden" id="v7ClientType" value="${saleType === 'reseller_wholesale' ? 'wholesale' : 'unit'}">
+      <details class="v7OptionalDetails"><summary>Datos opcionales del cliente</summary><div class="field"><label>Dirección</label><input id="v7ClientAddress"></div><div class="field"><label>Ciudad</label><input id="v7ClientCity"></div><div class="field"><label>Dato de ubicación</label><input id="v7ClientLocation"></div><div class="field"><label>Observaciones</label><textarea id="v7ClientNotes"></textarea></div></details>
       <div class="actions stickyActions"><button class="btn block" id="confirmSaleV7">Confirmar pago y generar recibo</button></div>
     `, (overlay, close) => {
       $('#closeSheet', overlay).addEventListener('click', () => { if (!operation.submitting) close(); });
-      $('#v7ClientName', overlay).addEventListener('change', () => { const c = AppState.clients.find(x => normalizeSearch(x.name) === normalizeSearch($('#v7ClientName', overlay).value)); if (!c) return; $('#v7ClientPhone', overlay).value = c.phone || ''; $('#v7ClientBusiness', overlay).value = c.businessName || ''; $('#v7ClientAddress', overlay).value = c.address || ''; $('#v7ClientCity', overlay).value = c.city || ''; $('#v7ClientLocation', overlay).value = c.location || ''; $('#v7ClientNotes', overlay).value = c.notes || ''; });
+      const fillClientV723 = (c) => { if (!c) return; operation.client = c; $('#v7ClientName', overlay).value = c.name || ''; $('#v7ClientPhone', overlay).value = c.phone || ''; $('#v7ClientAddress', overlay).value = c.address || ''; $('#v7ClientCity', overlay).value = c.city || ''; $('#v7ClientLocation', overlay).value = c.locationLabel || c.location || ''; $('#v7ClientNotes', overlay).value = c.notes || ''; };
+      $('#pickRepClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType, onSelect: fillClientV723 }));
+      $('#v7ClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#v7ClientPhone', overlay).value, $('#v7ClientName', overlay).value));
+      $('#v7ClientName', overlay).addEventListener('blur', () => { const c = AppState.clients.find(x => normalizeSearch(x.name) === normalizeSearch($('#v7ClientName', overlay).value)); if (c) fillClientV723(c); });
       $('#confirmSaleV7', overlay).addEventListener('click', async () => {
         if (operation.submitting) return; const name = $('#v7ClientName', overlay).value.trim(); if (!name) return showToast('Ingresa el nombre del cliente.', 'error'); if (!navigator.onLine) return showToast('Se necesita internet para registrar la venta.', 'error');
         const btn = $('#confirmSaleV7', overlay); operation.submitting = true; btn.disabled = true; btn.textContent = 'Verificando stock y guardando…';
         try {
           const productRefresh = await syncCloudProductsToLocal(); if (productRefresh && productRefresh.ok === false) throw new Error(productRefresh.message);
           for (const item of items) { const current = AppState.products.find(p => p.id === item.productId); if (!current || Number(current.stock || 0) < Number(item.qty || 0)) throw new Error(`Stock insuficiente para ${item.productName}. Actualiza el carrito y vuelve a intentarlo.`); }
-          if (!operation.client) operation.client = await saveV7Client({ name, phone: $('#v7ClientPhone', overlay).value.trim(), customerType: $('#v7ClientType', overlay).value, businessName: $('#v7ClientBusiness', overlay).value.trim(), address: $('#v7ClientAddress', overlay).value.trim(), city: $('#v7ClientCity', overlay).value.trim(), location: $('#v7ClientLocation', overlay).value.trim(), notes: $('#v7ClientNotes', overlay).value.trim() });
+          if (!operation.client) operation.client = await saveV7Client({ name, phone: $('#v7ClientPhone', overlay).value.trim(), customerType: $('#v7ClientType', overlay).value, address: $('#v7ClientAddress', overlay).value.trim(), city: $('#v7ClientCity', overlay).value.trim(), locationLabel: $('#v7ClientLocation', overlay).value.trim(), notes: $('#v7ClientNotes', overlay).value.trim() });
           if (!operation.documentNumber) { const num = await nextDocumentNumberV7('NV-VTA'); if (!num.ok) throw new Error(num.message); operation.documentNumber = num.number; }
           if (!operation.sale) operation.sale = { id: operation.id, documentNumber: operation.documentNumber, receiptNumber: operation.documentNumber, type: saleType, role: AppState.session.roleName, sellerId: AppState.session.onlineUserId || AppState.session.userId, sellerName: AppState.session.fullName, sellerBusinessName: window.myCommercialProfile ? (myCommercialProfile().businessName || '') : '', sellerQrUrl: window.myCommercialProfile ? (myCommercialProfile().qrUrl || '') : '', sellerReceiptMessage: window.myCommercialProfile ? (myCommercialProfile().receiptMessage || '') : '', groupId: saleSelectedGroup, groupName: saleSelectedGroup ? ((AppState.priceGroups.find(g=>g.id===saleSelectedGroup)||{}).name||'') : null, items, total, originalTotal: items.reduce((s,i)=>s+i.originalSubtotal,0), discountTotal: discounts, surchargeTotal: surcharges, sellerProfit: items.reduce((sum, item) => sum + Number(item.profit || 0), 0), clientId: operation.client.id, clientName: operation.client.name, clientPhone: operation.client.phone, clientCity: operation.client.city || '', clientAddress: operation.client.address || '', clientBusinessName: operation.client.businessName || '', customerType: operation.client.customerType || '', paymentMethod: 'cash', paymentStatus: 'paid', date: Date.now(), syncStatus: 'cloud' };
           await DB.put('sales', operation.sale); await Promise.all([syncCloudProductsToLocal().catch(() => null), window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()]); if (!AppState.sales.some(s => s.id === operation.sale.id)) AppState.sales.push(operation.sale); close(); saleCart = {}; saleManualPrices = {}; showToast('Venta registrada y stock actualizado.'); openV7ReceiptPreview(operation.sale, 'sale'); renderRepresentativeSalesV7();

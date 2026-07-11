@@ -1,5 +1,5 @@
 /* sales.js — Venta con precios flexibles por producto.
-   V7.2.2: precio normal, precio por grupo y precio manual por línea. */
+   V7.2.3: precio normal, precio por grupo y precio manual por línea. */
 
 let _saleType = 'unit';
 let _saleSelectedGroup = null;
@@ -380,17 +380,25 @@ function openCheckoutSheet() {
     ${saleItemsPreview.map(i => `<div class="histitem priceLine ${i.priceSource}"><div class="l"><div class="pname">${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource, sign:i.priceAdjustmentType})}</div><div class="meta">${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource, sign:i.priceAdjustmentType, adjustmentAmount:i.priceAdjustmentAmount, groupName:i.groupName})}</div>${i.manualPriceReason ? `<small class="priceReason">${escapeHtml(i.manualPriceReason)}</small>` : ''}</div><div class="r">${fmtMoney(i.subtotal)}</div></div>`).join('')}
     ${(discounts || surcharges) ? `<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>` : ''}
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
-    <div class="field"><label>Nombre del cliente</label><input type="text" id="ck_clientname" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}" list="clientSuggestions"><datalist id="clientSuggestions">${AppState.clients.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist></div>
-    <div class="field"><label>Número de teléfono</label><input type="tel" inputmode="tel" id="ck_clientphone" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"></div>
+    <div class="field"><label>Nombre del cliente</label><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><small>${(_saleType === 'market' || _saleType === 'representative_transfer') ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
+    <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723">WA</button></div></div>
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
     <div class="v7CashNotice">La operación usa un identificador único. Si se corta la conexión, se verificará primero si la venta ya quedó guardada para evitar duplicarla.</div>
     <div class="actions stickyActions"><button class="btn block" id="confirmSale">Confirmar venta y generar recibo</button></div>`;
   openSheet(html, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', () => { if (!operation.submitting) close(); });
-    $('#ck_clientname', overlay).addEventListener('input', () => {
+    const fillClientV723 = (c) => {
+      if (!c) return;
+      operation.client = c;
+      $('#ck_clientname', overlay).value = c.name || '';
+      $('#ck_clientphone', overlay).value = c.phone || '';
+    };
+    $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
+    $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
+    $('#ck_clientname', overlay).addEventListener('blur', () => {
       const name = $('#ck_clientname', overlay).value.trim();
       const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
-      if (existing && !$('#ck_clientphone', overlay).value) $('#ck_clientphone', overlay).value = existing.phone || '';
+      if (existing) fillClientV723(existing);
     });
     $('#confirmSale', overlay).addEventListener('click', async () => {
       if (operation.submitting) return;
@@ -407,7 +415,7 @@ function openCheckoutSheet() {
           const current = AppState.products.find(product => product.id === item.product.id);
           if (!current || Number(current.stock || 0) < Number(item.qty || 0)) throw new Error(`Stock insuficiente para ${item.product.name}. Actualiza la venta y vuelve a intentarlo.`);
         }
-        if (!operation.client) operation.client = await findOrCreateClientQuick(clientName, clientPhone);
+        if (!operation.client) operation.client = await findOrCreateClientQuick(clientName, clientPhone, customerTypeForSaleV723(_saleType));
         if (!operation.documentNumber) {
           const result = window.nextDocumentNumberV7 ? await nextDocumentNumberV7('NV-VTA') : { ok: false, message: 'No está disponible la numeración V7.' };
           if (!result.ok) throw new Error(result.message || 'No se pudo generar el número de recibo.');
@@ -438,8 +446,12 @@ function openCheckoutSheet() {
             surchargeTotal: saleItems.reduce((sum, item) => sum + Number(item.surchargeAmount || 0), 0),
             sellerProfit,
             clientId: operation.client ? operation.client.id : null,
-            clientName,
-            clientPhone,
+            clientName: operation.client ? operation.client.name : clientName,
+            clientPhone: operation.client ? operation.client.phone : clientPhone,
+            customerType: operation.client ? (operation.client.customerType || customerTypeForSaleV723(_saleType)) : customerTypeForSaleV723(_saleType),
+            clientCity: operation.client ? (operation.client.city || '') : '',
+            clientAddress: operation.client ? (operation.client.address || '') : '',
+            clientBusinessName: operation.client ? (operation.client.businessName || '') : '',
             date: Date.now(),
             syncStatus: 'cloud'
           };

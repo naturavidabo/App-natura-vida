@@ -1,8 +1,8 @@
 {
-  "version": "7.2.2",
+  "version": "7.2.3",
   "build": "2026-07-10-qr-receipts-and-mi-negocio-import",
   "releasedAt": "2026-07-10T03:00:00Z",
   "channel": "stable",
-  "label": "Natura Vida V7.2.2 - Precios flexibles y estadísticas",
+  "label": "Natura Vida V7.2.3 - Clientes mayoristas, selector y recibos limpios",
   "createdAt": "2026-07-10T00:00:00-04:00"
 }

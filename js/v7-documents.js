@@ -91,8 +91,9 @@
     const logo = await loadImageV7(AppState.settings.logo || 'img/brand/natura-vida-logo.jpeg');
     const width = 720;
     const itemHeight = 38;
-    const qrBlock = qr ? 250 : 100;
-    const height = 390 + items.length * itemHeight + qrBlock;
+    const qrBlock = qr ? 280 : 90;
+    const messageBlock = ownerProfile.receiptMessage ? 70 : 20;
+    const height = 410 + items.length * itemHeight + qrBlock + messageBlock;
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -194,16 +195,20 @@
     y += 52;
 
     if (qr) {
-      const qrSize = 170;
-      const qrX = (width - qrSize) / 2;
+      const qrSize = 160;
+      const qrX = width - 58 - qrSize;
+      const boxY = y;
       ctx.fillStyle = '#f5faf7';
-      ctx.beginPath(); ctx.roundRect(qrX - 15, y - 12, qrSize + 30, qrSize + 68, 20); ctx.fill();
-      ctx.drawImage(qr, qrX, y, qrSize, qrSize);
+      ctx.beginPath(); ctx.roundRect(qrX - 16, boxY - 14, qrSize + 32, qrSize + 52, 20); ctx.fill();
+      ctx.drawImage(qr, qrX, boxY, qrSize, qrSize);
       ctx.fillStyle = '#315c47';
-      ctx.font = '600 14px Inter, Arial';
+      ctx.font = '700 13px Inter, Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(isPendingOrder ? 'Escanea el QR para realizar el pago' : 'QR de cobro del vendedor', width / 2, y + qrSize + 26);
+      ctx.fillText(isPendingOrder ? 'QR de pago' : 'QR de cobro', qrX + qrSize / 2, boxY + qrSize + 24);
       ctx.textAlign = 'left';
+      ctx.fillStyle = '#60766b';
+      ctx.font = '600 15px Inter, Arial';
+      wrapText(ctx, isPendingOrder ? 'Escanea el QR para realizar el pago.' : 'Gracias por su compra. Escanea el QR para próximos pagos o consultas.', 58, boxY + 16, qrX - 92, 21, 4);
       y += qrSize + 55;
     }
 
@@ -219,7 +224,7 @@
     ctx.fillStyle = '#8ba096';
     ctx.font = '400 12px Inter, Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(isPendingOrder ? 'Orden digital pendiente de confirmación · Registro permanente en Supabase' : 'Documento digital generado por Natura Vida V7 · Registro permanente en Supabase', width / 2, height - 54);
+    ctx.fillText('Natura Vida Bolivia · Gracias por su preferencia', width / 2, height - 36);
     ctx.textAlign = 'left';
     return canvas;
   }

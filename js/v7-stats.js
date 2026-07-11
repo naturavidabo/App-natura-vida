@@ -1,4 +1,4 @@
-/* v7-stats.js — Inteligencia comercial básica para Natura Vida V7.2.2. */
+/* v7-stats.js — Inteligencia comercial básica para Natura Vida V7.2.3. */
 
 (() => {
   function userSalesV7() {
