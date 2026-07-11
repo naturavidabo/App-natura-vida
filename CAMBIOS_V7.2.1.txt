@@ -1,8 +1,8 @@
-NATURA VIDA V7.2.1
-
-- Corrige el QR que no aparecía en recibos.
-- El recibo vuelve a consultar el perfil comercial antes de dibujarse.
-- Carga el QR mediante Blob local para evitar problemas de CORS/caché en canvas.
-- Guarda una copia de referencia del QR y mensaje comercial dentro de cada venta nueva.
-- Incluye herramientas de migración histórica desde Mi Negocio.
-- La migración no modifica el inventario actual.
+{
+  "version": "7.2.4",
+  "build": "2026-07-11-comercial-representantes-notificaciones",
+  "releasedAt": "2026-07-11T20:20:00-04:00",
+  "channel": "stable",
+  "label": "Natura Vida V7.2.4 - WhatsApp, grupos privados, representantes y notificaciones",
+  "createdAt": "2026-07-11T20:20:00-04:00"
+}
