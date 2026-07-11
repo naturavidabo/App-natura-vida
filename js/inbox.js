@@ -19,6 +19,51 @@ function normalizeMessage(m = {}) {
   };
 }
 
+
+
+/* ===== V7.2.4 — aviso sonoro interno de mensajes ===== */
+let nvInboxKnownMessageIdsV724 = new Set();
+let nvInboxInitializedV724 = false;
+function inboxSoundEnabledV724() {
+  return localStorage.getItem('nv_inbox_sound_enabled_v724') !== '0';
+}
+function setInboxSoundEnabledV724(enabled) {
+  localStorage.setItem('nv_inbox_sound_enabled_v724', enabled ? '1' : '0');
+}
+function playInboxSoundV724() {
+  if (!inboxSoundEnabledV724()) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.42);
+    gain.connect(ctx.destination);
+    [660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      osc.start(ctx.currentTime + i * 0.11);
+      osc.stop(ctx.currentTime + 0.18 + i * 0.11);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 650);
+  } catch (_) {}
+}
+function notifyNewMessagesV724(rows) {
+  const visible = (rows || []).map(normalizeMessage).filter(m => messageVisibleForCurrentUser(m));
+  const newUnread = visible.filter(m => m.status !== 'read' && !nvInboxKnownMessageIdsV724.has(m.id));
+  visible.forEach(m => nvInboxKnownMessageIdsV724.add(m.id));
+  if (!nvInboxInitializedV724) { nvInboxInitializedV724 = true; return; }
+  if (newUnread.length) {
+    playInboxSoundV724();
+    const latest = newUnread.sort((a,b)=>b.createdAt-a.createdAt)[0];
+    showToast(`Nuevo mensaje: ${latest.title || 'Buzón'}`);
+  }
+}
+
 function messageVisibleForCurrentUser(message) {
   if (!requireAuth()) return false;
   const m = normalizeMessage(message);
@@ -59,6 +104,7 @@ async function syncInboxFromCloud() {
   const res = await fetchCloudInboxMessages().catch(err => ({ ok: false, message: err.message }));
   if (!res.ok) return res;
   const rows = (res.messages || []).map(normalizeMessage);
+  notifyNewMessagesV724(rows);
   await DB.clear('messages').catch(() => {});
   if (rows.length) await DB.bulkPut('messages', rows, { silent: true }).catch(() => {});
   AppState.messages = await DB.getAll('messages').catch(() => []);
@@ -182,6 +228,7 @@ async function openInboxPanel() {
       </div>
     </div>
     <div class="livePill inboxLivePill">Mensajes en tiempo real</div>
+    <button class="btn outline block" id="toggleInboxSoundV724">${inboxSoundEnabledV724() ? '🔔 Sonido activado' : '🔕 Sonido desactivado'}</button>
     ${!isAdmin() ? '<button class="btn block inboxComposeBtn" id="composeAdminMessage">Escribir al administrador</button>' : ''}
     ${messages.length ? messages.map(m => `
       <div class="messageCard ${m.status !== 'read' ? 'unread' : ''}">
@@ -200,6 +247,8 @@ async function openInboxPanel() {
     `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin mensajes</h3><p>Cuando llegue un pedido o aviso aparecerá aquí.</p></div>`}
   `, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close);
+    const soundBtn = $('#toggleInboxSoundV724', overlay);
+    if (soundBtn) soundBtn.addEventListener('click', () => { const next = !inboxSoundEnabledV724(); setInboxSoundEnabledV724(next); soundBtn.textContent = next ? '🔔 Sonido activado' : '🔕 Sonido desactivado'; if (next) playInboxSoundV724(); });
     const composeBtn = $('#composeAdminMessage', overlay);
     if (composeBtn) composeBtn.addEventListener('click', () => { close(); setTimeout(() => openMessageComposer(), 80); });
     $all('.replyMessageBtn', overlay).forEach(b => b.addEventListener('click', () => {
@@ -231,3 +280,6 @@ window.markLocalMessageRead = markLocalMessageRead;
 window.openMessageComposer = openMessageComposer;
 
 window.fetchAndCacheInboxMessages = syncInboxFromCloud;
+
+window.playInboxSoundV724 = playInboxSoundV724;
+window.inboxSoundEnabledV724 = inboxSoundEnabledV724;

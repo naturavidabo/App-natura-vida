@@ -1,12 +1,12 @@
-INSTRUCCIONES NATURA VIDA V7.2.3
+# Natura Vida V7.2.0 estabilizada
 
-1. Descomprime el ZIP lista para GitHub.
-2. Sube el contenido a la raíz del repositorio, reemplazando la versión anterior.
-3. Verifica que index.html quede en la raíz, no dentro de una carpeta extra.
-4. Haz commit y push.
-5. Espera GitHub Actions en verde.
-6. En los celulares, abre Más → Actualizaciones → Actualizar ahora.
-7. Prueba venta unitaria y venta mayorista seleccionando cliente con el botón desplegable.
+Aplicación PWA estática conectada a Supabase. GitHub Pages publica únicamente los archivos de la aplicación mediante el workflow `.github/workflows/deploy-pages.yml`.
 
-No necesitas ejecutar SQL para estas mejoras.
-Solo ejecuta SQL si vas a importar la migración consolidada de Mi Negocio.
+## Despliegue
+
+1. En **Settings → Pages**, seleccionar **GitHub Actions** como fuente.
+2. Ejecutar primero en Supabase `sql/2026-07-09_v7_2_0_stabilization.sql`.
+3. Subir estos archivos a la raíz de `main`.
+4. El workflow valida la aplicación, crea una carpeta `_site` limpia y despliega con acciones compatibles con Node.js 24.
+
+No se publican las carpetas `sql`, `tests` ni la documentación dentro del sitio web.

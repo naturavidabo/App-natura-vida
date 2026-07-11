@@ -380,6 +380,7 @@ function openCheckoutSheet() {
     ${saleItemsPreview.map(i => `<div class="histitem priceLine ${i.priceSource}"><div class="l"><div class="pname">${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource, sign:i.priceAdjustmentType})}</div><div class="meta">${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource, sign:i.priceAdjustmentType, adjustmentAmount:i.priceAdjustmentAmount, groupName:i.groupName})}</div>${i.manualPriceReason ? `<small class="priceReason">${escapeHtml(i.manualPriceReason)}</small>` : ''}</div><div class="r">${fmtMoney(i.subtotal)}</div></div>`).join('')}
     ${(discounts || surcharges) ? `<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>` : ''}
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
+    ${(_saleType === 'market' || _saleType === 'representative_transfer') ? `<button type="button" class="btn outline block" id="registerWholesaleClientV724">🏪 Registrar datos de mayorista</button>` : ''}
     <div class="field"><label>Nombre del cliente</label><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><small>${(_saleType === 'market' || _saleType === 'representative_transfer') ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
     <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723">WA</button></div></div>
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
@@ -394,6 +395,12 @@ function openCheckoutSheet() {
       $('#ck_clientphone', overlay).value = c.phone || '';
     };
     $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
+    $('#registerWholesaleClientV724', overlay)?.addEventListener('click', () => {
+      const name = $('#ck_clientname', overlay).value.trim();
+      const phone = $('#ck_clientphone', overlay).value.trim();
+      window._afterClientSaved = fillClientV723;
+      openClientForm(null, { name, phone, customerType: 'wholesale' });
+    });
     $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
     $('#ck_clientname', overlay).addEventListener('blur', () => {
       const name = $('#ck_clientname', overlay).value.trim();

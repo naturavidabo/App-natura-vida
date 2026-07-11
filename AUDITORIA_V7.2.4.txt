@@ -1,1 +1,13 @@
-GitHub Pages static site
+AUDITORÍA V7.2.4
+
+- JavaScript revisado: 26 archivos.
+- Errores de sintaxis: 0.
+- Referencias faltantes en index: 0.
+- Grupos privados por usuario: True.
+- Notificación sonora interna: True.
+- Selector WhatsApp normal/Business: True.
+- Perfil de representante con stock/movimientos: True.
+- Botón registrar mayorista en venta admin: True.
+- Botón registrar mayorista en venta representante: True.
+- Íconos PWA regenerados con logo completo.
+- No requiere SQL nuevo.

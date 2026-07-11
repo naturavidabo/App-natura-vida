@@ -1,66 +1,45 @@
-NATURA VIDA V7.2.3 — PRECIOS FLEXIBLES, MIGRACIÓN Y ESTADÍSTICAS
+# Guía corregida de despliegue — GitHub Pages / Node.js 24
 
-Incluye el trabajo pendiente que se había definido:
+## Diagnóstico del fallo observado
 
-1. Precio manual por producto dentro de la venta
-- Precio normal de inventario.
-- Precio por grupo.
-- Precio manual como excepción individual.
-- Rebaja en Bs.
-- Rebaja en %.
-- Recargo en Bs.
-- Recargo en %.
-- Motivo opcional.
-- Botón para restablecer precio del grupo/base.
+El error **“The job was not acquired by Runner of type hosted even after multiple attempts”** ocurrió antes de iniciar los pasos del workflow. No fue causado por el código de Natura Vida: fue una incidencia de los runners alojados por GitHub.
 
-2. Indicadores visuales
-- Grupo.
-- Manual.
-- Rebaja.
-- Recargo.
-- Resumen de rebajas y recargos antes de confirmar la venta.
+La advertencia **“Node.js v20 is deprecated”** sí correspondía a una acción antigua usada por el flujo automático `pages-build-deployment`. Esta entrega incluye un workflow propio actualizado.
 
-3. Comportamiento de grupos
-- Si existen precios manuales y se cambia el grupo, la app pregunta si se mantienen o se reemplazan.
-- La opción segura es conservar manuales como excepción.
+## Orden correcto
 
-4. Representantes
-- La misma lógica funciona para representantes sobre sus propios precios base.
-- El representante puede negociar por producto sin alterar su precio base guardado.
+### 1. Supabase
 
-5. Registro histórico
-Cada línea de venta guarda:
-- precio original,
-- precio por grupo,
-- precio manual,
-- precio final,
-- tipo de ajuste,
-- importe del ajuste,
-- porcentaje,
-- motivo opcional,
-- costo del momento,
-- subtotal original y subtotal final.
+Ejecutar primero:
 
-6. QR y recibos
-- Se mantiene la corrección V7.2.1 para que el QR aparezca en recibos.
+`sql/2026-07-09_v7_2_0_stabilization.sql`
 
-7. Migración Mi Negocio
-- Se conserva la carpeta migration-mi-negocio con SQL, verificación y JSON convertido.
-- Las ventas históricas no afectan stock actual.
+Esto corrige `audit_log.user_id`, necesario para que `register_sale_atomic` pueda completar las ventas.
 
-8. Estadísticas comerciales
-- Ventas del mes.
-- Operaciones.
-- Unidades.
-- Ticket promedio.
-- Rebajas.
-- Recargos.
-- Productos más vendidos.
-- Mejores clientes.
-- Estado comercial automático.
-- Rendimiento por vendedor para administrador.
+### 2. GitHub Pages
 
-Validación:
-- JavaScript: 24 archivos revisados, 0 errores de sintaxis.
-- Auditoría estática: 150 controles, 0 fallos.
-- Auditoría despliegue: 16 controles, 0 fallos.
+1. Entra al repositorio `App-natura-vida`.
+2. Ve a **Settings → Pages**.
+3. En **Build and deployment → Source**, selecciona **GitHub Actions**.
+4. Guarda el cambio.
+5. Cancela ejecuciones antiguas que sigan en **Queued**.
+6. Reemplaza los archivos del repositorio con el contenido de este paquete.
+7. Haz commit en la rama `main`.
+8. En **Actions**, abre **Deploy Natura Vida to GitHub Pages**.
+9. Deben ejecutarse dos trabajos: **Validate and package** y **Deploy**.
+
+## Acciones actualizadas
+
+- `actions/checkout@v6`
+- `actions/configure-pages@v6`
+- `actions/upload-pages-artifact@v5`
+- `actions/deploy-pages@v5`
+
+El workflow publica una carpeta `_site` limpia. SQL, pruebas e informes permanecen en el repositorio, pero no quedan expuestos en la página publicada.
+
+## Si el despliegue vuelve a quedar en cola
+
+1. Revisa GitHub Status.
+2. Cancela el run antiguo.
+3. Abre el workflow y pulsa **Run workflow**.
+4. No vuelvas a cambiar la aplicación ni Supabase por un error de runner que ocurre antes de los logs.

@@ -1,45 +1,36 @@
-# Guía corregida de despliegue — GitHub Pages / Node.js 24
+# Informe de corrección — Natura Vida V7.2.0 / GitHub Pages
 
-## Diagnóstico del fallo observado
+## Diagnóstico
 
-El error **“The job was not acquired by Runner of type hosted even after multiple attempts”** ocurrió antes de iniciar los pasos del workflow. No fue causado por el código de Natura Vida: fue una incidencia de los runners alojados por GitHub.
+1. El ZIP recibido no contenía `.github/workflows/`; por tanto, el repositorio dependía del flujo automático `pages-build-deployment` de GitHub Pages.
+2. El error **The job was not acquired by Runner of type hosted** sucede antes de que el código o los pasos sean ejecutados. Corresponde a disponibilidad del runner alojado.
+3. La advertencia de Node.js 20 provenía de una acción antigua del flujo automático, no del JavaScript de Natura Vida.
+4. La aplicación es estática y no necesita compilarse con Node.js. Solo requiere validar y empaquetar sus archivos.
+5. La corrección de la venta `audit_log.user_id` está incluida, pero debe ejecutarse en Supabase antes de probar ventas.
 
-La advertencia **“Node.js v20 is deprecated”** sí correspondía a una acción antigua usada por el flujo automático `pages-build-deployment`. Esta entrega incluye un workflow propio actualizado.
+## Correcciones preparadas
 
-## Orden correcto
+- Workflow propio `.github/workflows/deploy-pages.yml`.
+- Acciones actualizadas: checkout v6, configure-pages v6, upload-pages-artifact v5 y deploy-pages v5.
+- Concurrencia `cancel-in-progress: true` para cancelar despliegues anteriores del mismo grupo.
+- Ejecución manual mediante `workflow_dispatch`.
+- Dos trabajos separados: validación/empaquetado y despliegue.
+- Carpeta `_site` limpia: solo publica la aplicación; no publica SQL, pruebas ni informes.
+- Auditoría automática de 138 comprobaciones estáticas.
+- Auditoría adicional del workflow con 16 comprobaciones.
+- YAML validado.
+- Prueba HTTP local de recursos críticos con respuesta 200.
+- SQL de verificación posterior a la migración.
 
-### 1. Supabase
+## Configuración necesaria en GitHub
 
-Ejecutar primero:
+Cambiar `Settings → Pages → Build and deployment → Source` a **GitHub Actions**. Mientras permanezca `Deploy from a branch`, GitHub seguirá utilizando el flujo automático anterior.
 
-`sql/2026-07-09_v7_2_0_stabilization.sql`
+## Configuración necesaria en Supabase
 
-Esto corrige `audit_log.user_id`, necesario para que `register_sale_atomic` pueda completar las ventas.
+Ejecutar en orden:
 
-### 2. GitHub Pages
+1. `sql/2026-07-09_v7_2_0_stabilization.sql`
+2. `sql/2026-07-09_v7_2_0_verify.sql`
 
-1. Entra al repositorio `App-natura-vida`.
-2. Ve a **Settings → Pages**.
-3. En **Build and deployment → Source**, selecciona **GitHub Actions**.
-4. Guarda el cambio.
-5. Cancela ejecuciones antiguas que sigan en **Queued**.
-6. Reemplaza los archivos del repositorio con el contenido de este paquete.
-7. Haz commit en la rama `main`.
-8. En **Actions**, abre **Deploy Natura Vida to GitHub Pages**.
-9. Deben ejecutarse dos trabajos: **Validate and package** y **Deploy**.
-
-## Acciones actualizadas
-
-- `actions/checkout@v6`
-- `actions/configure-pages@v6`
-- `actions/upload-pages-artifact@v5`
-- `actions/deploy-pages@v5`
-
-El workflow publica una carpeta `_site` limpia. SQL, pruebas e informes permanecen en el repositorio, pero no quedan expuestos en la página publicada.
-
-## Si el despliegue vuelve a quedar en cola
-
-1. Revisa GitHub Status.
-2. Cancela el run antiguo.
-3. Abre el workflow y pulsa **Run workflow**.
-4. No vuelvas a cambiar la aplicación ni Supabase por un error de runner que ocurre antes de los logs.
+La segunda consulta debe devolver `OK` en todos los controles antes de probar ventas.

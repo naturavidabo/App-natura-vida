@@ -102,6 +102,7 @@
       <div class="v7TotalLine"><span>Total a cobrar</span><strong>${fmtMoney(total)}</strong></div>
       <div class="v7CashNotice">Esta venta se registrará una sola vez y descontará inmediatamente tu inventario propio.</div>
       <div class="sectiontitle2"><span>Cliente</span></div>
+      ${saleType === 'reseller_wholesale' ? `<button type="button" class="btn outline block" id="registerRepWholesaleClientV724">🏪 Registrar datos de mayorista</button>` : ''}
       <div class="field"><label>Nombre *</label><div class="clientInputRow"><input id="v7ClientName" autocomplete="off" placeholder="Nombre del cliente o tienda"><button type="button" class="miniClientPick" id="pickRepClientV723">▾</button></div><small>${saleType === 'reseller_wholesale' ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
       <div class="field"><label>WhatsApp</label><div class="clientInputRow"><input id="v7ClientPhone" inputmode="tel" autocomplete="off"><button type="button" class="waIconBtnV723" id="v7ClientWaV723">WA</button></div></div>
       <input type="hidden" id="v7ClientType" value="${saleType === 'reseller_wholesale' ? 'wholesale' : 'unit'}">
@@ -111,6 +112,12 @@
       $('#closeSheet', overlay).addEventListener('click', () => { if (!operation.submitting) close(); });
       const fillClientV723 = (c) => { if (!c) return; operation.client = c; $('#v7ClientName', overlay).value = c.name || ''; $('#v7ClientPhone', overlay).value = c.phone || ''; $('#v7ClientAddress', overlay).value = c.address || ''; $('#v7ClientCity', overlay).value = c.city || ''; $('#v7ClientLocation', overlay).value = c.locationLabel || c.location || ''; $('#v7ClientNotes', overlay).value = c.notes || ''; };
       $('#pickRepClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType, onSelect: fillClientV723 }));
+      $('#registerRepWholesaleClientV724', overlay)?.addEventListener('click', () => {
+        const name = $('#v7ClientName', overlay).value.trim();
+        const phone = $('#v7ClientPhone', overlay).value.trim();
+        window._afterClientSaved = fillClientV723;
+        openClientForm(null, { name, phone, customerType: 'wholesale' });
+      });
       $('#v7ClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#v7ClientPhone', overlay).value, $('#v7ClientName', overlay).value));
       $('#v7ClientName', overlay).addEventListener('blur', () => { const c = AppState.clients.find(x => normalizeSearch(x.name) === normalizeSearch($('#v7ClientName', overlay).value)); if (c) fillClientV723(c); });
       $('#confirmSaleV7', overlay).addEventListener('click', async () => {

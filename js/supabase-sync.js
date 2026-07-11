@@ -618,7 +618,7 @@ const CLOUD_GENERIC_STORES = [
   'commissions', 'commissionRules', 'representatives', 'dispatches',
   'representativeReports'
 ];
-const CLOUD_SHARED_STORES = new Set(['priceGroups', 'settings', 'commissionRules']);
+const CLOUD_SHARED_STORES = new Set(['settings', 'commissionRules']); // V7.2.4: priceGroups son privados por usuario
 
 function recordIdForStore(storeName, record) {
   return String(storeName === 'settings' ? (record.key || 'main') : (record.id || ''));
@@ -631,12 +631,17 @@ async function upsertGenericCloudRecord(storeName, record) {
     const recordId = recordIdForStore(storeName, record);
     if (!ownerUserId || !recordId) return { ok: false, message: 'Registro sin usuario o identificador.' };
     const visibility = CLOUD_SHARED_STORES.has(storeName) && isAdmin() ? 'shared' : 'private';
+    const payload = Object.assign({}, record, {
+      ownerUserId: record.ownerUserId || ownerUserId,
+      ownerRole: record.ownerRole || (AppState.session && AppState.session.roleName) || '',
+      visibility
+    });
     const { error } = await sb.from('app_records').upsert({
       store_name: storeName,
       record_id: recordId,
       owner_user_id: ownerUserId,
       visibility,
-      payload: record
+      payload
     }, { onConflict: 'store_name,record_id,owner_user_id' });
     return error ? { ok: false, message: messageFromError(error) } : { ok: true };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
@@ -661,8 +666,17 @@ async function syncGenericCloudRecordsToLocal() {
     .order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   const grouped = new Map(CLOUD_GENERIC_STORES.map(name => [name, []]));
+  const currentOwner = AppState.session && AppState.session.onlineUserId;
   (data || []).forEach(row => {
-    if (grouped.has(row.store_name) && row.payload) grouped.get(row.store_name).push(row.payload);
+    if (!grouped.has(row.store_name) || !row.payload) return;
+    // V7.2.4: los grupos de precio/descuento son privados por usuario.
+    // Evita que los grupos administrativos aparezcan como imposición en el celular del representante.
+    if (row.store_name === 'priceGroups' && String(row.owner_user_id || '') !== String(currentOwner || '')) return;
+    const payload = Object.assign({}, row.payload, {
+      ownerUserId: row.payload.ownerUserId || row.owner_user_id,
+      visibility: row.visibility || row.payload.visibility || 'private'
+    });
+    grouped.get(row.store_name).push(payload);
   });
   for (const [name, rows] of grouped) {
     await DB.clear(name);
