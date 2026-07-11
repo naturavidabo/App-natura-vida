@@ -28,12 +28,12 @@ for asset in parser.assets:
     local_assets.append(path)
     check((ROOT/path).is_file(), f'Existe recurso: {path}')
 
-check('7.2.0' in index, 'HTML publica versión 7.2.0')
-check('app-update.js?v=7.2.0' in index, 'Gestor de actualización incluido')
+check('7.2.2' in index, 'HTML publica versión 7.2.2')
+check('app-update.js?v=7.2.2' in index, 'Gestor de actualización incluido')
 check(not re.search(r'\?v=7\.1\.', index), 'No quedan recursos HTML con versión 7.1.x')
 
 version=json.loads((ROOT/'app-version.json').read_text())
-check(version.get('version')=='7.2.0','app-version.json coincide con 7.2.0')
+check(version.get('version')=='7.2.2','app-version.json coincide con 7.2.2')
 
 # Sintaxis JavaScript con Node.
 for js in sorted((ROOT/'js').glob('*.js')) + [ROOT/'service-worker.js']:

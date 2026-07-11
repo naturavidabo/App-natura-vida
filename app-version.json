@@ -1,6 +1,8 @@
 {
-  "version": "7.2.0",
-  "build": "2026-07-09-stabilization-2-pages-node24",
-  "releasedAt": "2026-07-09T18:00:00Z",
-  "channel": "stable"
+  "version": "7.2.2",
+  "build": "2026-07-10-qr-receipts-and-mi-negocio-import",
+  "releasedAt": "2026-07-10T03:00:00Z",
+  "channel": "stable",
+  "label": "Natura Vida V7.2.2 - Precios flexibles y estadísticas",
+  "createdAt": "2026-07-10T00:00:00-04:00"
 }

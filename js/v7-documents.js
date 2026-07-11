@@ -3,13 +3,34 @@
 (() => {
   async function loadImageV7(src) {
     if (!src) return null;
-    return new Promise(resolve => {
+    const source = String(src);
+
+    const openImage = (url, crossOrigin = false) => new Promise(resolve => {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+      if (crossOrigin) img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => resolve(null);
-      img.src = src;
+      img.src = url;
     });
+
+    // Los dataURL ya son seguros para el canvas.
+    if (source.startsWith('data:image/')) return openImage(source);
+
+    // Convierte la imagen remota a Blob local. Esto evita que el QR desaparezca
+    // del recibo por caché o por restricciones CORS del canvas.
+    try {
+      const response = await fetch(source, { mode: 'cors', cache: 'no-store' });
+      if (response.ok) {
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const image = await openImage(objectUrl);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+        if (image) return image;
+      }
+    } catch (_) {}
+
+    // Compatibilidad para URLs públicas que permiten carga directa.
+    return openImage(source, true);
   }
 
   function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 3) {
@@ -30,22 +51,43 @@
     return y + lineHeight;
   }
 
-  function documentOwnerProfile(userId) {
-    return commercialProfileFor(userId) || {};
+  function documentOwnerProfile(userId, documentData = {}) {
+    const exact = userId && window.commercialProfileFor ? commercialProfileFor(userId) : null;
+    if (exact) return exact;
+
+    const own = window.myCommercialProfile ? myCommercialProfile() : null;
+    if (own && (!userId || own.userId === userId || userId === AppState.session.onlineUserId || userId === AppState.session.userId)) {
+      return own;
+    }
+
+    return {
+      userId: userId || null,
+      businessName: documentData.sellerBusinessName || documentData.businessName || '',
+      receiptMessage: documentData.sellerReceiptMessage || documentData.receiptMessage || '',
+      qrUrl: documentData.sellerQrUrl || documentData.qrUrl || ''
+    };
   }
 
-  function documentOwnerName(userId, fallback) {
-    const cp = documentOwnerProfile(userId);
-    return cp.businessName || fallback || AppState.settings.businessName || 'NATURA VIDA';
+  function documentOwnerName(userId, fallback, documentData = {}) {
+    const cp = documentOwnerProfile(userId, documentData);
+    return cp.businessName || documentData.sellerBusinessName || fallback || AppState.settings.businessName || 'NATURA VIDA';
   }
 
   async function buildV7ReceiptCanvas(documentData, kind = 'sale') {
     const items = documentData.items || [];
     const isPendingOrder = kind === 'order' && documentData.paymentStatus !== 'paid' && documentData.status !== 'paid';
     const ownerId = kind === 'order' ? documentData.sellerUserId : documentData.sellerId;
-    const ownerProfile = documentOwnerProfile(ownerId);
-    const ownerName = documentOwnerName(ownerId, documentData.sellerName);
-    const qr = await loadImageV7(ownerProfile.qrUrl);
+
+    // Antes de dibujar, vuelve a consultar el perfil si todavía no está en memoria.
+    // Así el recibo toma el QR recién guardado incluso en otro dispositivo.
+    if (window.fetchCommercialProfilesV7 && (!AppState.commercialProfiles || !AppState.commercialProfiles.length || !commercialProfileFor(ownerId))) {
+      await fetchCommercialProfilesV7().catch(() => null);
+    }
+
+    const ownerProfile = documentOwnerProfile(ownerId, documentData);
+    const ownerName = documentOwnerName(ownerId, documentData.sellerName, documentData);
+    const qrSource = ownerProfile.qrUrl || documentData.sellerQrUrl || documentData.qrUrl || '';
+    const qr = await loadImageV7(qrSource);
     const logo = await loadImageV7(AppState.settings.logo || 'img/brand/natura-vida-logo.jpeg');
     const width = 720;
     const itemHeight = 38;

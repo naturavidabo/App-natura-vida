@@ -106,7 +106,7 @@
   function canAccessV7(tab) {
     if (!requireAuth()) return false;
     if (isAdmin()) return !['compra', 'perfil-cambio'].includes(tab);
-    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'ajustes'].includes(tab);
+    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'estadisticas', 'ajustes'].includes(tab);
   }
 
   function navigateToV7(tab) {
@@ -144,6 +144,7 @@
       case 'inbox': openInboxPanel(); break;
       case 'perfil': renderProfileV7(); break;
       case 'historial': renderHistoryV7(); break;
+      case 'estadisticas': window.renderCommercialStatsV7 ? renderCommercialStatsV7() : renderInicioV7(); break;
       case 'grupos': renderPriceGroups(); break;
       case 'usuarios': renderUsersFoundation(); break;
       case 'resumen': oldRenderResumen ? oldRenderResumen() : renderInicioV7(); break;
@@ -234,6 +235,7 @@
         ${moreItem('v7MoreInbox', 'bell', 'Bandeja y actividad', 'Avisos, aprobaciones y comprobantes')}
         ${moreItem('v7MoreClients', 'clients', 'Clientes', 'Directorio e historial de compras')}
         ${moreItem('v7MoreHistory', 'chart', 'Ventas y recibos', 'Historial permanente de operaciones')}
+        ${moreItem('v7MoreStats', 'chart', 'Estadísticas comerciales', 'Productos, clientes, recargos y rebajas')}
         ${moreItem('v7MoreCatalog', 'tag', 'Catálogo PDF', 'Descargar o compartir con cualquier aplicación')}
         ${moreItem('v7MoreProfile', 'profile', 'Perfil comercial y QR', 'Datos para recibos y cobros')}
         ${isAdmin() ? moreItem('v7MoreUsers', 'users', 'Representantes', 'Aprobar, bloquear y personalizar descuento') : ''}
@@ -242,11 +244,12 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.2.0')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.2.2')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
     $('#v7MoreHistory').addEventListener('click', () => navigateToV7('historial'));
+    $('#v7MoreStats').addEventListener('click', () => navigateToV7('estadisticas'));
     $('#v7MoreCatalog').addEventListener('click', () => openCatalogPdfOptions());
     $('#v7MoreProfile').addEventListener('click', () => navigateToV7('perfil'));
     if ($('#v7MoreUsers')) $('#v7MoreUsers').addEventListener('click', () => navigateToV7('usuarios'));

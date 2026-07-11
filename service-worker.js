@@ -1,5 +1,5 @@
 // NATURA VIDA V7.2 — red obligatoria, actualización controlada e imágenes rápidas.
-const VERSION = 'natura-vida-v7-2-0-pages-node24-rev3';
+const VERSION = 'natura-vida-v7-2-2-flex-precios';
 const IMAGE_CACHE = 'nv-images-v1';
 const IMAGE_CACHE_LIMIT = 120;
 

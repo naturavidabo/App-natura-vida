@@ -1,0 +1,22 @@
+INSTRUCCIONES NATURA VIDA V7.2.2
+
+1. Descarga el ZIP lista para GitHub.
+2. Descomprímelo.
+3. Sube el contenido a la raíz del repositorio App-natura-vida.
+4. No subas el ZIP cerrado.
+5. Verifica que exista index.html en la raíz y .github/workflows/deploy-pages.yml.
+6. Haz commit y push.
+7. Espera GitHub Actions en verde.
+8. En la app, entra a Más > Actualizaciones > Actualizar ahora.
+
+Supabase:
+- Si ya ejecutaste las correcciones anteriores de audit_log y la migración Mi Negocio, no necesitas repetirlas.
+- Si aún no importaste Mi Negocio, ejecuta los SQL dentro de migration-mi-negocio.
+
+Prueba recomendada:
+1. Crear venta unitaria con precio normal.
+2. Crear venta mayorista con grupo.
+3. Editar un producto de esa venta con precio manual.
+4. Confirmar venta.
+5. Verificar recibo con QR.
+6. Revisar Más > Estadísticas comerciales.

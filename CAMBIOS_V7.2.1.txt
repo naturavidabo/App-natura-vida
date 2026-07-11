@@ -1,0 +1,8 @@
+NATURA VIDA V7.2.1
+
+- Corrige el QR que no aparecía en recibos.
+- El recibo vuelve a consultar el perfil comercial antes de dibujarse.
+- Carga el QR mediante Blob local para evitar problemas de CORS/caché en canvas.
+- Guarda una copia de referencia del QR y mensaje comercial dentro de cada venta nueva.
+- Incluye herramientas de migración histórica desde Mi Negocio.
+- La migración no modifica el inventario actual.
