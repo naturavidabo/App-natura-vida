@@ -76,6 +76,8 @@
   async function buildV7ReceiptCanvas(documentData, kind = 'sale') {
     const items = documentData.items || [];
     const isPendingOrder = kind === 'order' && documentData.paymentStatus !== 'paid' && documentData.status !== 'paid';
+    const saleBalance = window.saleBalanceV725 ? saleBalanceV725(documentData) : Number(documentData.pendingBalance || 0);
+    const isPartialSale = kind === 'sale' && saleBalance > 0;
     const ownerId = kind === 'order' ? documentData.sellerUserId : documentData.sellerId;
 
     // Antes de dibujar, vuelve a consultar el perfil si todavía no está en memoria.
@@ -128,7 +130,7 @@
     ctx.fillText(ownerName, logo ? 150 : 58, 82);
     ctx.font = '500 15px Inter, Arial';
     ctx.fillStyle = 'rgba(255,255,255,.85)';
-    ctx.fillText(isPendingOrder ? 'Orden de pago al contado' : (kind === 'order' ? 'Recibo de compra al contado' : 'Recibo de venta al contado'), logo ? 150 : 58, 108);
+    ctx.fillText(isPendingOrder ? 'Orden de pago al contado' : (isPartialSale ? 'Recibo con saldo pendiente' : (kind === 'order' ? 'Recibo de compra al contado' : 'Recibo de venta al contado')), logo ? 150 : 58, 108);
     ctx.font = '700 16px JetBrains Mono, monospace';
     ctx.fillText(documentData.receiptNumber || documentData.orderNumber || documentData.documentNumber || 'DOCUMENTO', logo ? 150 : 58, 136);
 
@@ -149,7 +151,7 @@
     ctx.fillText(new Date(documentData.paidAt || documentData.date || documentData.createdAt || Date.now()).toLocaleString('es-BO'), width - 58, y + 12);
     ctx.fillStyle = '#0a7a45';
     ctx.font = '800 18px Inter, Arial';
-    ctx.fillText(isPendingOrder ? 'PENDIENTE DE PAGO' : 'PAGO AL CONTADO', width - 58, y + 43);
+    ctx.fillText(isPendingOrder ? 'PENDIENTE DE PAGO' : (isPartialSale ? 'PAGO PARCIAL' : 'PAGO AL CONTADO'), width - 58, y + 43);
     ctx.textAlign = 'left';
 
     y += 95;
@@ -186,12 +188,21 @@
     y += 42;
     ctx.fillStyle = '#60766b';
     ctx.font = '600 16px Inter, Arial';
-    ctx.fillText(isPendingOrder ? 'TOTAL A DEPOSITAR' : 'TOTAL PAGADO', 58, y);
+    ctx.fillText(isPendingOrder ? 'TOTAL A DEPOSITAR' : (isPartialSale ? 'TOTAL VENTA' : 'TOTAL PAGADO'), 58, y);
     ctx.textAlign = 'right';
     ctx.fillStyle = '#075b35';
     ctx.font = '800 30px Inter, Arial';
     ctx.fillText(fmtMoney(documentData.total || 0), width - 58, y + 4);
     ctx.textAlign = 'left';
+    if (isPartialSale) {
+      y += 36;
+      ctx.fillStyle = '#8a5a12';
+      ctx.font = '700 15px Inter, Arial';
+      ctx.fillText('Pagado: ' + fmtMoney(window.salePaidTotalV725 ? salePaidTotalV725(documentData) : Number(documentData.amountPaid || 0)), 58, y);
+      ctx.textAlign = 'right';
+      ctx.fillText('Saldo: ' + fmtMoney(saleBalance), width - 58, y);
+      ctx.textAlign = 'left';
+    }
     y += 52;
 
     if (qr) {

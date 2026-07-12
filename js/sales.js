@@ -380,10 +380,13 @@ function openCheckoutSheet() {
     ${saleItemsPreview.map(i => `<div class="histitem priceLine ${i.priceSource}"><div class="l"><div class="pname">${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource, sign:i.priceAdjustmentType})}</div><div class="meta">${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource, sign:i.priceAdjustmentType, adjustmentAmount:i.priceAdjustmentAmount, groupName:i.groupName})}</div>${i.manualPriceReason ? `<small class="priceReason">${escapeHtml(i.manualPriceReason)}</small>` : ''}</div><div class="r">${fmtMoney(i.subtotal)}</div></div>`).join('')}
     ${(discounts || surcharges) ? `<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>` : ''}
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
-    ${(_saleType === 'market' || _saleType === 'representative_transfer') ? `<button type="button" class="btn outline block" id="registerWholesaleClientV724">🏪 Registrar datos de mayorista</button>` : ''}
     <div class="field"><label>Nombre del cliente</label><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><small>${(_saleType === 'market' || _saleType === 'representative_transfer') ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
-    <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723">WA</button></div></div>
+    <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
+    ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
+    <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" readonly value="0"></div></div>
+    <div class="field"><label>Motivo si queda saldo pendiente</label><input id="ck_pendingReason" placeholder="Ej.: faltó cambio, transferencia pendiente, saldo por cobrar"></div>
+    <div class="v7CashNotice">Si el pago queda incompleto, la venta se registrará y aparecerá en Ventas por cobrar.</div>
     <div class="v7CashNotice">La operación usa un identificador único. Si se corta la conexión, se verificará primero si la venta ya quedó guardada para evitar duplicarla.</div>
     <div class="actions stickyActions"><button class="btn block" id="confirmSale">Confirmar venta y generar recibo</button></div>`;
   openSheet(html, (overlay, close) => {
@@ -393,15 +396,20 @@ function openCheckoutSheet() {
       operation.client = c;
       $('#ck_clientname', overlay).value = c.name || '';
       $('#ck_clientphone', overlay).value = c.phone || '';
+      if (c.priceGroupId && (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) && c.priceGroupId !== _saleSelectedGroup) {
+        const g = AppState.priceGroups.find(x => x.id === c.priceGroupId);
+        if (g && window.confirm(`Este cliente tiene beneficio/grupo: ${g.name}. ¿Aplicarlo a esta venta?`)) {
+          _saleSelectedGroup = c.priceGroupId;
+          close();
+          setTimeout(openCheckoutSheet, 80);
+        }
+      }
     };
     $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
-    $('#registerWholesaleClientV724', overlay)?.addEventListener('click', () => {
-      const name = $('#ck_clientname', overlay).value.trim();
-      const phone = $('#ck_clientphone', overlay).value.trim();
-      window._afterClientSaved = fillClientV723;
-      openClientForm(null, { name, phone, customerType: 'wholesale' });
-    });
+    if ($('#registerWholesaleV725', overlay)) $('#registerWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#ck_clientname', overlay).value.trim(), phone: $('#ck_clientphone', overlay).value.trim(), customerType: 'wholesale' }); });
     $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
+    const updatePaymentV725 = () => { const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0)); $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - paid)); };
+    $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725); updatePaymentV725();
     $('#ck_clientname', overlay).addEventListener('blur', () => {
       const name = $('#ck_clientname', overlay).value.trim();
       const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
@@ -430,13 +438,18 @@ function openCheckoutSheet() {
         }
         if (!operation.sale) {
           const groupName = _saleSelectedGroup ? (saleGroupInfoV7(_saleSelectedGroup) || {}).name : null;
+          const paidNow = roundBs(Math.min(total, Math.max(0, Number($('#ck_amountPaid', overlay).value || 0))));
+          const pendingNow = roundBs(Math.max(0, total - paidNow));
           const saleItems = buildSaleItemsFromCartV7(rawItems);
           operation.sale = {
             id: operation.id,
             documentNumber: operation.documentNumber,
             receiptNumber: operation.documentNumber,
             paymentMethod: 'cash',
-            paymentStatus: 'paid',
+            paymentStatus: pendingNow > 0 ? (paidNow > 0 ? 'partial' : 'pending') : 'paid',
+            amountPaid: paidNow,
+            pendingBalance: pendingNow,
+            pendingReason: pendingNow > 0 ? $('#ck_pendingReason', overlay).value.trim() : '',
             type: _saleType,
             role: AppState.session ? AppState.session.roleName : '',
             sellerId: AppState.session ? (AppState.session.onlineUserId || AppState.session.userId) : null,

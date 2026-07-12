@@ -218,14 +218,24 @@ function normalizePhoneV723(value) {
 function whatsappUrlV723(phone, message = '') {
   const d = normalizePhoneV723(phone);
   if (!d || d.length < 7) return '';
-  const text = message ? `?text=${encodeURIComponent(message)}` : '';
-  return `https://wa.me/591${d}${text}`;
+  const text = message ? `&text=${encodeURIComponent(message)}` : '';
+  return `https://api.whatsapp.com/send?phone=591${d}${text}`;
+}
+function whatsappIntentV725(phone, message = '') {
+  const d = normalizePhoneV723(phone);
+  if (!d || d.length < 7) return '';
+  const text = message ? `&text=${encodeURIComponent(message)}` : '';
+  return `intent://send?phone=591${d}${text}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
 }
 function openWhatsAppV723(phone, name = '') {
-  const url = whatsappUrlV723(phone, name ? `Hola ${name}, le escribo de Natura Vida Bolivia.` : 'Hola, le escribo de Natura Vida Bolivia.');
+  const msg = name ? `Hola ${name}, le escribo de Natura Vida Bolivia.` : 'Hola, le escribo de Natura Vida Bolivia.';
+  const url = whatsappUrlV723(phone, msg);
   if (!url) return showToast('Este cliente no tiene un WhatsApp válido.', 'error');
-  window.open(url, '_blank', 'noopener');
+  const intent = whatsappIntentV725(phone, msg);
+  try { window.location.href = intent; setTimeout(() => window.open(url, '_blank', 'noopener'), 900); }
+  catch (_) { window.open(url, '_blank', 'noopener'); }
 }
+function whatsappButtonLabelV725(){ return '<span class="waLogoV725">☎</span>'; }
 function customerTypeForSaleV723(saleType) {
   if (['market', 'reseller_wholesale', 'wholesale', 'representative_transfer'].includes(String(saleType || ''))) return 'wholesale';
   if (['unit', 'reseller_unit'].includes(String(saleType || ''))) return 'unit';
@@ -314,12 +324,14 @@ function clientCardHtmlV723(c) {
     <div class="clientMainV723">
       <div class="clientTopV723"><div class="name">${escapeHtml(c.name || 'Sin nombre')}</div><span class="typePillV723 ${customerTypeClassV723(type)}">${customerTypeLabelV723(type)}</span></div>
       ${c.businessName && c.businessName !== c.name ? `<div class="costline">🏪 ${escapeHtml(c.businessName)}</div>` : ''}
-      <div class="costline">📞 ${escapeHtml(c.phone || 'sin teléfono')} ${c.phone ? `<button class="waMiniV723" data-wa="${c.id}" title="Abrir WhatsApp">WhatsApp</button>` : ''}</div>
-      <div class="costline">🛒 ${purchases.length} compra(s) · <span class="trust ${status.cls}">${status.label}</span></div>
+      <div class="costline">📞 ${escapeHtml(c.phone || 'sin teléfono')} ${c.phone ? `<button class="waMiniV723 waIconOnlyV725" data-wa="${c.id}" title="Abrir WhatsApp normal">${whatsappButtonLabelV725()}</button>` : ''}</div>
+      <div class="costline">🛒 ${purchases.length} compra(s) · <span class="trust ${status.cls}">${status.label}</span>${c.priceGroupId ? ` · <span class="priceBadge group">Beneficio</span>` : ''}</div>
       ${c.city || c.address ? `<div class="costline">📍 ${escapeHtml([c.city, c.address].filter(Boolean).join(' · '))}</div>` : ''}
     </div>
     <div class="cardactions">
       <button class="histClientBtn" data-id="${c.id}">📜 Historial</button>
+      <button class="quoteClientBtnV725" data-id="${c.id}">💬 Precios</button>
+      <button class="benefitClientBtnV725" data-id="${c.id}">🎁 Beneficio</button>
       <button class="editClientBtn" data-id="${c.id}">✏️ Editar</button>
       <button class="danger delClientBtn" data-id="${c.id}">🗑️</button>
     </div>
@@ -342,6 +354,8 @@ function renderClients() {
   $all('.delClientBtn').forEach(b => b.addEventListener('click', () => confirmDeleteClient(b.dataset.id)));
   $all('.histClientBtn').forEach(b => b.addEventListener('click', () => openClientHistory(b.dataset.id)));
   $all('.waMiniV723').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); const c = AppState.clients.find(x => x.id === b.dataset.wa); if (c) openWhatsAppV723(c.phone, c.name); }));
+  $all('.quoteClientBtnV725').forEach(b => b.addEventListener('click', () => { const c=AppState.clients.find(x=>x.id===b.dataset.id); if(c && window.openQuoteForm) openQuoteForm({client:c, priceGroupId:c.priceGroupId||''}); }));
+  $all('.benefitClientBtnV725').forEach(b => b.addEventListener('click', () => openClientBenefitV725(b.dataset.id)));
 }
 
 function openClientForm(id, prefill = {}) {
@@ -351,7 +365,7 @@ function openClientForm(id, prefill = {}) {
   const html = `
     <h2>${c ? 'Editar cliente' : 'Nuevo cliente'} <span class="x" id="closeSheet">✕</span></h2>
     <div class="field"><label>${current.customerType === 'wholesale' ? 'Nombre de tienda / negocio' : 'Nombre del cliente'}</label><input type="text" id="f_cname" autocomplete="off" placeholder="Ej: Comercial María" value="${escapeHtml(current.name || '')}"></div>
-    <div class="field-row"><div class="field"><label>Celular / WhatsApp</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="f_cphone" autocomplete="off" placeholder="Ej: 71234567" value="${escapeHtml(current.phone || '')}"><button type="button" class="waIconBtnV723" id="f_cwa">WA</button></div></div><div class="field"><label>Tipo</label><select id="f_ctype"><option value="unit" ${current.customerType==='unit'?'selected':''}>Unitario</option><option value="wholesale" ${current.customerType==='wholesale'?'selected':''}>Mayorista</option><option value="mixed" ${current.customerType==='mixed'?'selected':''}>Mixto</option><option value="unclassified" ${current.customerType==='unclassified'?'selected':''}>Sin clasificar</option></select></div></div>
+    <div class="field-row"><div class="field"><label>Celular / WhatsApp</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="f_cphone" autocomplete="off" placeholder="Ej: 71234567" value="${escapeHtml(current.phone || '')}"><button type="button" class="waIconBtnV723" id="f_cwa"><span class="waLogoV725">☎</span></button></div></div><div class="field"><label>Tipo</label><select id="f_ctype"><option value="unit" ${current.customerType==='unit'?'selected':''}>Unitario</option><option value="wholesale" ${current.customerType==='wholesale'?'selected':''}>Mayorista</option><option value="mixed" ${current.customerType==='mixed'?'selected':''}>Mixto</option><option value="unclassified" ${current.customerType==='unclassified'?'selected':''}>Sin clasificar</option></select></div></div>
     <div id="wholesaleFieldsV723" class="wholesaleFieldsV723">
       <div class="field"><label>Ciudad</label><input id="f_ccity" autocomplete="off" value="${escapeHtml(current.city || '')}" placeholder="Ej: Santa Cruz"></div>
       <div class="field"><label>Dirección</label><input id="f_caddress" autocomplete="off" value="${escapeHtml(current.address || '')}" placeholder="Mercado, avenida, local o referencia principal"></div>
@@ -501,3 +515,4 @@ window.commercialStatusV723 = commercialStatusV723;
 window.buildClientRecordV723 = buildClientRecordV723;
 window.saveClientV723 = saveClientV723;
 window.normalizePhoneV723 = normalizePhoneV723;
+window.openClientBenefitV725 = openClientBenefitV725;

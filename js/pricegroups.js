@@ -9,7 +9,7 @@ function renderPriceGroups() {
 
   let html = `
     <div class="banner">
-      💲 Tus grupos son privados. El administrador ve sus propios grupos y cada representante crea los suyos según su región. No se mezclan entre cuentas.
+      💲 Los grupos de precio se calculan sobre el <b>precio de abastecimiento</b> del producto. Activa o desactiva esta función en Ajustes.
     </div>
   `;
 
@@ -18,7 +18,7 @@ function renderPriceGroups() {
       <div class="empty">
         <span class="ic">🏷️</span>
         <h3>Aún no hay grupos</h3>
-        <p>Crea grupos propios como "Mercado", "Tienda", "Clientes frecuentes" o "Entrega" con descuento o recargo.</p>
+        <p>Crea grupos como "Mercado", "Tienda" o "Socios" con su propio porcentaje de ganancia.</p>
       </div>`;
   } else {
     AppState.priceGroups.forEach(g => {
@@ -124,11 +124,7 @@ function openPriceGroupForm(id) {
       const data = {
         id: g ? g.id : uid('grp'),
         name, color: chosenColor, mode: chosenMode, percent,
-        ownerUserId: (AppState.session && (AppState.session.onlineUserId || AppState.session.userId)) || (g && g.ownerUserId) || '',
-        ownerRole: (AppState.session && AppState.session.roleName) || (g && g.ownerRole) || '',
-        visibility: 'private',
-        createdAt: g ? g.createdAt : Date.now(),
-        updatedAt: Date.now()
+        createdAt: g ? g.createdAt : Date.now()
       };
       const saveBtn = $('#saveForm', overlay);
       saveBtn.disabled = true;

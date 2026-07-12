@@ -57,25 +57,31 @@ async function confirmDeleteQuote(id) {
       await DB.delete('quotes', id);
       AppState.quotes = AppState.quotes.filter(x => x.id !== id);
       renderQuotes();
-      showToast('Cotización eliminada de Supabase');
+      showToast('Precios / oferta eliminada de Supabase');
     } catch (err) { showToast(err.message || 'No se pudo eliminar la cotización.', 'error'); }
   }
 }
 
-function openQuoteForm() {
+function openQuoteForm(prefill = {}) {
+  const prefClient = prefill.client || null;
+  const prefGroupId = prefill.priceGroupId || (prefClient && prefClient.priceGroupId) || '';
   let items = [{ productId: '', name: '', price: 0, qty: 1 }];
 
   const html = `
-    <h2>Nueva cotización <span class="x" id="closeSheet">✕</span></h2>
+    <h2>Precios / cotización <span class="x" id="closeSheet">✕</span></h2>
 
     <div class="field">
       <label>Nombre del cliente / posible cliente</label>
-      <input type="text" id="q_clientname" placeholder="Ej: Juan Pérez" list="clientSuggestions2">
+      <input type="text" id="q_clientname" placeholder="Ej: Juan Pérez" list="clientSuggestions2" value="${prefClient ? escapeHtml(prefClient.name || '') : ''}">
       <datalist id="clientSuggestions2">${AppState.clients.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
     </div>
     <div class="field">
       <label>Número de teléfono</label>
-      <input type="tel" inputmode="tel" id="q_clientphone" placeholder="Ej: 71234567">
+      <input type="tel" inputmode="tel" id="q_clientphone" placeholder="Ej: 71234567" value="${prefClient ? escapeHtml(prefClient.phone || '') : ''}">
+    </div>
+    <div class="field">
+      <label>Grupo/beneficio aplicado</label>
+      <select id="q_group"><option value="">Precio base</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${prefGroupId===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select>
     </div>
     <div class="field">
       <label>Fecha límite de validez</label>
@@ -117,7 +123,7 @@ function openQuoteForm() {
         const prod = AppState.products.find(p => p.id === sel.value);
         items[idx].productId = sel.value;
         items[idx].name = prod ? prod.name : '';
-        if (prod && !items[idx].price) items[idx].price = unitPrice(prod);
+        if (prod && !items[idx].price) { const gid = $('#q_group', overlay) ? $('#q_group', overlay).value : ''; items[idx].price = gid ? priceForGroup(prod, gid) : unitPrice(prod); }
         renderItems();
         updateTotal();
       }));
@@ -139,6 +145,7 @@ function openQuoteForm() {
 
     renderItems();
     updateTotal();
+    $('#q_group', overlay)?.addEventListener('change', () => { items = items.map(it => { const prod = AppState.products.find(p => p.id === it.productId); return prod ? Object.assign({}, it, { price: $('#q_group', overlay).value ? priceForGroup(prod, $('#q_group', overlay).value) : unitPrice(prod) }) : it; }); renderItems(); updateTotal(); });
 
     $('#addItemBtn', overlay).addEventListener('click', () => {
       items.push({ productId: '', name: '', price: 0, qty: 1 });
@@ -163,7 +170,10 @@ function openQuoteForm() {
 
       const data = {
         id: uid('quo'),
+        clientId: prefClient ? prefClient.id : '',
         clientName, clientPhone, expiryDate,
+        priceGroupId: $('#q_group', overlay) ? $('#q_group', overlay).value : '',
+        title: 'Precios / oferta Natura Vida',
         items: cleanItems,
         createdAt: Date.now()
       };
@@ -175,7 +185,7 @@ function openQuoteForm() {
         AppState.quotes.push(data);
         close();
         renderQuotes();
-        showToast('Cotización creada en Supabase');
+        showToast('Precios / oferta creada en Supabase');
         openQuotePreview(data.id);
       } catch (err) {
         saveBtn.disabled = false;
@@ -192,7 +202,7 @@ function openQuotePreview(id) {
   const total = q.items.reduce((s, i) => s + (i.price * i.qty), 0);
 
   const html = `
-    <h2>Cotización <span class="x" id="closeSheet">✕</span></h2>
+    <h2>Precios / oferta <span class="x" id="closeSheet">✕</span></h2>
     <div class="banner">Cliente: <b>${escapeHtml(q.clientName)}</b> · Tel: ${escapeHtml(q.clientPhone || '—')}<br>Válida hasta: ${fmtDate(q.expiryDate)} ${isExpired(q) ? ' · <b style="color:var(--red)">VENCIDA</b>' : ''}</div>
     ${q.items.map(i => `
       <div class="histitem">
@@ -215,7 +225,7 @@ function openQuotePreview(id) {
 
 function shareQuoteText(q, total) {
   const lines = [
-    `*Cotización — ${AppState.settings.businessName}*`,
+    `*Precios / oferta — ${AppState.settings.businessName}*`,
     `Cliente: ${q.clientName}`,
     `Válida hasta: ${fmtDate(q.expiryDate)}`,
     '',
@@ -225,7 +235,7 @@ function shareQuoteText(q, total) {
   ];
   const text = lines.join('\n');
   if (navigator.share) {
-    navigator.share({ title: 'Cotización', text }).catch(() => {});
+    navigator.share({ title: 'Precios / oferta', text }).catch(() => {});
   } else {
     navigator.clipboard.writeText(text).then(() => showToast('Copiado al portapapeles'));
   }
@@ -257,7 +267,7 @@ function drawQuoteCanvas(q, total) {
   let y = 170;
   ctx.fillStyle = '#15171A';
   ctx.font = 'bold 25px Arial';
-  ctx.fillText('COTIZACIÓN', 62, y);
+  ctx.fillText('PRECIOS / OFERTA', 62, y);
   ctx.textAlign = 'right';
   ctx.font = '13px Arial';
   ctx.fillStyle = '#6B7280';
@@ -344,7 +354,7 @@ function roundRect(ctx, x, y, w, h, r, fill, stroke) {
 function generateQuoteImage(q, total) {
   const canvas = drawQuoteCanvas(q, total);
   openSheet(`
-    <h2>Imagen de cotización <span class="x" id="closeSheet">✕</span></h2>
+    <h2>Imagen de precios <span class="x" id="closeSheet">✕</span></h2>
     <div class="receiptCanvasWrap" id="quoteCanvasWrap"></div>
     <div class="exportRow">
       <div class="exportBtn" id="downloadQuoteImg"><span class="ic">🖼️</span><span class="lbl">Guardar imagen</span><span class="sub">JPG</span></div>
@@ -364,14 +374,14 @@ function generateQuoteImage(q, total) {
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 2000);
-        showToast('Imagen de cotización descargada.');
+        showToast('Imagen de precios descargada.');
       }, 'image/jpeg', 0.95);
     });
     $('#shareQuoteImg', overlay).addEventListener('click', () => {
       canvas.toBlob(async (blob) => {
         const file = new File([blob], `cotizacion_${todayISO()}.jpg`, { type: 'image/jpeg' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try { await navigator.share({ files: [file], title: 'Cotización Natura Vida', text: `Cotización — ${AppState.settings.businessName}` }); } catch (_) {}
+          try { await navigator.share({ files: [file], title: 'Precios / oferta Natura Vida', text: `Precios / oferta — ${AppState.settings.businessName}` }); } catch (_) {}
         } else {
           showToast('Este navegador no permite compartir imagen directa. Usa Guardar imagen.', 'error');
         }

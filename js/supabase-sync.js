@@ -616,9 +616,9 @@ async function insertCloudSale(sale) {
 const CLOUD_GENERIC_STORES = [
   'priceGroups', 'quotes', 'settings', 'inventoryMovements',
   'commissions', 'commissionRules', 'representatives', 'dispatches',
-  'representativeReports'
+  'representativeReports', 'expenses', 'receivablePayments'
 ];
-const CLOUD_SHARED_STORES = new Set(['settings', 'commissionRules']); // V7.2.4: priceGroups son privados por usuario
+const CLOUD_SHARED_STORES = new Set(['priceGroups', 'settings', 'commissionRules']);
 
 function recordIdForStore(storeName, record) {
   return String(storeName === 'settings' ? (record.key || 'main') : (record.id || ''));
@@ -631,17 +631,12 @@ async function upsertGenericCloudRecord(storeName, record) {
     const recordId = recordIdForStore(storeName, record);
     if (!ownerUserId || !recordId) return { ok: false, message: 'Registro sin usuario o identificador.' };
     const visibility = CLOUD_SHARED_STORES.has(storeName) && isAdmin() ? 'shared' : 'private';
-    const payload = Object.assign({}, record, {
-      ownerUserId: record.ownerUserId || ownerUserId,
-      ownerRole: record.ownerRole || (AppState.session && AppState.session.roleName) || '',
-      visibility
-    });
     const { error } = await sb.from('app_records').upsert({
       store_name: storeName,
       record_id: recordId,
       owner_user_id: ownerUserId,
       visibility,
-      payload
+      payload: record
     }, { onConflict: 'store_name,record_id,owner_user_id' });
     return error ? { ok: false, message: messageFromError(error) } : { ok: true };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
@@ -666,17 +661,8 @@ async function syncGenericCloudRecordsToLocal() {
     .order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   const grouped = new Map(CLOUD_GENERIC_STORES.map(name => [name, []]));
-  const currentOwner = AppState.session && AppState.session.onlineUserId;
   (data || []).forEach(row => {
-    if (!grouped.has(row.store_name) || !row.payload) return;
-    // V7.2.4: los grupos de precio/descuento son privados por usuario.
-    // Evita que los grupos administrativos aparezcan como imposición en el celular del representante.
-    if (row.store_name === 'priceGroups' && String(row.owner_user_id || '') !== String(currentOwner || '')) return;
-    const payload = Object.assign({}, row.payload, {
-      ownerUserId: row.payload.ownerUserId || row.owner_user_id,
-      visibility: row.visibility || row.payload.visibility || 'private'
-    });
-    grouped.get(row.store_name).push(payload);
+    if (grouped.has(row.store_name) && row.payload) grouped.get(row.store_name).push(row.payload);
   });
   for (const [name, rows] of grouped) {
     await DB.clear(name);
@@ -795,6 +781,38 @@ async function markCloudMessageRead(messageId) {
     const sb = await requireClient();
     const { error } = await sb.from('messages').update({ status: 'read' }).eq('id', messageId);
     return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+
+
+async function fetchRepresentativeStockForAdminV725(userId) {
+  try {
+    const sb = await requireClient();
+    const { data: stockRows, error } = await sb.from('representative_stock')
+      .select('product_id,stock,acquisition_cost,updated_at')
+      .eq('representative_user_id', userId);
+    if (error) return { ok: false, message: messageFromError(error) };
+    const productIds = (stockRows || []).map(r => r.product_id).filter(Boolean);
+    let productMap = new Map();
+    if (productIds.length) {
+      const { data: products } = await sb.from('products').select('id,name,category,reseller_price,public_price,market_price,photo_url').in('id', productIds);
+      productMap = new Map((products || []).map(p => [p.id, p]));
+    }
+    const rows = (stockRows || []).map(r => {
+      const p = productMap.get(r.product_id) || {};
+      return { productId: r.product_id, productName: p.name || r.product_id, category: p.category || 'General', stock: Number(r.stock || 0), acquisitionCost: Number(r.acquisition_cost || p.reseller_price || 0), updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(), photo: p.photo_url || '' };
+    });
+    return { ok: true, rows };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchRepresentativeOrdersForAdminV725(userId) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('purchase_orders').select('*').eq('representative_user_id', userId).order('created_at', { ascending: false }).limit(50);
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, orders: (data || []).map(row => Object.assign({}, row.payload || {}, { id: row.id, status: row.status, total: Number(row.total || 0), createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now() })) };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
 }
 
@@ -1022,6 +1040,8 @@ Object.assign(window, {
   adjustRepresentativeStockRemote,
   queueRepresentativeStockDelta,
   updateRepresentativeInventoryRemote,
+  fetchRepresentativeStockForAdminV725,
+  fetchRepresentativeOrdersForAdminV725,
   fetchRepresentativeStockMap,
   upsertCloudClient,
   deleteCloudClient,

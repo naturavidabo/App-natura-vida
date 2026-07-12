@@ -8,5 +8,5 @@ window.NATURA_ONLINE_CONFIG = Object.freeze({
   supabaseAnonKey: 'sb_publishable_J5qL2qkklu1tFHJyljrSbQ_VllDwxKT',
   productImagesBucket: 'product-images',
   mode: 'supabase-only-realtime',
-  version: '7.2.4'
+  version: '7.2.5'
 });

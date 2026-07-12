@@ -15,15 +15,15 @@ function catalogPrimaryPrice(product) {
 }
 
 function catalogSecondaryPrice(product) {
-  return window.isReseller && isReseller() ? resellerLocalWholesalePrice(product) : representativePrice(product);
+  return window.isReseller && isReseller() ? resellerLocalWholesalePrice(product) : marketPrice(product);
 }
 
 function catalogPrimaryLabel() {
-  return window.isReseller && isReseller() ? 'Precio unitario' : 'Precio';
+  return window.isReseller && isReseller() ? 'Precio unitario' : 'Precio unitario';
 }
 
 function catalogSecondaryLabel() {
-  return window.isReseller && isReseller() ? 'Mayorista' : 'Representante';
+  return 'Mayorista';
 }
 
 function cleanPdfText(value, max = 500) {
@@ -61,7 +61,23 @@ async function imageInfoForPdf(src) {
   if (!data) return null;
   return await new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+        const maxEdge = 820;
+        if (Math.max(w, h) <= maxEdge && String(data).length < 550000) return resolve({ data, type: pdfImageType(data), width: w, height: h });
+        const ratio = Math.min(1, maxEdge / Math.max(w, h));
+        const cw = Math.max(1, Math.round(w * ratio));
+        const ch = Math.max(1, Math.round(h * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cw,ch);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img,0,0,cw,ch);
+        resolve({ data: canvas.toDataURL('image/jpeg', 0.82), type: 'JPEG', width: cw, height: ch });
+      } catch (_) { resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 }); }
+    };
     img.onerror = () => resolve({ data, type: pdfImageType(data), width: 1, height: 1 });
     img.src = data;
   });
@@ -283,7 +299,7 @@ async function generateCatalogPdf(options = {}) {
 
   const includePrices = options.includePrices !== false;
   const includeStock = !!options.includeStock;
-  const includeResellerPrice = (window.isReseller && isReseller()) || (!!options.includeResellerPrice && isAdmin());
+  const includeResellerPrice = !!options.includeWholesalePrice;
   const title = cleanPdfText(options.title || `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`, 120);
   const subtitle = cleanPdfText(options.subtitle || AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 160);
   const contact = cleanPdfText(catalogContactLine(options.contact || AppState.settings.catalogContact || ''), 180);
@@ -661,7 +677,7 @@ function openCatalogPdfOptions() {
     <div class="catalogOptionRow">
       <label><input type="checkbox" id="cat_prices" checked> ${isReseller() ? 'Mostrar mis precios' : 'Mostrar precio público'}</label>
       <label><input type="checkbox" id="cat_stock"> Mostrar stock referencial</label>
-      ${isAdmin() ? `<label><input type="checkbox" id="cat_reseller"> Incluir precio revendedor interno</label>` : ''}
+      ${isAdmin() ? `<label><input type="checkbox" id="cat_wholesale" checked> Incluir precio mayorista</label>` : ''}
       ${hasPaymentQr ? `<label><input type="checkbox" id="cat_payment_qr" checked> Incluir mi QR de pago</label>` : ''}
     </div>
     <button class="btn block" id="generateCatalogBtn">Generar catálogo y compartir</button>
@@ -675,7 +691,7 @@ function openCatalogPdfOptions() {
       await saveSettings().catch(() => {});
       const btn = $('#generateCatalogBtn', overlay);
       btn.disabled = true;
-      btn.textContent = 'Generando catálogo…';
+      btn.textContent = 'Generando catálogo… puede tardar por las fotos';
       const result = await generateCatalogPdf({
         title: $('#cat_title', overlay).value.trim(),
         subtitle: $('#cat_subtitle', overlay).value.trim(),
@@ -683,7 +699,7 @@ function openCatalogPdfOptions() {
         note,
         includePrices: $('#cat_prices', overlay).checked,
         includeStock: $('#cat_stock', overlay).checked,
-        includeResellerPrice: isAdmin() && $('#cat_reseller', overlay) && $('#cat_reseller', overlay).checked,
+        includeWholesalePrice: isAdmin() && $('#cat_wholesale', overlay) ? $('#cat_wholesale', overlay).checked : false,
         includePaymentQr: hasPaymentQr && $('#cat_payment_qr', overlay) ? $('#cat_payment_qr', overlay).checked : false
       }).catch(err => {
         console.error(err);

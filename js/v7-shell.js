@@ -106,7 +106,7 @@
   function canAccessV7(tab) {
     if (!requireAuth()) return false;
     if (isAdmin()) return !['compra', 'perfil-cambio'].includes(tab);
-    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'estadisticas', 'ajustes'].includes(tab);
+    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'estadisticas', 'por-cobrar', 'cotizaciones', 'ajustes'].includes(tab);
   }
 
   function navigateToV7(tab) {
@@ -145,6 +145,9 @@
       case 'perfil': renderProfileV7(); break;
       case 'historial': renderHistoryV7(); break;
       case 'estadisticas': window.renderCommercialStatsV7 ? renderCommercialStatsV7() : renderInicioV7(); break;
+      case 'por-cobrar': window.renderReceivablesV725 ? renderReceivablesV725() : renderInicioV7(); break;
+      case 'egresos': isAdmin() && window.renderFinanceV725 ? renderFinanceV725() : renderInicioV7(); break;
+      case 'cotizaciones': window.renderQuotes ? renderQuotes() : renderInicioV7(); break;
       case 'grupos': renderPriceGroups(); break;
       case 'usuarios': renderUsersFoundation(); break;
       case 'resumen': oldRenderResumen ? oldRenderResumen() : renderInicioV7(); break;
@@ -236,6 +239,9 @@
         ${moreItem('v7MoreClients', 'clients', 'Clientes', 'Directorio e historial de compras')}
         ${moreItem('v7MoreHistory', 'chart', 'Ventas y recibos', 'Historial permanente de operaciones')}
         ${moreItem('v7MoreStats', 'chart', 'Estadísticas comerciales', 'Productos, clientes, recargos y rebajas')}
+        ${moreItem('v7MoreReceivables', 'tag', 'Ventas por cobrar', 'Saldos pendientes y pagos parciales')}
+        ${moreItem('v7MoreQuotes', 'tag', 'Precios / cotizaciones', 'Ofertas personalizadas para clientes')}
+        ${isAdmin() ? moreItem('v7MoreFinance', 'chart', 'Egresos e insumos', 'Materia prima, envases y balance básico') : ''}
         ${moreItem('v7MoreCatalog', 'tag', 'Catálogo PDF', 'Descargar o compartir con cualquier aplicación')}
         ${moreItem('v7MoreProfile', 'profile', 'Perfil comercial y QR', 'Datos para recibos y cobros')}
         ${isAdmin() ? moreItem('v7MoreUsers', 'users', 'Representantes', 'Aprobar, bloquear y personalizar descuento') : ''}
@@ -244,12 +250,15 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.2.4')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.2.5')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
     $('#v7MoreHistory').addEventListener('click', () => navigateToV7('historial'));
     $('#v7MoreStats').addEventListener('click', () => navigateToV7('estadisticas'));
+    $('#v7MoreReceivables').addEventListener('click', () => navigateToV7('por-cobrar'));
+    $('#v7MoreQuotes').addEventListener('click', () => navigateToV7('cotizaciones'));
+    if ($('#v7MoreFinance')) $('#v7MoreFinance').addEventListener('click', () => navigateToV7('egresos'));
     $('#v7MoreCatalog').addEventListener('click', () => openCatalogPdfOptions());
     $('#v7MoreProfile').addEventListener('click', () => navigateToV7('perfil'));
     if ($('#v7MoreUsers')) $('#v7MoreUsers').addEventListener('click', () => navigateToV7('usuarios'));

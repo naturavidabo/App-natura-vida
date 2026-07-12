@@ -1,8 +1,8 @@
 {
-  "version": "7.2.4",
-  "build": "2026-07-11-comercial-representantes-notificaciones",
-  "releasedAt": "2026-07-11T20:20:00-04:00",
+  "version": "7.2.5",
+  "build": "2026-07-10-v725-cobros-egresos-representantes",
+  "releasedAt": "2026-07-10T03:00:00Z",
   "channel": "stable",
-  "label": "Natura Vida V7.2.4 - WhatsApp, grupos privados, representantes y notificaciones",
-  "createdAt": "2026-07-11T20:20:00-04:00"
+  "label": "Natura Vida V7.2.5 - Cobros, cotizaciones, egresos y representantes",
+  "createdAt": "2026-07-10T00:00:00-04:00"
 }

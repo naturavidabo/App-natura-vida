@@ -7,6 +7,9 @@ const AppState = {
   clients: [],
   quotes: [],
   messages: [],
+  expenses: [],
+  receivablePayments: [],
+  representatives: [],
   settings: {
     businessName: 'NATURA VIDA',
     businessSlogan: 'Te cuida por dentro y por fuera',
@@ -38,13 +41,16 @@ const AppState = {
 };
 
 async function loadAllState() {
-  const [products, priceGroups, sales, clients, quotes, messages, settingsRows] = await Promise.all([
+  const [products, priceGroups, sales, clients, quotes, messages, expenses, receivablePayments, representatives, settingsRows] = await Promise.all([
     DB.getAll('products'),
     DB.getAll('priceGroups'),
     DB.getAll('sales'),
     DB.getAll('clients'),
     DB.getAll('quotes'),
     DB.getAll('messages').catch(() => []),
+    DB.getAll('expenses').catch(() => []),
+    DB.getAll('receivablePayments').catch(() => []),
+    DB.getAll('representatives').catch(() => []),
     DB.getAll('settings')
   ]);
   AppState.products = products.map(p => window.normalizeLegacyProduct ? normalizeLegacyProduct(p) : p);
@@ -53,6 +59,9 @@ async function loadAllState() {
   AppState.clients = clients;
   AppState.quotes = quotes;
   AppState.messages = messages || [];
+  AppState.expenses = expenses || [];
+  AppState.receivablePayments = receivablePayments || [];
+  AppState.representatives = representatives || [];
 
   const savedSettings = settingsRows.find(r => r.key === 'main');
   if (savedSettings && savedSettings.value) {

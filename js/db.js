@@ -9,7 +9,7 @@ const STORES = [
   'products','priceGroups','sales','clients','quotes','settings','users','roles',
   'permissions','inventoryMovements','commissionRules','commissions','reportsCache',
   'auditLog','representatives','dispatches','representativeReports',
-  'importedPackages','purchaseOrders','messages','syncMeta'
+  'importedPackages','purchaseOrders','messages','expenses','receivablePayments','expenses','receivablePayments','syncMeta'
 ];
 
 const INDEX_FIELDS = {
@@ -30,13 +30,15 @@ const INDEX_FIELDS = {
   importedPackages: { byPackageType: 'packageType', byImportedAt: 'importedAt' },
   purchaseOrders: { byRepresentative: 'representativeId', byCreatedAt: 'createdAt', byStatus: 'status', bySyncStatus: 'syncStatus' },
   messages: { byCreatedAt: 'createdAt', byStatus: 'status', byRecipientRole: 'recipientRole', byRecipientUser: 'recipientUserId', bySenderUser: 'senderUserId', byType: 'type' },
+  expenses: { byDate: 'date', byCategory: 'category', byCreatedAt: 'createdAt' },
+  receivablePayments: { bySale: 'saleId', byClient: 'clientId', byDate: 'date' },
   syncMeta: { byUpdatedAt: 'updatedAt' }
 };
 
 const PERSISTED_CLOUD_STORES = new Set([
   'products','priceGroups','sales','clients','quotes','settings','inventoryMovements',
   'commissionRules','commissions','representatives','dispatches','representativeReports',
-  'importedPackages','purchaseOrders','messages'
+  'importedPackages','purchaseOrders','messages','expenses','receivablePayments'
 ]);
 
 const _memory = new Map(STORES.map(name => [name, new Map()]));
