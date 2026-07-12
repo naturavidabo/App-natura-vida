@@ -2,6 +2,17 @@
 
 let _clientSearch = '';
 
+function clientPriceGroupsV726() {
+  return window.nvPriceGroupsForCurrent ? nvPriceGroupsForCurrent({ manage: false }) : (AppState.priceGroups || []);
+}
+function clientFindGroupV726(id) {
+  return window.nvFindPriceGroup ? nvFindPriceGroup(id) : (AppState.priceGroups || []).find(g => g.id === id);
+}
+function clientGroupOptionsV726(selectedId = '') {
+  const rows = clientPriceGroupsV726();
+  return rows.map(g => `<option value="${g.id}" ${selectedId === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${Number(g.percent || 0)}%)</option>`).join('');
+}
+
 function renderClients() {
   $('#fabAdd').classList.remove('hidden');
   $('#fabAdd').onclick = () => openClientForm(null);
@@ -24,7 +35,7 @@ function renderClients() {
       </div>`;
   } else {
     filtered.slice().reverse().forEach(c => {
-      const group = AppState.priceGroups.find(g => g.id === c.priceGroupId);
+      const group = clientFindGroupV726(c.priceGroupId);
       const purchases = AppState.sales.filter(s => s.clientId === c.id);
       html += `
       <div class="card" data-id="${c.id}">
@@ -126,7 +137,7 @@ function openClientForm(id, prefill) {
       <label>Grupo de precio asignado</label>
       <select id="f_cgroup">
         <option value="">Sin grupo (precio de abastecimiento)</option>
-        ${AppState.priceGroups.map(g => `<option value="${g.id}" ${c && c.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+        ${clientGroupOptionsV726(c && c.priceGroupId ? c.priceGroupId : '')}
       </select>
     </div>` : ''}
 
@@ -375,7 +386,7 @@ function openClientForm(id, prefill = {}) {
       <div class="field"><label>Foto de tienda</label><label class="photoClientPickV723"><input type="file" id="f_cphoto" accept="image/*" capture="environment"><span id="clientPhotoTextV723">${photoData ? 'Cambiar foto' : 'Tocar para sacar/subir foto'}</span><img id="clientPhotoPreviewV723" class="${photoData ? '' : 'hidden'}" src="${photoData}" alt=""></label></div>
     </div>
     <div class="field"><label>Observaciones</label><textarea id="f_cnotes" rows="3" placeholder="Dato útil para atender mejor al cliente">${escapeHtml(current.notes || '')}</textarea></div>
-    ${AppState.settings.priceGroupsEnabled ? `<div class="field"><label>Grupo de precio asignado</label><select id="f_cgroup"><option value="">Sin grupo</option>${AppState.priceGroups.map(g => `<option value="${g.id}" ${current.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></div>` : ''}
+    ${AppState.settings.priceGroupsEnabled ? `<div class="field"><label>Grupo de precio asignado</label><select id="f_cgroup"><option value="">Sin grupo</option>${clientGroupOptionsV726(current.priceGroupId || '')}</select></div>` : ''}
     <div class="actions"><button class="btn outline block" id="cancelForm">Cancelar</button><button class="btn block" id="saveForm">${c ? 'Guardar cambios' : 'Crear cliente'}</button></div>
   `;
   return openSheet(html, (overlay, close) => {

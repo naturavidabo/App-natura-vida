@@ -1,5 +1,9 @@
 /* quotes.js — Cotizaciones: cliente, productos, vigencia con calendario, activas vs vencidas. */
 
+
+function quoteGroupsV726(){ return window.nvPriceGroupsForCurrent ? nvPriceGroupsForCurrent({manage:false}) : (AppState.priceGroups||[]); }
+function quoteGroupOptionsV726(selected){ return quoteGroupsV726().map(g=>`<option value="${g.id}" ${selected===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${Number(g.percent||0)}%)</option>`).join(''); }
+
 function isExpired(quote) {
   if (!quote.expiryDate) return false;
   return new Date(quote.expiryDate + 'T23:59:59') < new Date();
@@ -81,7 +85,7 @@ function openQuoteForm(prefill = {}) {
     </div>
     <div class="field">
       <label>Grupo/beneficio aplicado</label>
-      <select id="q_group"><option value="">Precio base</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${prefGroupId===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select>
+      <select id="q_group"><option value="">Precio base</option>${quoteGroupOptionsV726(prefGroupId)}</select>
     </div>
     <div class="field">
       <label>Fecha límite de validez</label>

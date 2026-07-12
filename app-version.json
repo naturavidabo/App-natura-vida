@@ -1,8 +1,8 @@
 {
-  "version": "7.2.5",
-  "build": "2026-07-10-v725-cobros-egresos-representantes",
-  "releasedAt": "2026-07-10T03:00:00Z",
+  "version": "7.2.6",
+  "build": "2026-07-10-v726-base-modular-xd",
+  "releasedAt": "2026-07-10T20:30:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V7.2.5 - Cobros, cotizaciones, egresos y representantes",
-  "createdAt": "2026-07-10T00:00:00-04:00"
+  "label": "Natura Vida V7.2.6 - Base Modular XD",
+  "createdAt": "2026-07-10T20:30:00-04:00"
 }
