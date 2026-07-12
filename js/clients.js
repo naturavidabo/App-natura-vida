@@ -2,17 +2,6 @@
 
 let _clientSearch = '';
 
-function clientPriceGroupsV726() {
-  return window.nvPriceGroupsForCurrent ? nvPriceGroupsForCurrent({ manage: false }) : (AppState.priceGroups || []);
-}
-function clientFindGroupV726(id) {
-  return window.nvFindPriceGroup ? nvFindPriceGroup(id) : (AppState.priceGroups || []).find(g => g.id === id);
-}
-function clientGroupOptionsV726(selectedId = '') {
-  const rows = clientPriceGroupsV726();
-  return rows.map(g => `<option value="${g.id}" ${selectedId === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${Number(g.percent || 0)}%)</option>`).join('');
-}
-
 function renderClients() {
   $('#fabAdd').classList.remove('hidden');
   $('#fabAdd').onclick = () => openClientForm(null);
@@ -35,7 +24,7 @@ function renderClients() {
       </div>`;
   } else {
     filtered.slice().reverse().forEach(c => {
-      const group = clientFindGroupV726(c.priceGroupId);
+      const group = AppState.priceGroups.find(g => g.id === c.priceGroupId);
       const purchases = AppState.sales.filter(s => s.clientId === c.id);
       html += `
       <div class="card" data-id="${c.id}">
@@ -137,7 +126,7 @@ function openClientForm(id, prefill) {
       <label>Grupo de precio asignado</label>
       <select id="f_cgroup">
         <option value="">Sin grupo (precio de abastecimiento)</option>
-        ${clientGroupOptionsV726(c && c.priceGroupId ? c.priceGroupId : '')}
+        ${AppState.priceGroups.map(g => `<option value="${g.id}" ${c && c.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
       </select>
     </div>` : ''}
 
@@ -212,6 +201,28 @@ async function findOrCreateClientQuick(name, phone) {
 }
 
 
+
+function openClientBenefitV725(clientId) {
+  const c = (AppState.clients || []).find(x => x.id === clientId);
+  if (!c) return showToast('Cliente no encontrado.', 'error');
+  const currentGroup = c.priceGroupId || '';
+  openSheet(`
+    <h2>Beneficio para cliente <span class="x" id="closeSheet">✕</span></h2>
+    <div class="v7CashNotice"><strong>${escapeHtml(c.name || 'Cliente')}</strong><br>Este beneficio se aplicará como grupo sugerido en ventas y cotizaciones de este cliente.</div>
+    <div class="field"><label>Grupo / beneficio</label><select id="benefitGroupV725"><option value="">Sin beneficio especial</option>${(AppState.priceGroups||[]).map(g=>`<option value="${g.id}" ${currentGroup===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></div>
+    <div class="actions"><button class="btn outline block" id="newBenefitGroupV726">+ Crear grupo</button><button class="btn block" id="saveBenefitV725">Guardar beneficio</button></div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#newBenefitGroupV726', overlay).addEventListener('click', () => { close(); openPriceGroupForm(null); });
+    $('#saveBenefitV725', overlay).addEventListener('click', async () => {
+      const btn = $('#saveBenefitV725', overlay); btn.disabled = true; btn.textContent = 'Guardando…';
+      const updated = buildClientRecordV723(c, { priceGroupId: $('#benefitGroupV725', overlay).value });
+      try { await saveClientV723(updated); close(); showToast('Beneficio actualizado.'); if (AppState.currentTab === 'clientes') renderClients(); }
+      catch (err) { btn.disabled = false; btn.textContent = 'Guardar beneficio'; showToast(err.message || 'No se pudo guardar el beneficio.', 'error'); }
+    });
+  });
+}
+
 window.renderClients = renderClients;
 window.openClientForm = openClientForm;
 window.findOrCreateClientQuick = findOrCreateClientQuick;
@@ -246,7 +257,7 @@ function openWhatsAppV723(phone, name = '') {
   try { window.location.href = intent; setTimeout(() => window.open(url, '_blank', 'noopener'), 900); }
   catch (_) { window.open(url, '_blank', 'noopener'); }
 }
-function whatsappButtonLabelV725(){ return '<span class="waLogoV725">☎</span>'; }
+function whatsappButtonLabelV725(){ return '<span class="waLogoV725">🟢</span>'; }
 function customerTypeForSaleV723(saleType) {
   if (['market', 'reseller_wholesale', 'wholesale', 'representative_transfer'].includes(String(saleType || ''))) return 'wholesale';
   if (['unit', 'reseller_unit'].includes(String(saleType || ''))) return 'unit';
@@ -386,7 +397,7 @@ function openClientForm(id, prefill = {}) {
       <div class="field"><label>Foto de tienda</label><label class="photoClientPickV723"><input type="file" id="f_cphoto" accept="image/*" capture="environment"><span id="clientPhotoTextV723">${photoData ? 'Cambiar foto' : 'Tocar para sacar/subir foto'}</span><img id="clientPhotoPreviewV723" class="${photoData ? '' : 'hidden'}" src="${photoData}" alt=""></label></div>
     </div>
     <div class="field"><label>Observaciones</label><textarea id="f_cnotes" rows="3" placeholder="Dato útil para atender mejor al cliente">${escapeHtml(current.notes || '')}</textarea></div>
-    ${AppState.settings.priceGroupsEnabled ? `<div class="field"><label>Grupo de precio asignado</label><select id="f_cgroup"><option value="">Sin grupo</option>${clientGroupOptionsV726(current.priceGroupId || '')}</select></div>` : ''}
+    ${AppState.settings.priceGroupsEnabled ? `<div class="field"><label>Grupo de precio asignado</label><select id="f_cgroup"><option value="">Sin grupo</option>${AppState.priceGroups.map(g => `<option value="${g.id}" ${current.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></div>` : ''}
     <div class="actions"><button class="btn outline block" id="cancelForm">Cancelar</button><button class="btn block" id="saveForm">${c ? 'Guardar cambios' : 'Crear cliente'}</button></div>
   `;
   return openSheet(html, (overlay, close) => {
@@ -513,6 +524,28 @@ function openClientCleanupV723() {
   openSheet(`<h2>Saneamiento de clientes <span class="x" id="closeSheet">✕</span></h2>${groups.length ? groups.map((g,i)=>`<div class="duplicateBoxV723"><strong>Posible duplicado ${i+1}</strong>${g.map(c=>`<p>${escapeHtml(c.name)} · ${escapeHtml(c.phone || 'sin teléfono')}</p>`).join('')}<button class="btn block mergeGroupV723" data-i="${i}">Fusionar este grupo</button></div>`).join('') : `<div class="v7Empty"><span>✓</span><h3>No se detectaron duplicados claros</h3><p>La revisión usa coincidencia de teléfono y nombres muy parecidos.</p></div>`}<button class="btn outline block" id="closeSheet2">Cerrar</button>`, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close); $('#closeSheet2', overlay).addEventListener('click', close);
     $all('.mergeGroupV723', overlay).forEach(b => b.addEventListener('click', async () => { b.disabled = true; b.textContent = 'Fusionando…'; await mergeClientGroupV723(groups[Number(b.dataset.i)]); showToast('Clientes fusionados.'); close(); renderClients(); }));
+  });
+}
+
+
+function openClientBenefitV725(clientId) {
+  const c = (AppState.clients || []).find(x => x.id === clientId);
+  if (!c) return showToast('Cliente no encontrado.', 'error');
+  const currentGroup = c.priceGroupId || '';
+  openSheet(`
+    <h2>Beneficio para cliente <span class="x" id="closeSheet">✕</span></h2>
+    <div class="v7CashNotice"><strong>${escapeHtml(c.name || 'Cliente')}</strong><br>Este beneficio se aplicará como grupo sugerido en ventas y cotizaciones de este cliente.</div>
+    <div class="field"><label>Grupo / beneficio</label><select id="benefitGroupV725"><option value="">Sin beneficio especial</option>${(AppState.priceGroups||[]).map(g=>`<option value="${g.id}" ${currentGroup===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></div>
+    <div class="actions"><button class="btn outline block" id="newBenefitGroupV726">+ Crear grupo</button><button class="btn block" id="saveBenefitV725">Guardar beneficio</button></div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#newBenefitGroupV726', overlay).addEventListener('click', () => { close(); openPriceGroupForm(null); });
+    $('#saveBenefitV725', overlay).addEventListener('click', async () => {
+      const btn = $('#saveBenefitV725', overlay); btn.disabled = true; btn.textContent = 'Guardando…';
+      const updated = buildClientRecordV723(c, { priceGroupId: $('#benefitGroupV725', overlay).value });
+      try { await saveClientV723(updated); close(); showToast('Beneficio actualizado.'); if (AppState.currentTab === 'clientes') renderClients(); }
+      catch (err) { btn.disabled = false; btn.textContent = 'Guardar beneficio'; showToast(err.message || 'No se pudo guardar el beneficio.', 'error'); }
+    });
   });
 }
 

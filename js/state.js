@@ -112,7 +112,7 @@ function grossCost(product) {
 
 function priceForGroup(product, groupId) {
   const base = window.marketPrice ? marketPrice(product) : wholesalePrice(product);
-  const g = window.nvFindPriceGroup ? nvFindPriceGroup(groupId) : AppState.priceGroups.find(pg => pg.id === groupId);
+  const g = AppState.priceGroups.find(pg => pg.id === groupId);
   if (!g) return base;
   if (g.mode === 'discount') return roundBs(Math.max(0, base - (base * (Number(g.percent) || 0) / 100)));
   return roundBs(base + (base * (Number(g.percent) || 0) / 100));

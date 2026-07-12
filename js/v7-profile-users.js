@@ -337,6 +337,44 @@
     });
   }
 
+
+  async function saveRepresentativeConfigV725(userId, data = {}) {
+    const existing = (AppState.representatives || []).find(r => r.id === userId) || { id: userId, createdAt: Date.now() };
+    const row = Object.assign({}, existing, data, { id: userId, updatedAt: Date.now() });
+    await DB.put('representatives', row);
+    const idx = (AppState.representatives || []).findIndex(r => r.id === userId);
+    if (idx >= 0) AppState.representatives[idx] = row; else AppState.representatives.push(row);
+    return row;
+  }
+
+  async function openRepresentativeDetailV725(userId, profiles = []) {
+    const p = profiles.find(x => x.id === userId) || (AppState.allProfiles || []).find(x => x.id === userId) || {};
+    openSheet(`<h2>Representante <span class="x" id="closeSheet">✕</span></h2><div class="v7CashNotice">Cargando stock, pedidos y ventas de ${escapeHtml(p.full_name || p.email || 'representante')}…</div>`, async (overlay, close) => {
+      $('#closeSheet', overlay).addEventListener('click', close);
+      const stockRes = window.fetchRepresentativeStockForAdminV725 ? await fetchRepresentativeStockForAdminV725(userId) : { ok: true, rows: [] };
+      const orderRes = window.fetchRepresentativeOrdersForAdminV725 ? await fetchRepresentativeOrdersForAdminV725(userId) : { ok: true, orders: [] };
+      const rows = stockRes.ok ? (stockRes.rows || []) : [];
+      const orders = orderRes.ok ? (orderRes.orders || []) : [];
+      const sales = (AppState.sales || []).filter(s => s.sellerId === userId || s.ownerUserId === userId || s.representativeId === userId);
+      const productMoves = new Map();
+      sales.forEach(s => (s.items || []).forEach(it => productMoves.set(it.productName || it.name || it.productId, (productMoves.get(it.productName || it.name || it.productId) || 0) + Number(it.qty || 0))));
+      const topProducts = Array.from(productMoves.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+      const stockUnits = rows.reduce((sum,r)=>sum+Number(r.stock||0),0);
+      const stockValue = rows.reduce((sum,r)=>sum+(Number(r.stock||0)*Number(r.acquisitionCost||0)),0);
+      const cfg = (AppState.representatives || []).find(r => r.id === userId) || {};
+      const group = AppState.priceGroups.find(g => g.id === cfg.priceGroupId);
+      $('.sheet', overlay).innerHTML = `
+        <h2>Representante <span class="x" id="closeSheet">✕</span></h2>
+        <section class="v7ProfileCardMain compact"><div class="v7Avatar">${escapeHtml((p.full_name || p.email || 'R').charAt(0).toUpperCase())}</div><div><h2>${escapeHtml(p.full_name || 'Sin nombre')}</h2><span>${escapeHtml(p.email || '')}</span><small>${escapeHtml(p.phone || '')}</small></div></section>
+        <section class="v7MetricGrid compact"><article class="v7MetricCard"><span>Stock</span><strong>${stockUnits}</strong><small>unidades</small></article><article class="v7MetricCard"><span>Valor stock</span><strong>${fmtMoney(stockValue)}</strong></article><article class="v7MetricCard primary"><span>Ventas</span><strong>${sales.length}</strong></article></section>
+        <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Precios</span><h2>Grupo y descuento</h2></div></div><div class="priceLine"><span>Grupo asignado</span><b>${escapeHtml(group ? group.name : 'Sin grupo')}</b></div><div class="priceLine"><span>Descuento personal</span><b>${Number(cfg.discountPercent ?? p.representative_discount_percent ?? 0)}%</b></div></section>
+        <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Stock actual</span><h2>Productos del representante</h2></div></div>${rows.length ? rows.map(r=>`<div class="repStockLineV726"><span><strong>${escapeHtml(r.productName)}</strong><small>${escapeHtml(r.category||'General')}</small></span><b>${Number(r.stock||0)}</b></div>`).join('') : `<div class="v7Empty small"><span>📦</span><p>No se encontró stock registrado para este representante.</p></div>`}</section>
+        <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Actividad</span><h2>Pedidos y ventas</h2></div></div><div class="priceLine"><span>Pedidos recientes</span><b>${orders.length}</b></div><div class="priceLine"><span>Ventas registradas</span><b>${sales.length}</b></div>${topProducts.length?`<div class="v7CashNotice"><strong>Productos más movidos</strong><br>${topProducts.map(x=>`${escapeHtml(x[0])}: ${x[1]} u.`).join('<br>')}</div>`:''}</section>
+      `;
+      $('#closeSheet', overlay).addEventListener('click', close);
+    });
+  }
+
   async function runUserAction(btn, fn, success) { btn.disabled=true; const res=await fn(btn.dataset.id); showToast(res.ok?success:res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); else btn.disabled=false; }
   async function reviewChange(id, decision) { const res=await reviewProfileChangeV7(id,decision,''); showToast(res.ok?(decision==='approved'?'Cambio aprobado.':'Cambio rechazado.'):res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); }
 

@@ -1,5 +1,5 @@
 // NATURA VIDA V7.2 — red obligatoria, actualización controlada e imágenes rápidas.
-const VERSION = 'natura-vida-v7-2-6-base-modular-xd';
+const VERSION = 'natura-vida-v7-2-6-estabilizacion';
 const IMAGE_CACHE = 'nv-images-v1';
 const IMAGE_CACHE_LIMIT = 120;
 

@@ -7,16 +7,6 @@ let _saleSearch = '';
 let _cart = {};       // { productId: qty }
 let _cartPrices = {}; // { productId: manual pricing entry }
 
-function salePriceGroupsV726() {
-  return window.nvPriceGroupsForCurrent ? nvPriceGroupsForCurrent({ manage: false }) : (AppState.priceGroups || []);
-}
-function saleFindGroupV726(id) {
-  return window.nvFindPriceGroup ? nvFindPriceGroup(id) : (AppState.priceGroups || []).find(pg => pg.id === id);
-}
-function saleGroupOptionsV726(selectedId = '') {
-  return salePriceGroupsV726().map(g => `<option value="${g.id}" ${selectedId === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${Number(g.percent || 0)}%)</option>`).join('');
-}
-
 function cartCount() {
   return Object.values(_cart).reduce((s, q) => s + Number(q || 0), 0);
 }
@@ -26,7 +16,7 @@ function sellerMode() {
 }
 
 function applyPercentGroup(base, groupId) {
-  const g = saleFindGroupV726(groupId);
+  const g = AppState.priceGroups.find(pg => pg.id === groupId);
   const cleanBase = roundBs(base);
   if (!g) return cleanBase;
   const pct = Number(g.percent) || 0;
@@ -35,7 +25,7 @@ function applyPercentGroup(base, groupId) {
 }
 
 function saleGroupInfoV7(groupId) {
-  return saleFindGroupV726(groupId) || null;
+  return AppState.priceGroups.find(pg => pg.id === groupId) || null;
 }
 
 function saleManualEntryV7(entry) {
@@ -223,8 +213,7 @@ function renderVender() {
     main.innerHTML = `<div class="empty"><span class="ic">💵</span><h3>No hay productos</h3><p>Actualiza el catálogo o espera a que el administrador cargue productos.</p></div>`;
     return;
   }
-  const saleGroups = salePriceGroupsV726();
-  const groupsEnabled = AppState.settings.priceGroupsEnabled && saleGroups.length > 0;
+  const groupsEnabled = AppState.settings.priceGroupsEnabled && AppState.priceGroups.length > 0;
   main.innerHTML = `
     ${sellerMode() ? `
       <section class="salesCleanHeader"><div><span class="eyebrow">Ventas</span><h1>Registrar venta</h1></div><small>Puedes negociar precios por producto.</small></section>
@@ -232,7 +221,7 @@ function renderVender() {
       <section class="salesCleanHeader"><div><span class="eyebrow">Ventas</span><h1>Registrar venta</h1></div><small>Precio base, grupo o precio manual por producto.</small></section>
       <div class="saletoggle salesChannelToggle cleanSaleToggle"><button data-type="unit" class="${_saleType === 'unit' ? 'active' : ''}">Unitaria</button><button data-type="market" class="${_saleType === 'market' ? 'active' : ''}">Mayorista</button><button data-type="representative_transfer" class="${_saleType === 'representative_transfer' ? 'active' : ''}">Representantes</button></div>`}
     ${((_saleType === 'market' || _saleType === 'representative_transfer') || sellerMode()) && groupsEnabled ? `
-    <div class="field" style="margin-bottom:14px;"><label>Grupo / zona de venta (opcional)</label><select id="s_group"><option value="">Sin grupo / precio base</option>${saleGroupOptionsV726(_saleSelectedGroup || '')}</select><small>Los precios manuales se mantienen como excepción.</small></div>` : ''}
+    <div class="field" style="margin-bottom:14px;"><label>Grupo / zona de venta (opcional)</label><select id="s_group"><option value="">Sin grupo / precio base</option>${AppState.priceGroups.map(g => `<option value="${g.id}" ${_saleSelectedGroup === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}</select><small>Los precios manuales se mantienen como excepción.</small></div>` : ''}
     <div class="toolrow"><input type="text" id="searchInput" placeholder="Buscar producto..." value="${escapeHtml(_saleSearch)}"></div>
     <div class="catalogGrid" id="catalogGrid"></div>
   `;
@@ -395,7 +384,7 @@ function openCheckoutSheet() {
     <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
     ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
-    <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" readonly value="0"></div></div>
+    <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" type="number" inputmode="decimal" step="0.01" value="0"></div></div>
     <div class="field"><label>Motivo si queda saldo pendiente</label><input id="ck_pendingReason" placeholder="Ej.: faltó cambio, transferencia pendiente, saldo por cobrar"></div>
     <div class="v7CashNotice">Si el pago queda incompleto, la venta se registrará y aparecerá en Ventas por cobrar.</div>
     <div class="v7CashNotice">La operación usa un identificador único. Si se corta la conexión, se verificará primero si la venta ya quedó guardada para evitar duplicarla.</div>
@@ -408,7 +397,7 @@ function openCheckoutSheet() {
       $('#ck_clientname', overlay).value = c.name || '';
       $('#ck_clientphone', overlay).value = c.phone || '';
       if (c.priceGroupId && (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) && c.priceGroupId !== _saleSelectedGroup) {
-        const g = saleFindGroupV726(c.priceGroupId);
+        const g = AppState.priceGroups.find(x => x.id === c.priceGroupId);
         if (g && window.confirm(`Este cliente tiene beneficio/grupo: ${g.name}. ¿Aplicarlo a esta venta?`)) {
           _saleSelectedGroup = c.priceGroupId;
           close();
@@ -419,8 +408,17 @@ function openCheckoutSheet() {
     $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
     if ($('#registerWholesaleV725', overlay)) $('#registerWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#ck_clientname', overlay).value.trim(), phone: $('#ck_clientphone', overlay).value.trim(), customerType: 'wholesale' }); });
     $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
-    const updatePaymentV725 = () => { const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0)); $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - paid)); };
-    $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725); updatePaymentV725();
+    const updatePaymentV725 = () => {
+      const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0));
+      $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - Math.min(total, paid)));
+    };
+    const updatePendingV726 = () => {
+      const pending = Math.max(0, Number($('#ck_pendingBalance', overlay).value || 0));
+      $('#ck_amountPaid', overlay).value = roundBs(Math.max(0, total - Math.min(total, pending)));
+    };
+    $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725);
+    $('#ck_pendingBalance', overlay).addEventListener('input', updatePendingV726);
+    updatePaymentV725();
     $('#ck_clientname', overlay).addEventListener('blur', () => {
       const name = $('#ck_clientname', overlay).value.trim();
       const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));

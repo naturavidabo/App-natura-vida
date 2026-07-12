@@ -1,0 +1,12 @@
+NATURA VIDA V7.2.6 — ESTABILIZACIÓN COMERCIAL
+
+Correcciones principales:
+- En venta, el saldo pendiente ahora se puede escribir directamente; también se recalcula desde monto pagado.
+- Cotizaciones: selector real de cliente, productos completos visibles, cantidad con +/- y edición de cotizaciones existentes.
+- Beneficio por cliente: el botón abre y guarda grupo/beneficio correctamente.
+- Egresos/insumos: formulario cambia según tipo de gasto. Alquiler/servicios/transporte/mano de obra solo piden monto y fecha; materia prima/envases/etiquetas conservan cálculo unitario.
+- Representantes: se agregó ficha con stock, pedidos, ventas, grupo y descuento.
+- Sonido: beat más agudo, fuerte y con desbloqueo de audio tras interacción del usuario.
+- Botones de formularios más protegidos contra teclado móvil.
+
+No requiere SQL nuevo.
