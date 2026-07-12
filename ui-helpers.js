@@ -1,200 +1,395 @@
-/* orders.js — Pedidos conectados directamente a Supabase. */
+/* quotes.js — Cotizaciones: cliente, productos, vigencia con calendario, activas vs vencidas. */
 
-let _orderCart = {};
-let _orderNote = '';
-
-function orderCount() {
-  return Object.values(_orderCart).reduce((s, q) => s + q, 0);
+function isExpired(quote) {
+  if (!quote.expiryDate) return false;
+  return new Date(quote.expiryDate + 'T23:59:59') < new Date();
 }
 
-function orderTotalBase() {
-  return Object.entries(_orderCart).reduce((sum, [id, qty]) => {
-    const p = AppState.products.find(x => x.id === id);
-    return sum + (p ? representativePrice(p) * qty : 0);
-  }, 0);
-}
+function renderQuotes() {
+  $('#fabAdd').classList.remove('hidden');
+  $('#fabAdd').onclick = () => openQuoteForm();
+  const main = $('#mainArea');
 
-function renderOrderRequest() {
-  $('#fabAdd').classList.add('hidden');
-  if (!isReseller()) {
-    renderAdminOrdersInbox();
-    return;
+  const active = AppState.quotes.filter(q => !isExpired(q)).sort((a, b) => b.createdAt - a.createdAt);
+  const expired = AppState.quotes.filter(q => isExpired(q)).sort((a, b) => b.createdAt - a.createdAt);
+
+  let html = `<div class="sectiontitle" style="color:var(--pine-mid); margin-top:0;">Cotizaciones activas</div>`;
+
+  if (active.length === 0) {
+    html += `<div class="empty"><span class="ic">📄</span><h3>Sin cotizaciones activas</h3><p>Toca + para crear una nueva.</p></div>`;
+  } else {
+    active.forEach(q => { html += quoteCardHtml(q, false); });
   }
-  const products = AppState.products.filter(p => p.status !== 'archived' && matchesSearch(p.name + ' ' + (p.category || ''), _saleSearch || ''));
-  $('#mainArea').innerHTML = `
-    <section class="dashboardPanel orderHero">
-      <div class="panelHeader"><div><span class="eyebrow">Pedido al administrador</span><h2>Solicitar reposición</h2></div></div>
-      <div class="banner">Arma tu pedido con los productos del catálogo y envíalo directamente al administrador mediante Supabase.</div>
-      <div class="miniStats">
-        <div><span>Ítems</span><strong>${orderCount()}</strong></div>
-        <div><span>Total base</span><strong>${fmtMoney(orderTotalBase())}</strong></div>
-        <div><span>Modo</span><strong>Supabase</strong></div>
+
+  if (expired.length > 0) {
+    html += `<div class="sectiontitle" style="color:var(--gray);">Vencidas (archivo histórico)</div>`;
+    expired.forEach(q => { html += quoteCardHtml(q, true); });
+  }
+
+  main.innerHTML = html;
+  $all('.viewQuoteBtn').forEach(b => b.addEventListener('click', () => openQuotePreview(b.dataset.id)));
+  $all('.delQuoteBtn').forEach(b => b.addEventListener('click', () => confirmDeleteQuote(b.dataset.id)));
+}
+
+function quoteCardHtml(q, expired) {
+  const total = (q.items || []).reduce((s, i) => s + (i.price * i.qty), 0);
+  return `
+  <div class="card" data-id="${q.id}" style="${expired ? 'opacity:0.6;' : ''}">
+    <div style="padding:13px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="name">${escapeHtml(q.clientName)}</div>
+        <span class="pill ${expired ? 'low' : 'ok'}">${expired ? 'vencida' : 'vigente'}</span>
       </div>
-    </section>
-    <div class="field"><label>Nota para el administrador</label><textarea id="orderNote" placeholder="Ej.: Enviar a La Paz por flota / confirmar disponibilidad">${escapeHtml(_orderNote)}</textarea></div>
-    <div class="catalogGrid orderGrid">
-      ${products.map(p => {
-        const qty = _orderCart[p.id] || 0;
-        return `<div class="catalogCard orderProductCard">
-          <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
-          <div class="catalogBody">
-            <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span></div>
-            <div class="catalogName">${escapeHtml(p.name)}</div>
-            <div class="catalogPrice">Base: ${fmtMoney(representativePrice(p))}</div>
-            <div class="catalogStock">Stock central ref.: ${Number(p.adminStock ?? p.stock ?? 0)}</div>
-            <div class="qtyStepper"><button class="orderMinus" data-id="${p.id}">−</button><span class="qtyVal">${qty}</span><button class="orderPlus" data-id="${p.id}">+</button></div>
-          </div>
-        </div>`;
-      }).join('')}
+      <div class="costline">📞 ${escapeHtml(q.clientPhone || 'sin teléfono')}</div>
+      <div class="costline">📅 Válida hasta: ${fmtDate(q.expiryDate)}</div>
+      <div class="priceline"><span class="p2">Total: ${fmtMoney(total)}</span></div>
     </div>
-    <div class="stickyActions orderStickyActions">
-      <button class="btn outline block" id="clearOrderBtn">Limpiar pedido</button>
-      <button class="btn block" id="sendOrderBtn">Enviar pedido</button>
+    <div class="cardactions">
+      <button class="viewQuoteBtn" data-id="${q.id}">👁️ Ver / Compartir</button>
+      <button class="danger delQuoteBtn" data-id="${q.id}">🗑️</button>
+    </div>
+  </div>`;
+}
+
+async function confirmDeleteQuote(id) {
+  if (confirmDialog('¿Eliminar esta cotización?')) {
+    try {
+      await DB.delete('quotes', id);
+      AppState.quotes = AppState.quotes.filter(x => x.id !== id);
+      renderQuotes();
+      showToast('Precios / oferta eliminada de Supabase');
+    } catch (err) { showToast(err.message || 'No se pudo eliminar la cotización.', 'error'); }
+  }
+}
+
+function openQuoteForm(prefill = {}) {
+  const prefClient = prefill.client || null;
+  const prefGroupId = prefill.priceGroupId || (prefClient && prefClient.priceGroupId) || '';
+  let items = [{ productId: '', name: '', price: 0, qty: 1 }];
+
+  const html = `
+    <h2>Precios / cotización <span class="x" id="closeSheet">✕</span></h2>
+
+    <div class="field">
+      <label>Nombre del cliente / posible cliente</label>
+      <input type="text" id="q_clientname" placeholder="Ej: Juan Pérez" list="clientSuggestions2" value="${prefClient ? escapeHtml(prefClient.name || '') : ''}">
+      <datalist id="clientSuggestions2">${AppState.clients.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
+    </div>
+    <div class="field">
+      <label>Número de teléfono</label>
+      <input type="tel" inputmode="tel" id="q_clientphone" placeholder="Ej: 71234567" value="${prefClient ? escapeHtml(prefClient.phone || '') : ''}">
+    </div>
+    <div class="field">
+      <label>Grupo/beneficio aplicado</label>
+      <select id="q_group"><option value="">Precio base</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${prefGroupId===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select>
+    </div>
+    <div class="field">
+      <label>Fecha límite de validez</label>
+      <input type="date" id="q_expiry" value="${todayISO()}">
+    </div>
+
+    <div class="sectiontitle2"><span>Productos cotizados</span></div>
+    <div id="quoteItemsList"></div>
+    <button type="button" class="addInsumoBtn" id="addItemBtn">+ Agregar producto</button>
+
+    <div class="totalbox">
+      <span class="lbl">Total cotizado</span>
+      <span class="val" id="q_total">${fmtMoney(0)}</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn outline block" id="cancelForm">Cancelar</button>
+      <button class="btn block" id="saveForm">Crear cotización</button>
     </div>
   `;
-  $('#orderNote').addEventListener('input', e => { _orderNote = e.target.value; });
-  $all('.orderPlus').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.id, 1)));
-  $all('.orderMinus').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.id, -1)));
-  $('#clearOrderBtn').addEventListener('click', () => { _orderCart = {}; renderOrderRequest(); });
-  $('#sendOrderBtn').addEventListener('click', submitOrderRequest);
+
+  openSheet(html, (overlay, close) => {
+    const listEl = $('#quoteItemsList', overlay);
+
+    function renderItems() {
+      listEl.innerHTML = items.map((it, idx) => `
+        <div class="insumo-row" data-idx="${idx}">
+          <select class="item-product" style="flex:1.6;">
+            <option value="">Seleccionar producto...</option>
+            ${AppState.products.map(p => `<option value="${p.id}" ${it.productId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+          <input type="number" inputmode="numeric" step="1" class="item-price" placeholder="Precio" value="${it.price || ''}" style="flex:0.8;">
+          <input type="number" inputmode="numeric" step="1" class="item-qty" placeholder="Cant." value="${it.qty || 1}" style="flex:0.6;">
+          <button type="button" class="insumo-del" data-idx="${idx}">✕</button>
+        </div>
+      `).join('');
+
+      $all('.item-product', listEl).forEach((sel, idx) => sel.addEventListener('change', () => {
+        const prod = AppState.products.find(p => p.id === sel.value);
+        items[idx].productId = sel.value;
+        items[idx].name = prod ? prod.name : '';
+        if (prod && !items[idx].price) { const gid = $('#q_group', overlay) ? $('#q_group', overlay).value : ''; items[idx].price = gid ? priceForGroup(prod, gid) : unitPrice(prod); }
+        renderItems();
+        updateTotal();
+      }));
+      $all('.item-price', listEl).forEach((inp, idx) => inp.addEventListener('input', () => { items[idx].price = roundBs(parseFloat(inp.value) || 0); updateTotal(); }));
+      $all('.item-qty', listEl).forEach((inp, idx) => inp.addEventListener('input', () => { items[idx].qty = parseInt(inp.value) || 1; updateTotal(); }));
+      $all('.insumo-del', listEl).forEach(btn => btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        if (items.length <= 1) items[0] = { productId: '', name: '', price: 0, qty: 1 };
+        else items.splice(idx, 1);
+        renderItems();
+        updateTotal();
+      }));
+    }
+
+    function updateTotal() {
+      const total = items.reduce((s, i) => s + ((i.price || 0) * (i.qty || 0)), 0);
+      $('#q_total', overlay).textContent = fmtMoney(total);
+    }
+
+    renderItems();
+    updateTotal();
+    $('#q_group', overlay)?.addEventListener('change', () => { items = items.map(it => { const prod = AppState.products.find(p => p.id === it.productId); return prod ? Object.assign({}, it, { price: $('#q_group', overlay).value ? priceForGroup(prod, $('#q_group', overlay).value) : unitPrice(prod) }) : it; }); renderItems(); updateTotal(); });
+
+    $('#addItemBtn', overlay).addEventListener('click', () => {
+      items.push({ productId: '', name: '', price: 0, qty: 1 });
+      renderItems();
+      updateTotal();
+    });
+
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#cancelForm', overlay).addEventListener('click', close);
+
+    $('#saveForm', overlay).addEventListener('click', async () => {
+      const clientName = $('#q_clientname', overlay).value.trim();
+      const clientPhone = $('#q_clientphone', overlay).value.trim();
+      const expiryDate = $('#q_expiry', overlay).value;
+      const cleanItems = items.filter(i => i.name && i.qty > 0);
+
+      if (!clientName) { showToast('⚠️ Ingresa el nombre del cliente', 'error'); return; }
+      if (!expiryDate) { showToast('⚠️ Selecciona una fecha de vigencia', 'error'); return; }
+      if (cleanItems.length === 0) { showToast('⚠️ Agrega al menos un producto', 'error'); return; }
+
+      await findOrCreateClientQuick(clientName, clientPhone);
+
+      const data = {
+        id: uid('quo'),
+        clientId: prefClient ? prefClient.id : '',
+        clientName, clientPhone, expiryDate,
+        priceGroupId: $('#q_group', overlay) ? $('#q_group', overlay).value : '',
+        title: 'Precios / oferta Natura Vida',
+        items: cleanItems,
+        createdAt: Date.now()
+      };
+      const saveBtn = $('#saveForm', overlay);
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Guardando en Supabase…';
+      try {
+        await DB.put('quotes', data);
+        AppState.quotes.push(data);
+        close();
+        renderQuotes();
+        showToast('Precios / oferta creada en Supabase');
+        openQuotePreview(data.id);
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Crear cotización';
+        showToast(err.message || 'No se pudo guardar la cotización.', 'error');
+      }
+    });
+  });
 }
 
+function openQuotePreview(id) {
+  const q = AppState.quotes.find(x => x.id === id);
+  if (!q) return;
+  const total = q.items.reduce((s, i) => s + (i.price * i.qty), 0);
 
-async function renderAdminOrdersInbox() {
-  $('#fabAdd').classList.add('hidden');
-  if (isOnlineConfigured() && window.fetchCloudPurchaseOrders) {
-    const cloud = await fetchCloudPurchaseOrders().catch(err => ({ ok: false, message: err.message }));
-    if (cloud && cloud.ok && Array.isArray(cloud.orders)) {
-      await DB.clear('purchaseOrders').catch(() => {});
-      if (cloud.orders.length) await DB.bulkPut('purchaseOrders', cloud.orders, { silent: true }).catch(() => {});
-    }
-  }
-  const orders = (await DB.getAll('purchaseOrders').catch(() => []))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  $('#mainArea').innerHTML = `
-    <section class="dashboardPanel orderHero">
-      <div class="panelHeader"><div><span class="eyebrow">Pedidos de representantes</span><h2>Recepción de pedidos</h2></div><span class="livePill">Realtime activo</span></div>
-      <div class="banner">Los pedidos enviados por representantes aparecen automáticamente aquí y en el buzón.</div>
-      <div class="miniStats">
-        <div><span>Total pedidos</span><strong>${orders.length}</strong></div>
-        <div><span>Pendientes</span><strong>${orders.filter(o => o.status === 'pending').length}</strong></div>
-        <div><span>Total base</span><strong>${fmtMoney(orders.reduce((s,o)=>s+(Number(o.total)||0),0))}</strong></div>
+  const html = `
+    <h2>Precios / oferta <span class="x" id="closeSheet">✕</span></h2>
+    <div class="banner">Cliente: <b>${escapeHtml(q.clientName)}</b> · Tel: ${escapeHtml(q.clientPhone || '—')}<br>Válida hasta: ${fmtDate(q.expiryDate)} ${isExpired(q) ? ' · <b style="color:var(--red)">VENCIDA</b>' : ''}</div>
+    ${q.items.map(i => `
+      <div class="histitem">
+        <div class="l"><div class="pname">${escapeHtml(i.name)}</div><div class="meta">Cant: ${i.qty} × ${fmtMoney(i.price)}</div></div>
+        <div class="r">${fmtMoney(i.price * i.qty)}</div>
       </div>
-    </section>
-    ${orders.length ? orders.map(o => `
-      <div class="histitem orderAdminCard">
-        <div class="l">
-          <div class="pname">${escapeHtml(o.representativeName || o.representativeUsername || 'Representante')}</div>
-          <div class="meta">${(o.items || []).length} producto(s) · ${fmtDate(o.createdAt || Date.now())} · ${escapeHtml(o.status || 'pending')}</div>
-          ${o.note ? `<div class="catalogDesc">${escapeHtml(o.note)}</div>` : ''}
-          ${(o.items || []).slice(0,4).map(it => `<div class="meta">• ${escapeHtml(it.productName)} × ${it.qty}</div>`).join('')}
-        </div>
-        <div class="r"><strong>${fmtMoney(o.total || 0)}</strong>
-          ${o.status === 'pending' ? `<button class="btn sm approveOrder" data-id="${o.id}">Aprobar</button><button class="btn sm outline rejectOrder" data-id="${o.id}">Rechazar</button>` : ''}
-        </div>
-      </div>
-    `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin pedidos recibidos</h3><p>Cuando un representante envíe pedido, aparecerá aquí.</p></div>`}
+    `).join('')}
+    <div class="totalbox"><span class="lbl">Total</span><span class="val">${fmtMoney(total)}</span></div>
+    <div class="actions">
+      <button class="btn outline block" id="shareQuoteBtn">📤 Compartir</button>
+      <button class="btn block" id="imgQuoteBtn">🖼️ Generar imagen</button>
+    </div>
   `;
-  $all('.approveOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'approved')));
-  $all('.rejectOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'rejected')));
+  openSheet(html, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#shareQuoteBtn', overlay).addEventListener('click', () => shareQuoteText(q, total));
+    $('#imgQuoteBtn', overlay).addEventListener('click', () => generateQuoteImage(q, total));
+  });
 }
 
-async function setOrderStatus(orderId, status) {
-  const order = await DB.get('purchaseOrders', orderId).catch(() => null);
-  if (!order) return;
-  try {
-    if (!navigator.onLine) throw new Error('Sin internet. No se modificó el pedido.');
-    if (!window.updateCloudPurchaseOrderStatus) throw new Error('Supabase no está disponible.');
-    const cloud = await updateCloudPurchaseOrderStatus(orderId, status);
-    if (!cloud || !cloud.ok) throw new Error((cloud && cloud.message) || 'No se pudo modificar el pedido.');
-    order.status = status;
-    order.updatedAt = Date.now();
-    await DB.put('purchaseOrders', order, { silent: true });
-    if (window.sendAdminMessage) {
-      await sendAdminMessage('order_status', `Pedido ${status === 'approved' ? 'aprobado' : 'rechazado'}`, `El administrador marcó un pedido como ${status}.`, { orderId, status }).catch(() => {});
+function shareQuoteText(q, total) {
+  const lines = [
+    `*Precios / oferta — ${AppState.settings.businessName}*`,
+    `Cliente: ${q.clientName}`,
+    `Válida hasta: ${fmtDate(q.expiryDate)}`,
+    '',
+    ...q.items.map(i => `${i.name} x${i.qty} — ${fmtMoney(i.price * i.qty)}`),
+    '',
+    `Total: ${fmtMoney(total)}`
+  ];
+  const text = lines.join('\n');
+  if (navigator.share) {
+    navigator.share({ title: 'Precios / oferta', text }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(text).then(() => showToast('Copiado al portapapeles'));
+  }
+}
+
+
+function drawQuoteCanvas(q, total) {
+  const W = 720;
+  const items = q.items || [];
+  const H = Math.max(720, 330 + (items.length * 46) + 180);
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#F5FAF6';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFFFFF';
+  roundRect(ctx, 34, 34, W - 68, H - 68, 28, true, false);
+
+  ctx.fillStyle = '#01773B';
+  roundRect(ctx, 34, 34, W - 68, 96, 28, true, false);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(AppState.settings.businessName || 'NATURA VIDA', 62, 82);
+  ctx.font = '14px Arial';
+  ctx.fillText(AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 62, 108);
+
+  let y = 170;
+  ctx.fillStyle = '#15171A';
+  ctx.font = 'bold 25px Arial';
+  ctx.fillText('PRECIOS / OFERTA', 62, y);
+  ctx.textAlign = 'right';
+  ctx.font = '13px Arial';
+  ctx.fillStyle = '#6B7280';
+  ctx.fillText('Fecha: ' + new Date(q.createdAt || Date.now()).toLocaleDateString('es-BO'), W - 62, y);
+  ctx.fillText('Válida hasta: ' + fmtDate(q.expiryDate), W - 62, y + 22);
+  ctx.textAlign = 'left';
+
+  y += 50;
+  ctx.fillStyle = '#EEF7F1';
+  roundRect(ctx, 62, y, W - 124, 72, 18, true, false);
+  ctx.fillStyle = '#15171A';
+  ctx.font = 'bold 16px Arial';
+  ctx.fillText('Cliente: ' + (q.clientName || '—'), 86, y + 30);
+  ctx.font = '14px Arial';
+  ctx.fillStyle = '#56635B';
+  ctx.fillText('Teléfono: ' + (q.clientPhone || '—'), 86, y + 52);
+  y += 108;
+
+  ctx.font = 'bold 13px Arial';
+  ctx.fillStyle = '#6B7280';
+  ctx.fillText('PRODUCTO', 62, y);
+  ctx.fillText('CANT.', 410, y);
+  ctx.fillText('PRECIO', 485, y);
+  ctx.textAlign = 'right';
+  ctx.fillText('SUBTOTAL', W - 62, y);
+  ctx.textAlign = 'left';
+  y += 12;
+  ctx.strokeStyle = '#DDE7DF';
+  ctx.beginPath(); ctx.moveTo(62, y); ctx.lineTo(W - 62, y); ctx.stroke();
+  y += 30;
+
+  items.forEach((it, idx) => {
+    if (idx % 2 === 0) {
+      ctx.fillStyle = '#FAFCFB';
+      roundRect(ctx, 56, y - 22, W - 112, 38, 12, true, false);
     }
-    showToast(status === 'approved' ? 'Pedido aprobado.' : 'Pedido rechazado.');
-    renderAdminOrdersInbox();
-  } catch (err) {
-    showToast(err.message || 'No se pudo modificar el pedido.', 'error');
-  }
+    ctx.fillStyle = '#15171A';
+    ctx.font = '14px Arial';
+    ctx.fillText(String(it.name || '').slice(0, 42), 62, y);
+    ctx.fillText(String(it.qty || 0), 418, y);
+    ctx.fillText(fmtMoney(it.price || 0), 485, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtMoney((it.price || 0) * (it.qty || 0)), W - 62, y);
+    ctx.textAlign = 'left';
+    y += 46;
+  });
+
+  y += 18;
+  ctx.strokeStyle = '#DDE7DF';
+  ctx.beginPath(); ctx.moveTo(62, y); ctx.lineTo(W - 62, y); ctx.stroke();
+  y += 48;
+
+  ctx.fillStyle = '#01773B';
+  ctx.font = 'bold 30px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText('TOTAL: ' + fmtMoney(total), W - 62, y);
+  ctx.textAlign = 'left';
+
+  y += 64;
+  ctx.fillStyle = '#FFF8EB';
+  roundRect(ctx, 62, y, W - 124, 74, 18, true, false);
+  ctx.fillStyle = '#8A5A12';
+  ctx.font = 'bold 14px Arial';
+  ctx.fillText('Nota', 86, y + 28);
+  ctx.font = '13px Arial';
+  ctx.fillText('Precios sujetos a disponibilidad. Gracias por preferir productos naturales.', 86, y + 52);
+  return canvas;
 }
 
-function changeOrderQty(productId, delta) {
-  const current = _orderCart[productId] || 0;
-  const next = Math.max(0, current + delta);
-  if (next === 0) delete _orderCart[productId];
-  else _orderCart[productId] = next;
-  renderOrderRequest();
+function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+  if (w < 2 * r) r = w / 2;
+  if (h < 2 * r) r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
 }
 
-function buildOrderPayload() {
-  const items = Object.entries(_orderCart).map(([id, qty]) => {
-    const p = AppState.products.find(x => x.id === id);
-    if (!p) return null;
-    const base = representativePrice(p);
-    return { productId: p.id, productName: p.name, category: p.category || 'General', qty, unitPrice: base, subtotal: base * qty };
-  }).filter(Boolean);
-  const total = items.reduce((s, i) => s + i.subtotal, 0);
-  return {
-    id: uid('order'),
-    representativeId: AppState.session.userId,
-    representativeName: AppState.session.fullName || AppState.session.username,
-    representativeUsername: AppState.session.username,
-    note: _orderNote || '',
-    items,
-    total,
-    status: 'pending',
-    createdAt: Date.now(),
-    syncStatus: 'cloud'
-  };
+function generateQuoteImage(q, total) {
+  const canvas = drawQuoteCanvas(q, total);
+  openSheet(`
+    <h2>Imagen de precios <span class="x" id="closeSheet">✕</span></h2>
+    <div class="receiptCanvasWrap" id="quoteCanvasWrap"></div>
+    <div class="exportRow">
+      <div class="exportBtn" id="downloadQuoteImg"><span class="ic">🖼️</span><span class="lbl">Guardar imagen</span><span class="sub">JPG</span></div>
+      <div class="exportBtn" id="shareQuoteImg"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
+    </div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const wrap = $('#quoteCanvasWrap', overlay);
+    wrap.appendChild(canvas);
+    $('#downloadQuoteImg', overlay).addEventListener('click', () => {
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cotizacion_${(q.clientName || 'cliente').replace(/\s+/g, '_')}_${todayISO()}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        showToast('Imagen de precios descargada.');
+      }, 'image/jpeg', 0.95);
+    });
+    $('#shareQuoteImg', overlay).addEventListener('click', () => {
+      canvas.toBlob(async (blob) => {
+        const file = new File([blob], `cotizacion_${todayISO()}.jpg`, { type: 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try { await navigator.share({ files: [file], title: 'Precios / oferta Natura Vida', text: `Precios / oferta — ${AppState.settings.businessName}` }); } catch (_) {}
+        } else {
+          showToast('Este navegador no permite compartir imagen directa. Usa Guardar imagen.', 'error');
+        }
+      }, 'image/jpeg', 0.95);
+    });
+  });
 }
 
-async function submitOrderRequest() {
-  if (window.canOperate && !canOperate()) {
-    showToast('Tu cuenta aún no fue aprobada. No puedes enviar pedidos.', 'error');
-    return;
-  }
-  if (orderCount() === 0) { showToast('Selecciona productos para el pedido.', 'error'); return; }
-  if (!navigator.onLine) { showToast('Sin internet. El pedido no fue enviado.', 'error'); return; }
-
-  const btn = $('#sendOrderBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Enviando a Supabase…'; }
-  const order = Object.assign(buildOrderPayload(), { syncStatus: 'cloud' });
-  try {
-    await DB.put('purchaseOrders', order);
-    if (window.sendAdminMessage) {
-      await sendAdminMessage(
-        'purchase_order',
-        'Nuevo pedido de representante',
-        `${order.representativeName || 'Representante'} envió un pedido por ${fmtMoney(order.total)} con ${order.items.length} producto(s).`,
-        { orderId: order.id, total: order.total, items: order.items, note: order.note, online: true }
-      ).catch(() => {});
-    }
-    _orderCart = {};
-    _orderNote = '';
-    showToast('Pedido enviado a Supabase.');
-    renderOrderRequest();
-  } catch (err) {
-    showToast(err.message || 'No se pudo enviar el pedido.', 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Enviar pedido'; }
-  }
-}
-
-
-window.renderOrderRequest = renderOrderRequest;
-window.renderAdminOrdersInbox = renderAdminOrdersInbox;
-window.submitOrderRequest = submitOrderRequest;
-window.setOrderStatus = setOrderStatus;
-
-async function fetchAndCachePurchaseOrders() {
-  if (!isOnlineConfigured() || !window.fetchCloudPurchaseOrders) return { ok: true, count: 0 };
-  const cloud = await fetchCloudPurchaseOrders().catch(err => ({ ok: false, message: err.message }));
-  if (cloud && cloud.ok && Array.isArray(cloud.orders)) {
-    await DB.clear('purchaseOrders').catch(() => {});
-    if (cloud.orders.length) await DB.bulkPut('purchaseOrders', cloud.orders, { silent: true }).catch(() => {});
-    return { ok: true, count: cloud.orders.length };
-  }
-  return cloud || { ok: true, count: 0 };
-}
-window.fetchAndCachePurchaseOrders = fetchAndCachePurchaseOrders;
+window.renderQuotes = renderQuotes;
+window.openQuoteForm = openQuoteForm;
+window.openQuotePreview = openQuotePreview;
