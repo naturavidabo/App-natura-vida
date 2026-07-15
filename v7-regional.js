@@ -1,307 +1,345 @@
-/* NATURA VIDA V7 — shell, navegación por rol y panel moderno. */
+/* NATURA VIDA V7 — perfil comercial, QR y gestión de representantes. */
 
 (() => {
-  const oldRenderMas = window.renderMas;
-  const oldRenderResumen = window.renderResumen;
-  const oldRenderReports = window.renderReportsFoundation;
+  let qrImage = null;
+  let qrZoom = 1;
+  let qrOffsetX = 0;
+  let qrOffsetY = 0;
+  let qrDataUrl = '';
+  let removeQrRequested = false;
 
-  const BRAND_MAIN_LOGO = 'icons/icon-192.png';
-
-  function displayNameV7() {
-    const session = AppState.session || {};
-    const raw = String(session.fullName || session.email || session.username || '').trim();
-    if (!raw) return 'Usuario Natura Vida';
-    if (raw.includes('@')) {
-      const local = raw.split('@')[0].replace(/[._-]+/g, ' ').trim();
-      if (local) return local.replace(/\b\w/g, c => c.toUpperCase());
-    }
-    return raw;
+  function pendingOwnChange(field) {
+    return (AppState.profileChangeRequests || []).find(r => r.userId === AppState.session.userId && r.fieldName === field && r.status === 'pending');
   }
 
-  function displayInitialV7() {
-    return String(displayNameV7()).trim().charAt(0).toUpperCase() || 'N';
-  }
-
-  function v7Icon(name) {
-    const paths = {
-      home: '<path d="M4 10.8 12 4l8 6.8V20a1 1 0 0 1-1 1h-4.7v-5.4H9.7V21H5a1 1 0 0 1-1-1z"/>',
-      sell: '<path d="M5 5h10l4 4v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M14 5v5h5M7 14h8M7 17h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-      buy: '<path d="M4 5h2l1.3 9.2a2 2 0 0 0 2 1.8h7.4a2 2 0 0 0 2-1.6L20 8H7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>',
-      inventory: '<path d="M12 2.8 3.7 7v10L12 21.2 20.3 17V7z"/><path d="m4 7 8 4 8-4M12 11v10" fill="none" stroke="#fff" stroke-width="1.4" opacity=".7"/>',
-      orders: '<path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 8h8M8 12h8M8 16h5" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity=".75"/>',
-      more: '<circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/>',
-      bell: '<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 21h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      profile: '<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      users: '<path d="M9 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm6 1a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 15 12z"/><path d="M2.5 21a6.5 6.5 0 0 1 13 0M13 21a5.5 5.5 0 0 1 9 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-      clients: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      tag: '<path d="M3 11V5a2 2 0 0 1 2-2h6l10 10-8 8z"/><circle cx="8" cy="8" r="1.5" fill="#fff"/>',
-      chart: '<path d="M5 20V10M12 20V4M19 20v-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>',
-      settings: '<circle cx="12" cy="12" r="3.5"/><path d="M19 13.5v-3l-2-.7a7 7 0 0 0-.6-1.4l.9-1.9-2.1-2.1-1.9.9a7 7 0 0 0-1.4-.6L10.5 3h-3l-.7 2a7 7 0 0 0-1.4.6l-1.9-.9-2.1 2.1.9 1.9a7 7 0 0 0-.6 1.4l-2 .7v3l2 .7a7 7 0 0 0 .6 1.4l-.9 1.9 2.1 2.1 1.9-.9a7 7 0 0 0 1.4.6l.7 2h3l.7-2a7 7 0 0 0 1.4-.6l1.9.9 2.1-2.1-.9-1.9a7 7 0 0 0 .6-1.4z" fill="none" stroke="currentColor" stroke-width="1.3"/>'
-    };
-    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.more}</svg>`;
-  }
-
-  function updateCloudStatusBadgeV7(status) {
-    const badge = document.getElementById('cloudStatusBadge');
-    if (!badge) return;
-    const state = !navigator.onLine ? 'offline' : ((status && status.state) || 'connecting');
-    const normalized = state === 'error' ? 'reconnecting' : state;
-    const labels = { online: 'En línea', connecting: 'Conectando', reconnecting: 'Reconectando', offline: 'Sin internet' };
-    badge.className = `cloudBadge v7Cloud ${normalized}`;
-    const text = badge.querySelector('b');
-    if (text) text.textContent = labels[normalized] || 'Conectando';
-    badge.title = (status && status.detail) || labels[normalized] || '';
-  }
-
-  function renderTopHeaderV7() {
-    const name = AppState.settings.businessName || 'NATURA VIDA';
-    const headerLogo = AppState.settings.logo || BRAND_MAIN_LOGO;
-    $('#bizName').textContent = name;
-    $('#bizLogo').innerHTML = `<img src="${headerLogo}" alt="${escapeHtml(name)}">`;
-    const subtitle = document.querySelector('header.top .bizsub');
-    if (subtitle) {
-      subtitle.textContent = requireAuth()
-        ? `${displayNameV7()} · ${isAdmin() ? 'Administración' : 'Representante'}`
-        : 'Te cuida por dentro y por fuera';
-    }
-    if (window.installInboxButton) {
-      installInboxButton();
-      refreshInboxBadge({ silent: true }).catch(() => {});
-    }
-    updateCloudStatusBadgeV7(window.CloudConnection);
-  }
-
-  function navItemsV7() {
-    if (isAdmin()) return [
-      ['inicio', 'home', 'Inicio'],
-      ['inventario', 'inventory', 'Inventario'],
-      ['vender', 'sell', 'Ventas'],
-      ['pedidos', 'orders', 'Pedidos'],
-      ['mas', 'more', 'Más']
-    ];
-    return [
-      ['inicio', 'home', 'Inicio'],
-      ['vender', 'sell', 'Ventas'],
-      ['compra', 'buy', 'Compra'],
-      ['inventario', 'inventory', 'Mi stock'],
-      ['mas', 'more', 'Más']
-    ];
-  }
-
-  function renderBottomNavV7() {
-    const nav = $('#bottomNav');
-    if (!nav || !requireAuth()) return;
-    nav.innerHTML = navItemsV7().map(([tab, iconName, label]) => `
-      <button data-tab="${tab}" aria-label="${label}">
-        <span class="ic">${v7Icon(iconName)}</span><span class="tx">${label}</span>
-      </button>`).join('');
-    $all('button', nav).forEach(btn => btn.addEventListener('click', () => navigateToV7(btn.dataset.tab)));
-    highlightActiveV7();
-  }
-
-  function highlightActiveV7() {
-    $all('#bottomNav button').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === AppState.currentTab));
-  }
-
-  function canAccessV7(tab) {
-    if (!requireAuth()) return false;
-    if (isAdmin()) return !['compra', 'perfil-cambio'].includes(tab);
-    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'estadisticas', 'centro-comercial', 'por-cobrar', 'cotizaciones', 'ajustes', 'regional'].includes(tab);
-  }
-
-  function navigateToV7(tab) {
-    // Compatibilidad con botones antiguos: el módulo se llama distinto según el rol.
-    if (tab === 'pedido') tab = isAdmin() ? 'pedidos' : 'compra';
-    if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
-    if (!canAccessV7(tab)) return;
-    if (tab === 'ajustes' && !isAdmin()) tab = 'perfil';
-    if (window.V7_FORM_DIRTY && tab !== AppState.currentTab) {
-      const leave = window.confirm('Hay cambios sin guardar en esta pantalla. ¿Salir y descartarlos?');
-      if (!leave) return;
-    }
-    window.V7_FORM_DIRTY = false;
-    AppState.currentTab = tab;
-    highlightActiveV7();
-    renderV7();
-  }
-
-  function renderV7() {
-    if (!requireAuth()) {
-      renderLoginScreen();
-      return;
-    }
+  function renderProfileV7() {
+    // Cada entrada al módulo comienza con el estado confirmado en Supabase.
+    // Así un recorte o eliminación no guardados no reaparecen al volver más tarde.
+    qrDataUrl = '';
+    removeQrRequested = false;
     $('#fabAdd').classList.add('hidden');
-    $('#fabAdd').onclick = null;
-    const cartBar = $('#cartBar');
-    if (cartBar && !['vender', 'compra'].includes(AppState.currentTab)) cartBar.classList.add('hidden');
-    switch (AppState.currentTab) {
-      case 'inicio': renderInicioV7(); break;
-      case 'inventario': renderInventario(); break;
-      case 'vender': renderVender(); break;
-      case 'compra': renderOrderRequest(); break;
-      case 'pedidos': renderAdminOrdersInbox(); break;
-      case 'clientes': renderClients(); break;
-      case 'inbox': openInboxPanel(); break;
-      case 'perfil': renderProfileV7(); break;
-      case 'historial': renderHistoryV7(); break;
-      case 'estadisticas': window.renderCommercialStatsV7 ? renderCommercialStatsV7() : renderInicioV7(); break;
-      case 'centro-comercial': window.renderCommercialCenterV730 ? renderCommercialCenterV730() : renderInicioV7(); break;
-      case 'por-cobrar': window.renderReceivablesV725 ? renderReceivablesV725() : renderInicioV7(); break;
-      case 'egresos': isAdmin() && window.renderFinanceV725 ? renderFinanceV725() : renderInicioV7(); break;
-      case 'produccion': isAdmin() && window.renderProductionV740 ? renderProductionV740() : renderInicioV7(); break;
-      case 'regional': window.renderRegionalManagementV750 ? renderRegionalManagementV750() : renderInicioV7(); break;
-      case 'cotizaciones': window.renderQuotes ? renderQuotes() : renderInicioV7(); break;
-      case 'grupos': renderPriceGroups(); break;
-      case 'usuarios': renderUsersFoundation(); break;
-      case 'resumen': oldRenderResumen ? oldRenderResumen() : renderInicioV7(); break;
-      case 'reportes-pro': oldRenderReports ? oldRenderReports() : renderInicioV7(); break;
-      case 'ajustes': isAdmin() ? renderSettings() : renderProfileV7(); break;
-      case 'mas': renderMasV7(); break;
-      default: renderInicioV7();
+    const cp = myCommercialProfile();
+    const phoneReq = pendingOwnChange('phone');
+    const cityReq = pendingOwnChange('city');
+    window.V7_FORM_DIRTY = false;
+    $('#mainArea').innerHTML = `
+      <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Puedes actualizar tus datos de perfil y presentación comercial. El correo, rol y estado permanecen protegidos.'}</p></section>
+      <section class="v7ProfileCardMain">
+        <div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
+        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</small></div>
+      </section>
+      <section class="v7Panel">
+        <div class="v7PanelHead"><div><span class="v7Eyebrow">Datos de perfil</span><h2>Identificación</h2></div><span class="v7Lock">Correo protegido</span></div>
+        <div class="v7ReadonlyGrid">
+          <label>Nombre completo<input id="v7FullName" value="${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}" placeholder="Nombre y apellidos"></label>
+          <label>Correo Gmail<input value="${escapeHtml(AppState.session.email || '')}" readonly></label>
+          <label>WhatsApp<input id="v7OfficialPhone" inputmode="tel" value="${escapeHtml(AppState.session.phone || '')}" placeholder="Ej.: 70700000"></label>
+          <label>Ciudad<input id="v7OfficialCity" value="${escapeHtml(AppState.session.city || '')}" placeholder="Ej.: Santa Cruz"></label>
+        </div>
+        <div class="v7CashNotice">Puedes editar tu nombre, WhatsApp y ciudad. El correo, rol y estado no se modifican desde la app.</div>
+        <button class="btn outline block" id="saveOfficialProfileV7">Guardar datos de perfil</button>
+      </section>
+      <section class="v7Panel">
+        <div class="v7PanelHead"><div><span class="v7Eyebrow">Presentación en recibos</span><h2>Mi negocio</h2></div></div>
+        <div class="field"><label>Nombre comercial opcional</label><input id="v7BusinessName" value="${escapeHtml(cp.businessName || '')}" placeholder="Ej.: Natura Vida La Paz"></div>
+        <div class="field"><label>Dirección comercial opcional</label><input id="v7Address" value="${escapeHtml(cp.address || '')}" placeholder="Dirección o zona de atención"></div>
+        <div class="field"><label>Ubicación / referencia</label><input id="v7LocationLabel" value="${escapeHtml(cp.locationLabel || '')}" placeholder="Ej.: Barrio Equipetrol, frente a..."></div>
+        <div class="field-row"><div class="field"><label>Latitud</label><input id="v7Lat" type="number" step="any" value="${cp.latitude == null ? '' : cp.latitude}"></div><div class="field"><label>Longitud</label><input id="v7Lng" type="number" step="any" value="${cp.longitude == null ? '' : cp.longitude}"></div></div>
+        <button class="btn ghost block" id="useLocationV7">Usar mi ubicación actual</button>
+        <div class="field"><label>Mensaje para recibos</label><textarea id="v7ReceiptMessage" rows="3" placeholder="Ej.: Gracias por confiar en productos naturales Natura Vida.">${escapeHtml(cp.receiptMessage || '')}</textarea></div>
+      </section>
+      <section class="v7Panel">
+        <div class="v7PanelHead"><div><span class="v7Eyebrow">Cobro al contado</span><h2>Mi QR</h2></div></div>
+        <div class="v7QrWarning"><strong>Importante:</strong> sube solamente el QR limpio. No uses capturas completas del banco, marcos, saldos, logotipos decorativos ni información adicional.</div>
+        <div class="v7QrCurrent">${cp.qrUrl ? `<img src="${escapeHtml(cp.qrUrl)}" alt="QR actual" loading="lazy" decoding="async"><span>QR actual guardado</span>` : '<div>QR</div><span>Aún no configurado</span>'}</div>
+        <button class="btn outline block" id="openQrCropV7">Cargar y recortar QR</button>
+        <button class="btn ghost block ${cp.qrUrl ? '' : 'hidden'}" id="removeQrV7">Eliminar QR guardado</button>
+      </section>
+      <button class="btn block v7SaveProfile" id="saveCommercialProfileV7">Guardar perfil comercial</button>
+    `;
+
+    $all('#mainArea input:not([readonly]), #mainArea textarea').forEach(el => el.addEventListener('input', () => { window.V7_FORM_DIRTY = true; }));
+    $('#saveOfficialProfileV7').addEventListener('click', async () => {
+      const btn = $('#saveOfficialProfileV7');
+      const fullName = $('#v7FullName').value.trim();
+      const phone = $('#v7OfficialPhone').value.trim();
+      const city = $('#v7OfficialCity').value.trim();
+      if (!fullName || fullName.length < 3) return showToast('Ingresa un nombre completo válido.', 'error');
+      btn.disabled = true; btn.textContent = 'Guardando perfil…';
+      const res = await upsertCloudProfileForUser(AppState.session.userId, AppState.session.email, { fullName, phone, city });
+      btn.disabled = false; btn.textContent = 'Guardar datos de perfil';
+      if (!res.ok) return showToast(res.message || 'No se pudo guardar el perfil.', 'error');
+      AppState.session.fullName = res.profile.full_name || fullName;
+      AppState.session.phone = res.profile.phone || phone;
+      AppState.session.city = res.profile.city || city;
+      window.V7_FORM_DIRTY = false;
+      showToast('Perfil actualizado correctamente.');
+      renderProfileV7();
+    });
+    $('#openQrCropV7').addEventListener('click', () => openQrCropper(qrDataUrl || cp.qrUrl || ''));
+    const currentQrImg = $('.v7QrCurrent img');
+    if (currentQrImg) currentQrImg.addEventListener('error', () => {
+      const box = $('.v7QrCurrent');
+      if (box) box.innerHTML = '<div>!</div><span>No se pudo cargar el QR guardado</span>';
+    }, { once: true });
+    $('#removeQrV7').addEventListener('click', async () => {
+      if (!confirm('¿Eliminar el QR de cobro de tu perfil y de los próximos recibos?')) return;
+      qrDataUrl = '';
+      removeQrRequested = true;
+      window.V7_FORM_DIRTY = true;
+      $('.v7QrCurrent').innerHTML = '<div>QR</div><span>Se eliminará al guardar</span>';
+      $('#removeQrV7').classList.add('hidden');
+      showToast('QR marcado para eliminar. Pulsa Guardar perfil comercial.');
+    });
+    $('#useLocationV7').addEventListener('click', () => {
+      if (!navigator.geolocation) return showToast('El dispositivo no permite obtener ubicación.', 'error');
+      const btn = $('#useLocationV7'); btn.disabled = true; btn.textContent = 'Obteniendo ubicación…';
+      navigator.geolocation.getCurrentPosition(pos => {
+        $('#v7Lat').value = pos.coords.latitude.toFixed(6);
+        $('#v7Lng').value = pos.coords.longitude.toFixed(6);
+        window.V7_FORM_DIRTY = true;
+        btn.disabled = false; btn.textContent = 'Ubicación capturada';
+      }, () => { btn.disabled = false; btn.textContent = 'Usar mi ubicación actual'; showToast('No se pudo obtener la ubicación.', 'error'); }, { enableHighAccuracy: true, timeout: 10000 });
+    });
+    $('#saveCommercialProfileV7').addEventListener('click', async () => {
+      const btn = $('#saveCommercialProfileV7'); btn.disabled = true; btn.textContent = 'Guardando en Supabase…';
+      const profile = {
+        businessName: $('#v7BusinessName').value.trim(),
+        address: $('#v7Address').value.trim(),
+        locationLabel: $('#v7LocationLabel').value.trim(),
+        latitude: $('#v7Lat').value,
+        longitude: $('#v7Lng').value,
+        receiptMessage: $('#v7ReceiptMessage').value.trim(),
+        qrUrl: removeQrRequested ? '' : (qrDataUrl || cp.qrUrl || '')
+      };
+      if (qrDataUrl && qrDataUrl.startsWith('data:image/')) {
+        const upload = await uploadPaymentQrV7(qrDataUrl);
+        if (!upload.ok) {
+          btn.disabled = false; btn.textContent = 'Reintentar guardado';
+          return showToast(upload.message || 'No se pudo subir el QR. No se guardó ningún cambio.', 'error');
+        }
+        profile.qrUrl = upload.url;
+      }
+      const res = await saveCommercialProfileV7(profile);
+      if (!res.ok) {
+        btn.disabled = false; btn.textContent = 'Reintentar guardado';
+        return showToast(res.message, 'error');
+      }
+      const verify = await fetchCommercialProfilesV7();
+      const persisted = myCommercialProfile();
+      const qrVerified = verify.ok && (removeQrRequested ? !persisted.qrUrl : String(persisted.qrUrl || '') === String(profile.qrUrl || ''));
+      if (!qrVerified) {
+        btn.disabled = false; btn.textContent = 'Verificar y reintentar';
+        return showToast('Supabase no confirmó el QR guardado. No cierres esta pantalla y vuelve a intentarlo.', 'error');
+      }
+      if (removeQrRequested && window.deletePaymentQrV7) await deletePaymentQrV7().catch(() => {});
+      btn.disabled = false; btn.textContent = 'Guardar perfil comercial';
+      qrDataUrl = '';
+      removeQrRequested = false;
+      window.V7_FORM_DIRTY = false;
+      showToast('Perfil comercial y QR verificados correctamente.');
+      renderProfileV7();
+    });
+  }
+
+  function openAdminOfficialEditV7() {
+    openSheet(`
+      <h2>Editar datos oficiales <span class="x" id="closeSheet">✕</span></h2>
+      <div class="field"><label>WhatsApp</label><input id="adminPhoneV7" inputmode="tel" value="${escapeHtml(AppState.session.phone || '')}"></div>
+      <div class="field"><label>Ciudad</label><input id="adminCityV7" value="${escapeHtml(AppState.session.city || '')}"></div>
+      <button class="btn block" id="saveAdminOfficialV7">Guardar datos</button>
+    `, (overlay, close) => {
+      $('#closeSheet', overlay).addEventListener('click', close);
+      $('#saveAdminOfficialV7', overlay).addEventListener('click', async () => {
+        const btn = $('#saveAdminOfficialV7', overlay);
+        btn.disabled = true;
+        btn.textContent = 'Guardando…';
+        const res = await upsertCloudProfileForUser(AppState.session.userId, AppState.session.email, {
+          fullName: AppState.session.fullName,
+          phone: $('#adminPhoneV7', overlay).value.trim(),
+          city: $('#adminCityV7', overlay).value.trim()
+        });
+        if (!res.ok) {
+          btn.disabled = false;
+          btn.textContent = 'Reintentar';
+          return showToast(res.message, 'error');
+        }
+        AppState.session.phone = res.profile.phone || '';
+        AppState.session.city = res.profile.city || '';
+        close();
+        showToast('Datos oficiales actualizados.');
+        renderProfileV7();
+      });
+    });
+  }
+
+  function openOfficialChangeRequest() {
+    const pendingPhone = pendingOwnChange('phone');
+    const pendingCity = pendingOwnChange('city');
+    openSheet(`
+      <h2>Solicitar cambio <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7CashNotice">El administrador revisará la solicitud. El dato actual seguirá vigente hasta su aprobación.</div>
+      <div class="field"><label>Nuevo WhatsApp</label><input id="changePhoneV7" inputmode="tel" value="${escapeHtml(pendingPhone ? pendingPhone.newValue : AppState.session.phone || '')}" ${pendingPhone ? 'disabled' : ''}>${pendingPhone ? '<small class="pendingText">Ya existe una solicitud pendiente.</small>' : ''}</div>
+      <div class="field"><label>Nueva ciudad</label><input id="changeCityV7" value="${escapeHtml(pendingCity ? pendingCity.newValue : AppState.session.city || '')}" ${pendingCity ? 'disabled' : ''}>${pendingCity ? '<small class="pendingText">Ya existe una solicitud pendiente.</small>' : ''}</div>
+      <button class="btn block" id="sendOfficialChangeV7">Enviar solicitud</button>
+    `, (overlay, close) => {
+      $('#closeSheet', overlay).addEventListener('click', close);
+      $('#sendOfficialChangeV7', overlay).addEventListener('click', async () => {
+        const tasks = [];
+        const phone = $('#changePhoneV7', overlay).value.trim();
+        const city = $('#changeCityV7', overlay).value.trim();
+        if (!pendingPhone && phone && phone !== AppState.session.phone) tasks.push(requestProfileChangeV7('phone', phone));
+        if (!pendingCity && city && city !== AppState.session.city) tasks.push(requestProfileChangeV7('city', city));
+        if (!tasks.length) return showToast('No hay cambios nuevos para solicitar.', 'error');
+        const results = await Promise.all(tasks); const failed = results.find(r => !r.ok);
+        if (failed) return showToast(failed.message, 'error');
+        close(); showToast('Solicitud enviada al administrador.'); renderProfileV7();
+      });
+    });
+  }
+
+  function drawQrCrop(canvas, image, zoom = 1, offsetX = 0, offsetY = 0, guide = true) {
+    if (!canvas || !image) return;
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+    const baseScale = Math.max(size / image.width, size / image.height);
+    const scale = baseScale * zoom;
+    const w = image.width * scale, h = image.height * scale;
+    ctx.drawImage(image, (size - w) / 2 + offsetX, (size - h) / 2 + offsetY, w, h);
+    if (guide) {
+      ctx.strokeStyle = '#11a060'; ctx.lineWidth = 4; ctx.setLineDash([12, 8]);
+      ctx.strokeRect(5, 5, size - 10, size - 10); ctx.setLineDash([]);
     }
   }
 
-  function roleGreeting() {
-    const hour = new Date().getHours();
-    const greet = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
-    const firstName = String(displayNameV7()).trim().split(/\s+/)[0] || 'bienvenido';
-    return `${greet}, ${firstName}`;
+  function cleanQrCropDataUrl(image, zoom, offsetX, offsetY) {
+    const output = document.createElement('canvas');
+    output.width = 800; output.height = 800;
+    const scaleFactor = output.width / 420;
+    drawQrCrop(output, image, zoom, offsetX * scaleFactor, offsetY * scaleFactor, false);
+    return output.toDataURL('image/jpeg', 0.96);
   }
 
-  function pendingOrderCount() {
-    return (AppState.purchaseOrders || []).filter(o => !['paid', 'cancelled', 'rejected'].includes(o.status)).length;
+  function openQrCropper(existingUrl) {
+    qrImage = null; qrZoom = 1; qrOffsetX = 0; qrOffsetY = 0;
+    openSheet(`
+      <h2>Recortar QR <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7QrWarning"><strong>Solo QR limpio:</strong> centra el código dentro del cuadro. Puedes arrastrar la imagen y acercarla. La línea verde es solo una guía y no aparecerá en el QR guardado.</div>
+      <label class="v7QrUpload"><input id="qrFileV7" type="file" accept="image/*"><span>Seleccionar imagen del QR</span></label>
+      <canvas id="qrCanvasV7" width="420" height="420" aria-label="Área de recorte del QR"></canvas>
+      <div class="field"><label>Acercar / alejar</label><input id="qrZoomV7" type="range" min="1" max="4" step="0.05" value="1"></div>
+      <button class="btn ghost block" id="centerQrV7">Centrar nuevamente</button>
+      <button class="btn block" id="useQrCropV7" disabled>Usar este recorte limpio</button>
+    `, (overlay, close) => {
+      const canvas = $('#qrCanvasV7', overlay);
+      let dragging = false, lastX = 0, lastY = 0;
+      const redraw = () => drawQrCrop(canvas, qrImage, qrZoom, qrOffsetX, qrOffsetY, true);
+      const loadImage = src => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          qrImage = img; qrZoom = 1; qrOffsetX = 0; qrOffsetY = 0;
+          $('#qrZoomV7', overlay).value = 1; redraw(); $('#useQrCropV7', overlay).disabled = false;
+        };
+        img.onerror = () => showToast('No se pudo abrir la imagen del QR.', 'error');
+        img.src = src;
+      };
+      if (existingUrl) loadImage(existingUrl);
+      $('#closeSheet', overlay).addEventListener('click', close);
+      $('#qrFileV7', overlay).addEventListener('change', async e => {
+        const file = e.target.files && e.target.files[0]; if (!file) return;
+        if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type || '')) return showToast('Usa una imagen PNG, JPG o WEBP.', 'error');
+        if (file.size > 8 * 1024 * 1024) return showToast('La imagen supera 8 MB.', 'error');
+        loadImage(await readImageFile(file));
+      });
+      $('#qrZoomV7', overlay).addEventListener('input', e => { qrZoom = Number(e.target.value || 1); redraw(); });
+      $('#centerQrV7', overlay).addEventListener('click', () => { qrOffsetX = 0; qrOffsetY = 0; qrZoom = 1; $('#qrZoomV7', overlay).value = 1; redraw(); });
+      canvas.style.touchAction = 'none';
+      canvas.addEventListener('pointerdown', e => {
+        if (!qrImage) return; dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId);
+      });
+      canvas.addEventListener('pointermove', e => {
+        if (!dragging || !qrImage) return;
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / Math.max(1, rect.width);
+        qrOffsetX += (e.clientX - lastX) * scale; qrOffsetY += (e.clientY - lastY) * scale;
+        lastX = e.clientX; lastY = e.clientY; redraw();
+      });
+      const stopDrag = () => { dragging = false; };
+      canvas.addEventListener('pointerup', stopDrag); canvas.addEventListener('pointercancel', stopDrag);
+      $('#useQrCropV7', overlay).addEventListener('click', () => {
+        if (!qrImage) return;
+        qrDataUrl = cleanQrCropDataUrl(qrImage, qrZoom, qrOffsetX, qrOffsetY);
+        removeQrRequested = false;
+        window.V7_FORM_DIRTY = true;
+        const box = $('.v7QrCurrent');
+        if (box) box.innerHTML = `<img src="${qrDataUrl}" alt="Vista previa del QR recortado"><span>Vista previa lista para guardar</span>`;
+        const removeBtn = $('#removeQrV7');
+        if (removeBtn) removeBtn.classList.remove('hidden');
+        close(); showToast('QR limpio preparado. Guarda el perfil para subirlo y verificarlo.');
+      });
+    });
   }
 
-  async function getOrdersMemoryV7() {
-    const rows = await DB.getAll('purchaseOrders').catch(() => []);
-    AppState.purchaseOrders = rows;
-    return rows;
+  function userStatus(profile) {
+    const s = String(profile.status || 'pendiente').toLowerCase();
+    return s === 'activo' ? ['Activo', 'success'] : s === 'bloqueado' ? ['Bloqueado', 'danger'] : ['Pendiente', 'warning'];
   }
 
-  async function renderInicioV7() {
-    const main = $('#mainArea');
-    const orders = await getOrdersMemoryV7();
-    const sales = AppState.sales || [];
-    const ownSales = isAdmin() ? sales : sales.filter(s => s.sellerId === AppState.session.userId);
-    const todayKey = new Date().toDateString();
-    const todaySales = ownSales.filter(s => new Date(s.date).toDateString() === todayKey);
-    const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
-    const unread = (AppState.messages || []).filter(m => messageVisibleForCurrentUser(m) && m.status !== 'read').length;
-    const ownOrders = isAdmin() ? orders : orders.filter(o => o.representativeId === AppState.session.userId);
-    const ownStock = AppState.products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
-    const name = displayNameV7();
-
-    main.innerHTML = `
-      <section class="v7Hero">
-        <div class="v7HeroGlow"></div>
-        <span class="v7Eyebrow">${isAdmin() ? 'Centro de operaciones' : 'Mi negocio Natura Vida'}</span>
-        <h1>${escapeHtml(roleGreeting())}</h1>
-        <p>${isAdmin()
-          ? 'Controla productos, ventas, pedidos y representantes desde una sola base en tiempo real.'
-          : 'Vende, compra reposición y administra tu inventario con datos oficiales de Supabase.'}</p>
-        <div class="v7Identity"><span>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</span><strong>${escapeHtml(name)}</strong></div>
-      </section>
-
-      <section class="v7MetricGrid">
-        <article class="v7MetricCard primary"><span>Ventas hoy</span><strong>${fmtMoney(todayTotal)}</strong><small>${todaySales.length} operación(es)</small></article>
-        <article class="v7MetricCard"><span>${isAdmin() ? 'Pedidos abiertos' : 'Mis pedidos'}</span><strong>${isAdmin() ? orders.filter(o => !['paid','cancelled','rejected'].includes(o.status)).length : ownOrders.length}</strong><small>actualización automática</small></article>
-        <article class="v7MetricCard"><span>${isAdmin() ? 'Productos activos' : 'Unidades propias'}</span><strong>${isAdmin() ? AppState.products.length : ownStock}</strong><small>${isAdmin() ? 'catálogo central' : 'inventario disponible'}</small></article>
-        <article class="v7MetricCard notification"><span>Notificaciones</span><strong>${unread}</strong><small>pendientes de lectura</small></article>
-      </section>
-
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Actividad reciente</span><h2>Todo bajo control</h2></div><span class="v7LiveChip">Realtime</span></div>
-        ${(AppState.messages || []).filter(messageVisibleForCurrentUser).slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,4).map(m => `
-          <button class="v7ActivityRow" data-open-inbox="1"><span class="v7ActivityIcon">${m.type === 'purchase_order' ? '🛒' : m.type.includes('profile') ? '👤' : '✓'}</span><span><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.body)} · ${fmtDateTime(m.createdAt)}</small></span><b>›</b></button>
-        `).join('') || `<div class="v7EmptyInline"><span>🌿</span><div><strong>Aún no hay actividad</strong><small>Los movimientos aparecerán automáticamente.</small></div></div>`}
-      </section>
-
-      <section class="v7Panel v7NaturePanel">
-        <div><span class="v7Eyebrow">Natura Vida V7</span><h2>Simple por fuera. Potente por dentro.</h2><p>Una sola base oficial, actualización automática y operaciones únicamente al contado.</p></div>
-        <div class="v7NatureMark">NV</div>
-      </section>
-    `;
-    $all('[data-open-inbox]', main).forEach(b => b.addEventListener('click', () => openInboxPanel()));
-  }
-
-  function moreItem(id, iconName, title, subtitle = '', badge = '') {
-    return `<button class="v7MoreItem" id="${id}"><span class="v7MoreIcon">${v7Icon(iconName)}</span><span><strong>${title}</strong>${subtitle ? `<small>${subtitle}</small>` : ''}</span>${badge ? `<em>${badge}</em>` : ''}<b>›</b></button>`;
-  }
-
-  function renderMasV7() {
-    const main = $('#mainArea');
-    const cp = window.myCommercialProfile ? myCommercialProfile() : {};
-    main.innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Configuración y herramientas</span><h1>Más opciones</h1><p>Solo se muestran funciones disponibles para tu rol.</p></section>
-      <section class="v7ProfileSummary">
-        <div class="v7Avatar">${escapeHtml(displayInitialV7())}</div>
-        <div><strong>${escapeHtml(displayNameV7())}</strong><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : (cp.businessName || 'Representante Natura Vida')}</small></div>
-      </section>
-      <section class="v7MoreList">
-        ${moreItem('v7MoreInbox', 'bell', 'Bandeja y actividad', 'Avisos, aprobaciones y comprobantes')}
-        ${moreItem('v7MoreClients', 'clients', 'Clientes', 'Directorio e historial de compras')}
-        ${moreItem('v7MoreHistory', 'chart', 'Ventas y recibos', 'Historial permanente de operaciones')}
-        ${moreItem('v7MoreCenter', 'chart', 'Centro Comercial', 'Alertas, oportunidades y acciones recomendadas')}
-        ${moreItem('v7MoreStats', 'chart', 'Estadísticas comerciales', 'Productos, clientes, recargos y rebajas')}
-        ${moreItem('v7MoreReceivables', 'tag', 'Ventas por cobrar', 'Saldos pendientes y pagos parciales')}
-        ${moreItem('v7MoreQuotes', 'tag', 'Precios / cotizaciones', 'Ofertas personalizadas para clientes')}
-        ${moreItem('v7MoreRegional', 'users', isAdmin() ? 'Gestión regional' : 'Mi región comercial', isAdmin() ? 'Regiones, stock y solicitudes de representantes' : 'Configuración y reposición de stock')}
-        ${isAdmin() ? moreItem('v7MoreProduction', 'inventory', 'Producción e insumos', 'Materia prima, órdenes, lotes y costo real') : ''}
-        ${isAdmin() ? moreItem('v7MoreFinance', 'chart', 'Finanzas y egresos', 'Gastos operativos, ingresos y balance básico') : ''}
-        ${moreItem('v7MoreCatalog', 'tag', 'Catálogo PDF', 'Descargar o compartir con cualquier aplicación')}
-        ${moreItem('v7MoreProfile', 'profile', 'Perfil comercial y QR', 'Datos para recibos y cobros')}
-        ${isAdmin() ? moreItem('v7MoreUsers', 'users', 'Representantes', 'Aprobar, bloquear y personalizar descuento') : ''}
-        ${isAdmin() ? moreItem('v7MoreGroups', 'tag', 'Grupos de precios', 'Reglas generales de precios') : ''}
-        ${isAdmin() ? moreItem('v7MoreSettings', 'settings', 'Configuración del negocio', 'Marca, contacto y parámetros') : ''}
-        ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
-      </section>
-      <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.5.0')} · Supabase · Realtime</div>
-    `;
-    $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
-    $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
-    $('#v7MoreHistory').addEventListener('click', () => navigateToV7('historial'));
-    $('#v7MoreCenter').addEventListener('click', () => navigateToV7('centro-comercial'));
-    $('#v7MoreStats').addEventListener('click', () => navigateToV7('estadisticas'));
-    $('#v7MoreReceivables').addEventListener('click', () => navigateToV7('por-cobrar'));
-    $('#v7MoreQuotes').addEventListener('click', () => navigateToV7('cotizaciones'));
-    if ($('#v7MoreRegional')) $('#v7MoreRegional').addEventListener('click', () => navigateToV7('regional'));
-    if ($('#v7MoreProduction')) $('#v7MoreProduction').addEventListener('click', () => navigateToV7('produccion'));
-    if ($('#v7MoreFinance')) $('#v7MoreFinance').addEventListener('click', () => navigateToV7('egresos'));
-    $('#v7MoreCatalog').addEventListener('click', () => openCatalogPdfOptions());
-    $('#v7MoreProfile').addEventListener('click', () => navigateToV7('perfil'));
-    if ($('#v7MoreUsers')) $('#v7MoreUsers').addEventListener('click', () => navigateToV7('usuarios'));
-    if ($('#v7MoreGroups')) $('#v7MoreGroups').addEventListener('click', () => navigateToV7('grupos'));
-    if ($('#v7MoreSettings')) $('#v7MoreSettings').addEventListener('click', () => navigateToV7('ajustes'));
-    if ($('#v7MoreUpdates')) $('#v7MoreUpdates').addEventListener('click', () => window.openUpdateCenter ? openUpdateCenter() : showToast('El módulo de actualización no está disponible.', 'error'));
-    $('#v7LogoutBtn').addEventListener('click', logoutSession);
-  }
-
-  function renderHistoryV7() {
-    const sales = (AppState.sales || []).filter(s => isAdmin() || s.sellerId === AppState.session.userId).slice().sort((a,b)=>b.date-a.date);
+  async function renderUsersFoundationV7() {
+    $('#fabAdd').classList.add('hidden');
+    const [profilesRes] = await Promise.all([fetchAllProfilesV7(), fetchProfileChangeRequestsV7()]);
+    const profiles = profilesRes && profilesRes.ok ? profilesRes.profiles || [] : AppState.allProfiles || [];
+    const requests = (AppState.profileChangeRequests || []).filter(r => r.status === 'pending');
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Registro permanente</span><h1>Ventas y recibos</h1><p>Todas las operaciones confirmadas al contado.</p></section>
-      <section class="v7HistoryList">
-        ${sales.map(s => `<button class="v7HistoryCard" data-sale-id="${s.id}"><span><strong>${escapeHtml(s.documentNumber || s.receiptNumber || 'Venta')}</strong><small>${escapeHtml(s.clientName || 'Cliente')} · ${fmtDateTime(s.date)}</small></span><span><b>${fmtMoney(s.total)}</b><small>${s.type && s.type.includes('wholesale') ? 'Mayorista' : 'Unitaria'}</small></span></button>`).join('') || `<div class="v7Empty"><span>🧾</span><h3>Sin ventas registradas</h3><p>Los recibos aparecerán aquí al confirmar ventas.</p></div>`}
-      </section>`;
-    $all('[data-sale-id]').forEach(btn => btn.addEventListener('click', () => {
-      const sale = sales.find(s => s.id === btn.dataset.saleId);
-      if (sale) openV7ReceiptPreview(sale, 'sale');
-    }));
+      <section class="v7PageHead"><span class="v7Eyebrow">Equipo comercial</span><h1>Representantes</h1><p>Controla cuentas, grupos de precios, stock, pedidos, ventas y actividad comercial.</p></section>
+      ${requests.length ? `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Solicitudes pendientes</span><h2>Cambios de perfil</h2></div><span class="v7BadgeCount">${requests.length}</span></div>${requests.map(r => { const p=profiles.find(x=>x.id===r.userId)||{}; return `<article class="v7ChangeRequest"><div><strong>${escapeHtml(p.full_name||p.email||'Usuario')}</strong><span>${r.fieldName==='phone'?'WhatsApp':'Ciudad'}: <b>${escapeHtml(r.oldValue||'—')}</b> → <b>${escapeHtml(r.newValue)}</b></span><small>${fmtDateTime(r.createdAt)}</small></div><div><button class="btn sm approveProfileChange" data-id="${r.id}">Aprobar</button><button class="btn sm outline rejectProfileChange" data-id="${r.id}">Rechazar</button></div></article>`; }).join('')}</section>` : ''}
+      <section class="v7UsersGrid">${profiles.map(p => { const [label,tone]=userStatus(p); const self=p.id===AppState.session.userId; const admin=String(p.role||'').toLowerCase()==='administrador'; return `<article class="v7UserCard ${admin?'admin':''}"><div class="v7UserTop"><div class="v7Avatar">${escapeHtml((p.full_name||p.email||'U').charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(p.full_name||'Sin nombre')}</strong><span>${escapeHtml(p.email||'')}</span><small>${escapeHtml(p.city||'')} ${p.phone?'· '+escapeHtml(p.phone):''}</small></div><em class="v7Status ${tone}">${label}</em></div>${admin?`<div class="v7AdminPrincipal">Administrador principal</div>`:`<div class="repQuickMetricsV730"><span><small>Stock</small><b data-rep-stock-units="${p.id}">Cargando…</b></span><span><small>Ventas</small><b data-rep-sales-total="${p.id}">Cargando…</b></span><span><small>Actividad</small><b data-rep-last-activity="${p.id}">Cargando…</b></span></div><div class="v7DiscountEditor"><label>Grupo de precios<select data-rep-group="${p.id}"><option value="">Sin grupo fijo</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${((((AppState.representatives||[]).find(r=>r.id===p.id)||{}).priceGroupId)||p.representative_price_group_id||'')===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></label><label>Descuento personal para compras<input type="number" min="0" max="100" step="0.5" value="${Number(p.representative_discount_percent||0)}" data-discount-input="${p.id}"></label><button class="btn sm outline saveDiscountV7" data-id="${p.id}">Guardar grupo/descuento</button></div><div class="v7UserActions"><button class="btn sm detailRepresentativeV725" data-id="${p.id}">Ver stock y movimientos</button><button class="btn sm ghost editLegalNameV7" data-id="${p.id}">Corregir nombre</button>${String(p.status).toLowerCase()==='pendiente'?`<button class="btn sm approveUserV7" data-id="${p.id}">Aprobar</button>`:''}${String(p.status).toLowerCase()==='activo'?`<button class="btn sm outline blockUserV7" data-id="${p.id}">Bloquear</button>`:''}${String(p.status).toLowerCase()==='bloqueado'?`<button class="btn sm unblockUserV7" data-id="${p.id}">Reactivar</button>`:''}</div>`}</article>`; }).join('')}</section>`;
+
+    $all('.editLegalNameV7').forEach(b=>b.addEventListener('click',()=>openLegalNameCorrection(b.dataset.id, profiles)));
+    $all('.approveUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminApproveUser,'Cuenta aprobada.')));
+    $all('.blockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminBlockUser,'Cuenta bloqueada.')));
+    $all('.unblockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminUnblockUser,'Cuenta reactivada.')));
+    $all('.saveDiscountV7').forEach(b=>b.addEventListener('click',async()=>{const input=$(`[data-discount-input="${b.dataset.id}"]`);const group=$(`[data-rep-group="${b.dataset.id}"]`);const res=await setRepresentativePricingV730(b.dataset.id,group?group.value:'',Number(input.value||0)); if(res.ok){await saveRepresentativeConfigV730(b.dataset.id,{priceGroupId:group?group.value:'',discountPercent:Number(input.value||0)}, profiles.find(p=>p.id===b.dataset.id)).catch(()=>{});} showToast(res.ok?(res.groupPendingMigration?res.message:'Grupo/descuento actualizado.'):res.message,res.ok&&!res.groupPendingMigration?undefined:'error');if(res.ok)renderUsersFoundationV7();}));
+    $all('.detailRepresentativeV725').forEach(b=>b.addEventListener('click',()=>openRepresentativeDetailV730(b.dataset.id, profiles)));
+    $all('.approveProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'approved')));
+    $all('.rejectProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'rejected')));
+    if (window.hydrateRepresentativeCardsV730) hydrateRepresentativeCardsV730(profiles);
   }
 
-  Object.assign(window, {
-    v7Icon,
-    displayNameV7,
-    displayInitialV7,
-    updateCloudStatusBadge: updateCloudStatusBadgeV7,
-    renderTopHeader: renderTopHeaderV7,
-    renderBottomNav: renderBottomNavV7,
-    navigateTo: navigateToV7,
-    render: renderV7,
-    renderInicio: renderInicioV7,
-    renderMas: renderMasV7,
-    renderHistoryV7,
-    canAccessTab: canAccessV7
-  });
+  function openLegalNameCorrection(userId, profiles) {
+    const profile = profiles.find(p => p.id === userId);
+    if (!profile) return;
+    openSheet(`
+      <h2>Corregir nombre oficial <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7CashNotice">Este dato queda protegido. Solo el administrador puede corregirlo cuando el registro inicial está incompleto.</div>
+      <div class="field"><label>Nombre completo</label><input id="legalNameV7" value="${escapeHtml(profile.full_name || '')}" placeholder="Nombre y apellidos"></div>
+      <button class="btn block" id="saveLegalNameV7">Guardar corrección</button>
+    `, (overlay, close) => {
+      $('#closeSheet', overlay).addEventListener('click', close);
+      $('#saveLegalNameV7', overlay).addEventListener('click', async () => {
+        const value = $('#legalNameV7', overlay).value.trim();
+        if (value.length < 3) return showToast('Ingresa un nombre completo válido.', 'error');
+        const btn = $('#saveLegalNameV7', overlay);
+        btn.disabled = true;
+        btn.textContent = 'Guardando…';
+        const res = await adminUpdateProfileNameV7(userId, value);
+        if (!res.ok) {
+          btn.disabled = false;
+          btn.textContent = 'Reintentar';
+          return showToast(res.message, 'error');
+        }
+        close();
+        showToast('Nombre oficial corregido.');
+        renderUsersFoundationV7();
+      });
+    });
+  }
+
+  async function runUserAction(btn, fn, success) { btn.disabled=true; const res=await fn(btn.dataset.id); showToast(res.ok?success:res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); else btn.disabled=false; }
+  async function reviewChange(id, decision) { const res=await reviewProfileChangeV7(id,decision,''); showToast(res.ok?(decision==='approved'?'Cambio aprobado.':'Cambio rechazado.'):res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); }
+
+  Object.assign(window, { renderProfileV7, openOfficialChangeRequest, openQrCropper, renderUsersFoundation: renderUsersFoundationV7 });
 })();

@@ -1,519 +1,720 @@
-/* clients.js — Directorio de clientes: nombre, teléfono, grupo de precio asignado, historial. */
+/* catalog-pdf.js — Catálogo comercial PDF para clientes: diseño limpio, sin imágenes de referencia distorsionadas, con compartir inmediato. */
 
-let _clientSearch = '';
+const NATURA_BRAND_LOGO = 'img/brand/natura-vida-logo.jpeg';
+let _lastCatalogPdf = null;
 
-function renderClients() {
-  $('#fabAdd').classList.remove('hidden');
-  $('#fabAdd').onclick = () => openClientForm(null);
-  const main = $('#mainArea');
+function catalogVisibleProducts() {
+  const resellerCatalog = window.isReseller && isReseller();
+  return (AppState.products || [])
+    .filter(p => p.status !== 'archived')
+    .sort((a, b) => String(a.category || 'General').localeCompare(String(b.category || 'General')) || String(a.name || '').localeCompare(String(b.name || '')));
+}
 
-  let html = `
-    <div class="toolrow">
-      <input type="text" id="searchInput" placeholder="Buscar cliente..." value="${escapeHtml(_clientSearch)}">
-    </div>
-  `;
+function catalogPrimaryPrice(product) {
+  return window.isReseller && isReseller() ? resellerLocalUnitPrice(product) : publicPrice(product);
+}
 
-  const filtered = AppState.clients;
+function catalogSecondaryPrice(product) {
+  return window.isReseller && isReseller() ? resellerLocalWholesalePrice(product) : marketPrice(product);
+}
 
-  if (filtered.length === 0) {
-    html += `
-      <div class="empty">
-        <span class="ic">👤</span>
-        <h3>${AppState.clients.length === 0 ? 'Aún no hay clientes' : 'Sin resultados'}</h3>
-        <p>${AppState.clients.length === 0 ? 'Se agregan automáticamente al registrar una venta, o créalos aquí.' : 'Intenta con otro término.'}</p>
-      </div>`;
-  } else {
-    filtered.slice().reverse().forEach(c => {
-      const group = AppState.priceGroups.find(g => g.id === c.priceGroupId);
-      const purchases = AppState.sales.filter(s => s.clientId === c.id);
-      html += `
-      <div class="card" data-id="${c.id}">
-        <div style="padding:13px;">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div class="name">${escapeHtml(c.name)}</div>
-            ${group ? `<span class="pill" style="background:${group.color}22; color:${group.color};">${escapeHtml(group.name)}</span>` : ''}
-          </div>
-          <div class="costline" style="margin-top:6px;">📞 ${escapeHtml(c.phone || 'sin teléfono')}</div>
-          <div class="costline">🛒 ${purchases.length} compra(s) registrada(s)</div>
-        </div>
-        <div class="cardactions">
-          <button class="histClientBtn" data-id="${c.id}">📜 Historial</button>
-          <button class="editClientBtn" data-id="${c.id}">✏️ Editar</button>
-          <button class="danger delClientBtn" data-id="${c.id}">🗑️</button>
-        </div>
-      </div>`;
+function catalogPrimaryLabel() {
+  return window.isReseller && isReseller() ? 'Precio unitario' : 'Precio unitario';
+}
+
+function catalogSecondaryLabel() {
+  return 'Mayorista';
+}
+
+function cleanPdfText(value, max = 500) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function safePdfMoney(value) {
+  return fmtMoney(Number(value || 0));
+}
+
+function pdfImageType(dataUrl) {
+  return String(dataUrl || '').includes('image/png') ? 'PNG' : 'JPEG';
+}
+
+async function imageForPdf(src) {
+  if (!src || typeof src !== 'string') return null;
+  if (src.startsWith('data:image/')) return src;
+  try {
+    const res = await fetch(src);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
     });
-  }
-
-  main.innerHTML = html;
-  bindStableSearch('#searchInput', '#mainArea .card', value => { _clientSearch = value; });
-  $all('.editClientBtn').forEach(b => b.addEventListener('click', () => openClientForm(b.dataset.id)));
-  $all('.delClientBtn').forEach(b => b.addEventListener('click', () => confirmDeleteClient(b.dataset.id)));
-  $all('.histClientBtn').forEach(b => b.addEventListener('click', () => openClientHistory(b.dataset.id)));
-}
-
-async function confirmDeleteClient(id) {
-  const c = AppState.clients.find(x => x.id === id);
-  if (!c) return;
-  if (confirmDialog(`¿Eliminar a "${c.name}" del directorio? El historial de ventas ya registrado se conserva.`)) {
-    try {
-      await DB.delete('clients', id);
-      AppState.clients = AppState.clients.filter(x => x.id !== id);
-      renderClients();
-      showToast('Cliente eliminado de Supabase');
-    } catch (err) {
-      showToast(err.message || 'No se pudo eliminar el cliente.', 'error');
-    }
+  } catch (_) {
+    return null;
   }
 }
 
-function openClientHistory(id) {
-  const c = AppState.clients.find(x => x.id === id);
-  if (!c) return;
-  const purchases = AppState.sales.filter(s => s.clientId === id).slice().reverse();
-
-  const html = `
-    <h2>Historial — ${escapeHtml(c.name)} <span class="x" id="closeSheet">✕</span></h2>
-    ${purchases.length === 0 ? `<div class="empty"><span class="ic">📭</span><h3>Sin compras aún</h3></div>` :
-      purchases.map(s => {
-        const items = s.items || [];
-        const summary = items.length === 1 ? items[0].productName : `${items[0] ? items[0].productName : ''} +${items.length - 1} más`;
-        const totalUnits = items.reduce((sum, it) => sum + it.qty, 0);
-        return `
-        <div class="histitem histitem-clickable" data-saleid="${s.id}">
-          <div class="l">
-            <div class="pname">${escapeHtml(summary)}</div>
-            <div class="meta">${s.type === 'unit' ? 'Unitaria' : 'Por mayor'} · ${totalUnits} unid. · ${fmtDate(s.date)}</div>
-          </div>
-          <div class="r">
-            <div>+${fmtMoney(s.total)}</div>
-            <div class="histReceiptHint">🧾 Ver recibo</div>
-          </div>
-        </div>
-      `;
-      }).join('')}
-    <div class="actions">
-      <button class="btn block" id="closeSheet2">Cerrar</button>
-    </div>
-  `;
-  openSheet(html, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#closeSheet2', overlay).addEventListener('click', close);
-    $all('.histitem-clickable', overlay).forEach(el => el.addEventListener('click', () => {
-      const sale = AppState.sales.find(s => s.id === el.dataset.saleid);
-      if (sale) openReceiptPreview(sale);
-    }));
+async function imageInfoForPdf(src) {
+  const data = await imageForPdf(src);
+  if (!data) return null;
+  return await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+        const maxEdge = 820;
+        if (Math.max(w, h) <= maxEdge && String(data).length < 550000) return resolve({ data, type: pdfImageType(data), width: w, height: h });
+        const ratio = Math.min(1, maxEdge / Math.max(w, h));
+        const cw = Math.max(1, Math.round(w * ratio));
+        const ch = Math.max(1, Math.round(h * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cw,ch);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img,0,0,cw,ch);
+        resolve({ data: canvas.toDataURL('image/jpeg', 0.82), type: 'JPEG', width: cw, height: ch });
+      } catch (_) { resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 }); }
+    };
+    img.onerror = () => resolve({ data, type: pdfImageType(data), width: 1, height: 1 });
+    img.src = data;
   });
 }
 
-function openClientForm(id, prefill) {
-  const c = id ? AppState.clients.find(x => x.id === id) : null;
-  const pf = prefill || {};
-
-  const html = `
-    <h2>${c ? 'Editar cliente' : 'Nuevo cliente'} <span class="x" id="closeSheet">✕</span></h2>
-
-    <div class="field">
-      <label>Nombre completo</label>
-      <input type="text" id="f_cname" placeholder="Ej: María Pérez" value="${c ? escapeHtml(c.name) : escapeHtml(pf.name || '')}">
-    </div>
-    <div class="field">
-      <label>Número de teléfono</label>
-      <input type="tel" inputmode="tel" id="f_cphone" placeholder="Ej: 71234567" value="${c ? escapeHtml(c.phone || '') : escapeHtml(pf.phone || '')}">
-    </div>
-    ${AppState.settings.priceGroupsEnabled ? `
-    <div class="field">
-      <label>Grupo de precio asignado</label>
-      <select id="f_cgroup">
-        <option value="">Sin grupo (precio de abastecimiento)</option>
-        ${AppState.priceGroups.map(g => `<option value="${g.id}" ${c && c.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
-      </select>
-    </div>` : ''}
-
-    <div class="actions">
-      <button class="btn outline block" id="cancelForm">Cancelar</button>
-      <button class="btn block" id="saveForm">${c ? 'Guardar cambios' : 'Crear cliente'}</button>
-    </div>
-  `;
-
-  return openSheet(html, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#cancelForm', overlay).addEventListener('click', close);
-
-    $('#saveForm', overlay).addEventListener('click', async () => {
-      const name = $('#f_cname', overlay).value.trim();
-      if (!name) { showToast('⚠️ Ponle un nombre al cliente', 'error'); return; }
-      const groupSel = $('#f_cgroup', overlay);
-
-      const data = {
-        id: c ? c.id : uid('cli'),
-        name,
-        phone: $('#f_cphone', overlay).value.trim(),
-        priceGroupId: groupSel ? groupSel.value : '',
-        createdAt: c ? c.createdAt : Date.now()
-      };
-      const saveBtn = $('#saveForm', overlay);
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Guardando en Supabase…';
+async function imageCoverInfoForPdf(src, outputWidth = 900, outputHeight = 900) {
+  const data = await imageForPdf(src);
+  if (!data) return null;
+  return await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
       try {
-        await DB.put('clients', data);
-        if (c) {
-          const idx = AppState.clients.findIndex(x => x.id === c.id);
-          AppState.clients[idx] = data;
-        } else {
-          AppState.clients.push(data);
-        }
-        AppState.lastClient = data;
-        close();
-        if (window._afterClientSaved) { window._afterClientSaved(data); window._afterClientSaved = null; }
-        if (AppState.currentTab === 'clientes') renderClients();
-        showToast(c ? 'Cliente actualizado en Supabase' : 'Cliente creado en Supabase');
-      } catch (err) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = c ? 'Guardar cambios' : 'Crear cliente';
-        showToast(err.message || 'No se pudo guardar el cliente.', 'error');
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, outputWidth, outputHeight);
+        const scale = Math.max(outputWidth / (img.naturalWidth || 1), outputHeight / (img.naturalHeight || 1));
+        const width = (img.naturalWidth || 1) * scale;
+        const height = (img.naturalHeight || 1) * scale;
+        ctx.drawImage(img, (outputWidth - width) / 2, (outputHeight - height) / 2, width, height);
+        const cover = canvas.toDataURL('image/jpeg', 0.88);
+        resolve({ data: cover, type: 'JPEG', width: outputWidth, height: outputHeight });
+      } catch (_) { resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 }); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = data;
+  });
+}
+
+function drawImageContain(doc, img, x, y, w, h) {
+  if (!img || !img.data) return false;
+  const ratio = Math.min(w / img.width, h / img.height);
+  const nw = img.width * ratio;
+  const nh = img.height * ratio;
+  const nx = x + (w - nw) / 2;
+  const ny = y + (h - nh) / 2;
+  try {
+    doc.addImage(img.data, img.type, nx, ny, nw, nh, undefined, 'FAST');
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function addWrappedText(doc, text, x, y, maxWidth, lineHeight, maxLines) {
+  const lines = doc.splitTextToSize(cleanPdfText(text), maxWidth);
+  const visible = lines.slice(0, maxLines);
+  visible.forEach((line, idx) => doc.text(line, x, y + (idx * lineHeight)));
+  return y + (visible.length * lineHeight);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2500);
+}
+
+function drawLeaf(doc, cx, cy, w, h, rotate = 0, color = [132, 178, 65]) {
+  doc.setFillColor(...color);
+  doc.ellipse(cx, cy, w, h, 'F');
+  doc.setDrawColor(255, 255, 255);
+  doc.setLineWidth(1.1);
+  doc.line(cx - w * .55, cy + h * .08, cx + w * .48, cy - h * .12);
+}
+
+function drawLeafCluster(doc, x, y, scale = 1) {
+  drawLeaf(doc, x, y, 16 * scale, 8 * scale, 0, [132, 178, 65]);
+  drawLeaf(doc, x + 30 * scale, y + 12 * scale, 14 * scale, 7 * scale, 0, [1, 119, 59]);
+  drawLeaf(doc, x - 22 * scale, y + 20 * scale, 12 * scale, 6 * scale, 0, [168, 199, 36]);
+  drawLeaf(doc, x + 4 * scale, y + 33 * scale, 11 * scale, 5 * scale, 0, [216, 142, 30]);
+}
+
+function drawBenefitIcon(doc, kind, x, y, color) {
+  doc.setDrawColor(...color);
+  doc.setFillColor(...color);
+  doc.setLineWidth(2);
+  doc.circle(x, y, 16, 'S');
+  if (kind === 'energy') {
+    doc.line(x - 2, y - 11, x - 9, y + 1);
+    doc.line(x - 9, y + 1, x + 2, y + 1);
+    doc.line(x + 2, y + 1, x - 2, y + 12);
+    doc.line(x - 2, y + 12, x + 10, y - 3);
+  } else if (kind === 'skin') {
+    doc.circle(x - 5, y - 3, 1.4, 'F');
+    doc.circle(x + 5, y - 3, 1.4, 'F');
+    doc.line(x - 7, y + 6, x - 2, y + 9);
+    doc.line(x - 2, y + 9, x + 4, y + 9);
+    doc.line(x + 4, y + 9, x + 8, y + 6);
+  } else if (kind === 'hair') {
+    doc.line(x - 10, y - 6, x - 4, y - 13);
+    doc.line(x - 4, y - 13, x + 6, y - 11);
+    doc.line(x + 6, y - 11, x + 10, y - 4);
+    doc.line(x - 8, y + 2, x - 8, y + 13);
+    doc.line(x, y + 2, x, y + 13);
+    doc.line(x + 8, y + 2, x + 8, y + 13);
+  } else {
+    doc.line(x - 8, y - 1, x + 8, y - 1);
+    doc.line(x - 6, y + 5, x - 1, y + 9);
+    doc.line(x - 1, y + 9, x + 6, y + 5);
+  }
+}
+
+function drawProductPlaceholder(doc, x, y, w, h) {
+  doc.setFillColor(239, 247, 241);
+  doc.roundedRect(x, y, w, h, 16, 16, 'F');
+  doc.setDrawColor(215, 231, 220);
+  doc.roundedRect(x + 7, y + 7, w - 14, h - 14, 14, 14, 'S');
+  doc.setFillColor(1, 119, 59);
+  doc.circle(x + w / 2, y + h / 2 - 6, 19, 'F');
+  drawLeaf(doc, x + w / 2 + 20, y + h / 2 - 27, 17, 8, 0, [132, 178, 65]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  doc.text('NV', x + w / 2, y + h / 2 - 1, { align: 'center' });
+}
+
+function catalogFileName() {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  return `NVB_CATALOGO_PRODUCTOS_${stamp}.pdf`;
+}
+
+function catalogContactLine(custom = '') {
+  if (custom) return custom;
+  const pieces = [];
+  if (AppState.settings.contactName) pieces.push(AppState.settings.contactName);
+  if (AppState.settings.contactPhone) pieces.push(`WhatsApp ${AppState.settings.contactPhone}`);
+  if (AppState.settings.contactCity) pieces.push(AppState.settings.contactCity);
+  if (pieces.length) return pieces.join(' · ');
+  if (AppState.session && AppState.session.fullName) return AppState.session.fullName;
+  return '';
+}
+
+async function shareCatalogPdf() {
+  if (!_lastCatalogPdf || !_lastCatalogPdf.blob) {
+    showToast('Primero genera el catálogo PDF.', 'error');
+    return;
+  }
+  if (window.shareBlobFile) {
+    return shareBlobFile(
+      _lastCatalogPdf.blob,
+      _lastCatalogPdf.filename,
+      'application/pdf',
+      'Catálogo Natura Vida',
+      'Catálogo de productos Natura Vida - Te cuida por dentro y por fuera.'
+    );
+  }
+  const file = new File([_lastCatalogPdf.blob], _lastCatalogPdf.filename, { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Catálogo Natura Vida', text: 'Catálogo de productos Natura Vida.' });
+      return;
+    } catch (_) {}
+  }
+  downloadBlob(_lastCatalogPdf.blob, _lastCatalogPdf.filename);
+  showToast('Catálogo descargado. Puedes adjuntarlo en cualquier aplicación compatible.');
+}
+
+function openCatalogResultSheet(blob, filename, productsCount) {
+  if (_lastCatalogPdf && _lastCatalogPdf.url) URL.revokeObjectURL(_lastCatalogPdf.url);
+  const url = URL.createObjectURL(blob);
+  _lastCatalogPdf = { blob, filename, url, createdAt: Date.now() };
+
+  openSheet(`
+    <h2>Catálogo listo <span class="x" id="closeSheet">✕</span></h2>
+    <div class="catalogReadyHero">
+      <div class="readyMark">✓</div>
+      <div>
+        <div class="eyebrow">PDF generado correctamente</div>
+        <h3>${escapeHtml(filename)}</h3>
+        <p>${productsCount} producto(s) incluidos. Comparte de inmediato o revisa la vista previa.</p>
+      </div>
+    </div>
+    <div class="pdfPreviewBox">
+      <iframe src="${url}" class="pdfPreviewFrame" title="Vista previa del catálogo"></iframe>
+    </div>
+    <div class="exportRow catalogExportRow">
+      <div class="exportBtn primaryShare" id="btnShareCatalog"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
+      <div class="exportBtn" id="btnOpenCatalog"><span class="ic">◫</span><span class="lbl">Previsualizar</span><span class="sub">Abrir PDF</span></div>
+    </div>
+    <div class="exportRow catalogExportRow">
+      <div class="exportBtn" id="btnDownloadCatalog"><span class="ic">↓</span><span class="lbl">Descargar</span><span class="sub">Guardar archivo</span></div>
+      <div class="exportBtn" id="btnCloseCatalog"><span class="ic">×</span><span class="lbl">Cerrar</span><span class="sub">Volver</span></div>
+    </div>
+    <div class="banner catalogShareNote">En celular, <strong>Compartir</strong> abre el menú nativo para elegir WhatsApp, Gmail, Telegram, Drive u otra aplicación. Si el navegador no lo permite, descargará el PDF.</div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#btnCloseCatalog', overlay).addEventListener('click', close);
+    $('#btnShareCatalog', overlay).addEventListener('click', shareCatalogPdf);
+    $('#btnOpenCatalog', overlay).addEventListener('click', () => window.open(url, '_blank'));
+    $('#btnDownloadCatalog', overlay).addEventListener('click', () => {
+      downloadBlob(blob, filename);
+      showToast('Catálogo descargado.');
+    });
+    if (navigator.canShare) {
+      const shareFile = new File([blob], filename, { type: 'application/pdf' });
+      if (navigator.canShare({ files: [shareFile] })) setTimeout(() => shareCatalogPdf(), 500);
+    }
+  });
+}
+
+async function generateCatalogPdf(options = {}) {
+  const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPDFCtor) {
+    showToast('No se pudo cargar el generador PDF. Revisa conexión o librería jsPDF.', 'error');
+    return null;
+  }
+  const products = catalogVisibleProducts();
+  if (!products.length) {
+    showToast('No hay productos activos para generar catálogo.', 'error');
+    return null;
+  }
+
+  const includePrices = options.includePrices !== false;
+  const includeStock = !!options.includeStock;
+  const includeResellerPrice = !!options.includeWholesalePrice;
+  const title = cleanPdfText(options.title || `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`, 120);
+  const subtitle = cleanPdfText(options.subtitle || AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 160);
+  const contact = cleanPdfText(catalogContactLine(options.contact || AppState.settings.catalogContact || ''), 180);
+  const note = cleanPdfText(options.note || 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.', 240);
+
+  const doc = new jsPDFCtor({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 34;
+  const green = [1, 119, 59];
+  const deepGreen = [0, 91, 48];
+  const leaf = [132, 178, 65];
+  const orange = [216, 142, 30];
+  const dark = [22, 34, 27];
+  const gray = [96, 108, 100];
+  const soft = [246, 251, 247];
+  const line = [222, 234, 225];
+  const brandLogo = await imageInfoForPdf(NATURA_BRAND_LOGO) || await imageInfoForPdf(AppState.settings.logo);
+  const commercialProfile = window.myCommercialProfile ? myCommercialProfile() : null;
+  const includePaymentQr = options.includePaymentQr !== false;
+  const paymentQr = includePaymentQr && commercialProfile && commercialProfile.qrUrl
+    ? await imageInfoForPdf(commercialProfile.qrUrl)
+    : null;
+
+  function footer(pageNo) {
+    doc.setDrawColor(...line);
+    doc.line(margin, pageH - 34, pageW - margin, pageH - 34);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.2);
+    doc.setTextColor(95, 108, 100);
+    doc.text(`${AppState.settings.businessName || 'NATURA VIDA'} · ${subtitle}`, margin, pageH - 18, { maxWidth: pageW - 145 });
+    doc.text(String(pageNo), pageW - margin, pageH - 18, { align: 'right' });
+  }
+
+  function header(label) {
+    doc.setFillColor(...soft);
+    doc.roundedRect(margin, 22, pageW - margin * 2, 54, 18, 18, 'F');
+    if (brandLogo) drawImageContain(doc, brandLogo, margin + 12, 29, 62, 38);
+    doc.setTextColor(...deepGreen);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(AppState.settings.businessName || 'NATURA VIDA', margin + 84, 44);
+    doc.setTextColor(...orange);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.8);
+    doc.text(label, margin + 84, 60);
+    drawLeafCluster(doc, pageW - margin - 55, 40, .82);
+  }
+
+  function chip(x, y, w, txt, fillRgb, textRgb) {
+    doc.setFillColor(...fillRgb);
+    doc.roundedRect(x, y, w, 24, 12, 12, 'F');
+    doc.setTextColor(...textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.3);
+    doc.text(txt, x + w / 2, y + 15.5, { align: 'center' });
+  }
+
+  // Portada sin usar fotos de referencia pegadas/distorsionadas.
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, pageW, pageH, 'F');
+  doc.setFillColor(245, 251, 246);
+  doc.rect(0, 0, pageW, pageH, 'F');
+  doc.setFillColor(233, 245, 237);
+  doc.circle(pageW + 18, 92, 132, 'F');
+  doc.setFillColor(255, 247, 232);
+  doc.circle(-24, pageH - 70, 142, 'F');
+  for (let i = 0; i < 20; i++) {
+    const lx = 55 + (i % 5) * 100 + (i % 2) * 20;
+    const ly = 35 + Math.floor(i / 5) * 38;
+    drawLeaf(doc, lx, ly, 11 + (i % 3), 5.5, 0, i % 2 ? leaf : green);
+  }
+  drawLeafCluster(doc, pageW - 90, 78, 1.4);
+  drawLeafCluster(doc, 80, pageH - 120, 1.25);
+
+  doc.setFillColor(255,255,255);
+  doc.setDrawColor(...line);
+  doc.roundedRect(46, 80, pageW - 92, 422, 30, 30, 'FD');
+  if (brandLogo) drawImageContain(doc, brandLogo, pageW / 2 - 138, 112, 276, 136);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...deepGreen);
+  doc.setFontSize(30);
+  doc.text('Catálogo de Productos', pageW / 2, 305, { align: 'center' });
+  doc.setFont('helvetica', 'italic');
+  doc.setTextColor(...orange);
+  doc.setFontSize(15);
+  doc.text(subtitle, pageW / 2, 333, { align: 'center', maxWidth: pageW - 120 });
+
+  chip(pageW / 2 - 190, 370, 120, '100% natural', [235, 245, 238], [0, 91, 48]);
+  chip(pageW / 2 - 60, 370, 100, 'Orgánico', [1, 119, 59], [255, 255, 255]);
+  chip(pageW / 2 + 50, 370, 140, `${products.length} producto(s)`, [255, 248, 235], [216, 142, 30]);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11.2);
+  doc.setTextColor(...gray);
+  addWrappedText(doc, note, 86, 425, pageW - 172, 14, 4);
+
+  const featY = 540;
+  const featW = (pageW - 116) / 3;
+  const feats = [
+    ['Belleza natural', 'Ideal para cuidado de piel, cabello y rutina diaria.'],
+    ['Bienestar integral', 'Productos pensados para acompañar tu salud y energía.'],
+    ['Presentaciones', 'Consulta tamaños, disponibilidad y recomendaciones.']
+  ];
+  feats.forEach((f, idx) => {
+    const fx = 50 + idx * (featW + 8);
+    doc.setFillColor(255,255,255);
+    doc.setDrawColor(...line);
+    doc.roundedRect(fx, featY, featW, 88, 18, 18, 'FD');
+    drawBenefitIcon(doc, idx === 0 ? 'skin' : idx === 1 ? 'energy' : 'hair', fx + 30, featY + 32, idx === 2 ? orange : green);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10.4);
+    doc.setTextColor(...deepGreen);
+    doc.text(f[0], fx + 56, featY + 26, { maxWidth: featW - 64 });
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...gray);
+    addWrappedText(doc, f[1], fx + 56, featY + 43, featW - 68, 10.5, 4);
+  });
+
+  if (contact) {
+    doc.setFillColor(255, 248, 235);
+    doc.setDrawColor(244, 217, 169);
+    doc.roundedRect(78, 668, pageW - 156, 50, 16, 16, 'FD');
+    doc.setTextColor(...orange);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11.4);
+    doc.text('Pedidos y consultas', pageW / 2, 688, { align: 'center' });
+    doc.setTextColor(...dark);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10.5);
+    doc.text(contact, pageW / 2, 706, { align: 'center', maxWidth: pageW - 190 });
+  }
+  footer(1);
+
+  // Página de beneficios para cliente.
+  doc.addPage();
+  let pageNo = 2;
+  header('Beneficios y usos');
+  doc.setTextColor(...deepGreen);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(24);
+  doc.text('Beneficios que se sienten', margin, 116);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(...gray);
+  addWrappedText(doc, 'Elige productos naturales para complementar tu bienestar, tu belleza y tu cuidado diario. Consulta siempre disponibilidad y recomendaciones de uso.', margin, 140, pageW - margin * 2, 14, 3);
+
+  const benefitRows = [
+    ['Fuente de energía natural', 'Acompaña tu rutina diaria con alternativas naturales y prácticas.', 'energy'],
+    ['Piel hidratada y radiante', 'Ayuda al cuidado de la piel y aporta sensación de suavidad.', 'skin'],
+    ['Cabello fuerte y brillante', 'Ideal para rutinas de cuidado personal y bienestar capilar.', 'hair'],
+    ['Apoyo al bienestar digestivo', 'Productos seleccionados para acompañar hábitos saludables.', 'digest']
+  ];
+  let by = 204;
+  benefitRows.forEach((b, idx) => {
+    doc.setFillColor(idx % 2 ? 255 : 248, idx % 2 ? 255 : 252, idx % 2 ? 255 : 249);
+    doc.setDrawColor(...line);
+    doc.roundedRect(margin, by, pageW - margin * 2, 74, 18, 18, 'FD');
+    drawBenefitIcon(doc, b[2], margin + 36, by + 37, idx === 3 ? orange : green);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(13);
+    doc.setTextColor(...deepGreen);
+    doc.text(b[0], margin + 72, by + 27);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...gray);
+    addWrappedText(doc, b[1], margin + 72, by + 45, pageW - margin * 2 - 92, 11.5, 2);
+    by += 88;
+  });
+
+  doc.setFillColor(...green);
+  doc.roundedRect(margin, 592, pageW - margin * 2, 54, 20, 20, 'F');
+  doc.setTextColor(255,255,255);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(14);
+  doc.text('Sin químicos · Sin conservantes · Natural', pageW / 2, 624, { align: 'center' });
+  doc.setFont('helvetica','italic');
+  doc.setFontSize(12);
+  doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 690, { align: 'center' });
+  footer(pageNo++);
+
+  // Productos: V7.1.2 prioriza imagen completa y texto más compacto.
+  doc.addPage();
+  header('Productos disponibles');
+  const cardW = pageW - margin * 2;
+  const cardH = 292;
+  let y = 94;
+
+  for (let i = 0; i < products.length; i++) {
+    const p = products[i];
+    if (y + cardH > pageH - 48) {
+      footer(pageNo++);
+      doc.addPage();
+      header('Productos disponibles');
+      y = 94;
+    }
+
+    doc.setFillColor(255,255,255);
+    doc.setDrawColor(...line);
+    doc.roundedRect(margin, y, cardW, cardH, 24, 24, 'FD');
+    doc.setFillColor(...green);
+    doc.roundedRect(margin, y, 8, cardH, 6, 6, 'F');
+
+    const imgX = margin + 22, imgY = y + 22, imgW = 190, imgH = 190;
+    doc.setFillColor(248, 252, 249);
+    doc.roundedRect(imgX, imgY, imgW, imgH, 22, 22, 'F');
+    const img = await imageCoverInfoForPdf(p.photo, 900, 900);
+    if (!drawImageContain(doc, img, imgX + 10, imgY + 10, imgW - 20, imgH - 20)) drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
+    if (Number(p.stock || 0) <= 0) {
+      doc.setFillColor(230,91,91);
+      doc.roundedRect(imgX + imgW - 82, imgY + 12, 68, 22, 11, 11, 'F');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(8.2);
+      doc.setTextColor(255,255,255);
+      doc.text('AGOTADO', imgX + imgW - 48, imgY + 27, { align: 'center' });
+    }
+
+    let tx = imgX + imgW + 24;
+    let ty = y + 34;
+    doc.setFillColor(232,244,236);
+    doc.roundedRect(tx, ty - 13, Math.min(160, cardW - 250), 22, 11, 11, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8.2);
+    doc.setTextColor(...green);
+    doc.text(cleanPdfText(p.category || 'General', 32).toUpperCase(), tx + 10, ty + 2);
+
+    ty += 32;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(18);
+    doc.setTextColor(...dark);
+    ty = addWrappedText(doc, cleanPdfText(p.name, 95), tx, ty, cardW - 250, 21, 2) + 8;
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10.2);
+    doc.setTextColor(...gray);
+    ty = addWrappedText(doc, cleanPdfText(p.description || 'Producto natural disponible. Consulta presentación y recomendaciones de uso.', 260), tx, ty, cardW - 250, 13, 4);
+
+    const priceY = y + cardH - 72;
+    if (includePrices) {
+      doc.setFillColor(...green);
+      doc.roundedRect(tx, priceY, cardW - 250, 42, 20, 20, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(15.5);
+      doc.text(`${catalogPrimaryLabel()}: ${safePdfMoney(catalogPrimaryPrice(p))}`, tx + (cardW - 250) / 2, priceY + 27, { align: 'center' });
+      if (includeResellerPrice) {
+        doc.setTextColor(...orange);
+        doc.setFont('helvetica','bold');
+        doc.setFontSize(8.2);
+        doc.text(`${catalogSecondaryLabel()}: ${safePdfMoney(catalogSecondaryPrice(p))}`, tx, y + cardH - 14);
+      }
+    } else {
+      doc.setFillColor(255,248,235);
+      doc.roundedRect(tx, priceY, cardW - 250, 42, 20, 20, 'F');
+      doc.setTextColor(...orange);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(13);
+      doc.text('Consultar precio', tx + (cardW - 250) / 2, priceY + 27, { align: 'center' });
+    }
+    if (includeStock) {
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...gray);
+      doc.text(`Stock ref.: ${Number(p.stock || 0)}`, margin + cardW - 24, y + cardH - 14, { align: 'right' });
+    }
+    y += cardH + 16;
+  }
+  footer(pageNo++);
+
+  // Cierre.
+  doc.addPage();
+  header('Contacto');
+  doc.setFillColor(255,255,255);
+  doc.setDrawColor(...line);
+  doc.roundedRect(margin, 112, pageW - margin * 2, 380, 28, 28, 'FD');
+  drawLeafCluster(doc, margin + 55, 155, 1.5);
+  drawLeafCluster(doc, pageW - margin - 70, 392, 1.4);
+  if (brandLogo) drawImageContain(doc, brandLogo, pageW / 2 - 126, 150, 252, 112);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(22);
+  doc.setTextColor(...deepGreen);
+  doc.text('Gracias por elegir Natura Vida', pageW / 2, 302, { align: 'center' });
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(11.2);
+  doc.setTextColor(...gray);
+  addWrappedText(doc, 'Nuestros productos están pensados para acompañar tu bienestar y tu rutina de belleza de manera natural. Escríbenos para conocer disponibilidad, presentaciones y recomendaciones.', margin + 42, 332, pageW - margin * 2 - 84, 14, 5);
+  chip(pageW / 2 - 156, 420, 92, 'Orgánico', [235,245,238], [0,91,48]);
+  chip(pageW / 2 - 54, 420, 108, 'Sin químicos', [235,245,238], [0,91,48]);
+  chip(pageW / 2 + 64, 420, 92, 'Bienestar', [235,245,238], [0,91,48]);
+  if (paymentQr) {
+    const qrX = margin + 28;
+    const qrY = 510;
+    const qrSize = 112;
+    doc.setFillColor(255,255,255);
+    doc.setDrawColor(...line);
+    doc.roundedRect(qrX, qrY, qrSize, qrSize, 16, 16, 'FD');
+    drawImageContain(doc, paymentQr, qrX + 9, qrY + 9, qrSize - 18, qrSize - 18);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8.8);
+    doc.setTextColor(...green);
+    doc.text('QR para pagos', qrX + qrSize / 2, qrY + qrSize + 18, { align: 'center' });
+    if (contact) {
+      const cx = qrX + qrSize + 18;
+      const cw = pageW - margin - 28 - cx;
+      doc.setFillColor(255,248,235);
+      doc.setDrawColor(244,217,169);
+      doc.roundedRect(cx, qrY + 8, cw, 94, 18, 18, 'FD');
+      doc.setTextColor(...orange);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(11.2);
+      doc.text('Pide información o realiza tu pedido', cx + cw / 2, qrY + 36, { align: 'center', maxWidth: cw - 26 });
+      doc.setTextColor(...dark);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(10.2);
+      doc.text(contact, cx + cw / 2, qrY + 68, { align: 'center', maxWidth: cw - 30 });
+    }
+  } else if (contact) {
+    doc.setFillColor(255,248,235);
+    doc.setDrawColor(244,217,169);
+    doc.roundedRect(margin + 28, 532, pageW - margin * 2 - 56, 58, 18, 18, 'FD');
+    doc.setTextColor(...orange);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11.5);
+    doc.text('Pide más información o realiza tu pedido', pageW / 2, 554, { align: 'center' });
+    doc.setTextColor(...dark);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10.8);
+    doc.text(contact, pageW / 2, 574, { align: 'center', maxWidth: pageW - 170 });
+  }
+  doc.setFont('helvetica','italic');
+  doc.setFontSize(14);
+  doc.setTextColor(...green);
+  doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 656, { align: 'center' });
+  footer(pageNo);
+
+  const filename = catalogFileName();
+  const blob = doc.output('blob');
+  openCatalogResultSheet(blob, filename, products.length);
+  showToast('Catálogo PDF generado correctamente.');
+  return { blob, filename };
+}
+
+function openCatalogPdfOptions() {
+  const defaultTitle = `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`;
+  const currentCommercialProfile = window.myCommercialProfile ? myCommercialProfile() : null;
+  const hasPaymentQr = !!(currentCommercialProfile && currentCommercialProfile.qrUrl);
+  openSheet(`
+    <h2>Catálogo PDF para compartir <span class="x" id="closeSheet">✕</span></h2>
+    <div class="catalogOptionsHero">
+      <img src="${NATURA_BRAND_LOGO}" alt="Natura Vida">
+      <div>
+        <div class="eyebrow">Pieza comercial</div>
+        <h3>Genera un catálogo listo para enviar</h3>
+        <p>${isReseller() ? 'PDF con los productos de tu inventario propio y tus precios unitario y mayorista.' : 'PDF con identidad Natura Vida, beneficios, fotos reales, descripción y precios comerciales.'} Sin textos internos ni explicación técnica.</p>
+      </div>
+    </div>
+    <div class="field">
+      <label>Título del catálogo</label>
+      <input type="text" id="cat_title" value="${escapeHtml(defaultTitle)}">
+    </div>
+    <div class="field">
+      <label>Subtítulo / mensaje comercial</label>
+      <input type="text" id="cat_subtitle" value="${escapeHtml(AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera')}">
+    </div>
+    <div class="field">
+      <label>Contacto para pedidos</label>
+      <input type="text" id="cat_contact" placeholder="Ej.: WhatsApp 7xxxxxxx" value="${escapeHtml(catalogContactLine(AppState.settings.catalogContact || ''))}">
+    </div>
+    <div class="field">
+      <label>Mensaje breve de presentación</label>
+      <textarea id="cat_note" placeholder="Ej.: Productos naturales para bienestar y belleza.">${escapeHtml(AppState.settings.catalogNote || 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.')}</textarea>
+    </div>
+    <div class="catalogOptionRow">
+      <label><input type="checkbox" id="cat_prices" checked> ${isReseller() ? 'Mostrar mis precios' : 'Mostrar precio público'}</label>
+      <label><input type="checkbox" id="cat_stock"> Mostrar stock referencial</label>
+      ${isAdmin() ? `<label><input type="checkbox" id="cat_wholesale" checked> Incluir precio mayorista</label>` : ''}
+      ${hasPaymentQr ? `<label><input type="checkbox" id="cat_payment_qr" checked> Incluir mi QR de pago</label>` : ''}
+    </div>
+    <button class="btn block" id="generateCatalogBtn">Generar catálogo y compartir</button>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#generateCatalogBtn', overlay).addEventListener('click', async () => {
+      const contact = $('#cat_contact', overlay).value.trim();
+      const note = $('#cat_note', overlay).value.trim();
+      AppState.settings.catalogContact = contact;
+      AppState.settings.catalogNote = note;
+      await saveSettings().catch(() => {});
+      const btn = $('#generateCatalogBtn', overlay);
+      btn.disabled = true;
+      btn.textContent = 'Generando catálogo… puede tardar por las fotos';
+      const result = await generateCatalogPdf({
+        title: $('#cat_title', overlay).value.trim(),
+        subtitle: $('#cat_subtitle', overlay).value.trim(),
+        contact,
+        note,
+        includePrices: $('#cat_prices', overlay).checked,
+        includeStock: $('#cat_stock', overlay).checked,
+        includeWholesalePrice: isAdmin() && $('#cat_wholesale', overlay) ? $('#cat_wholesale', overlay).checked : false,
+        includePaymentQr: hasPaymentQr && $('#cat_payment_qr', overlay) ? $('#cat_payment_qr', overlay).checked : false
+      }).catch(err => {
+        console.error(err);
+        showToast('No se pudo generar el catálogo.', 'error');
+        return null;
+      });
+      if (result) close();
+      else {
+        btn.disabled = false;
+        btn.textContent = 'Generar catálogo y compartir';
       }
     });
   });
 }
 
-/* Busca o crea un cliente rápido desde el flujo de venta, sin salir de la pantalla. */
-async function findOrCreateClientQuick(name, phone) {
-  name = (name || '').trim();
-  if (!name) return null;
-  let existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
-  if (existing) {
-    if (phone && phone.trim() && existing.phone !== phone.trim()) {
-      const updated = Object.assign({}, existing, { phone: phone.trim() });
-      await DB.put('clients', updated);
-      const idx = AppState.clients.findIndex(c => c.id === existing.id);
-      if (idx >= 0) AppState.clients[idx] = updated;
-      existing = updated;
-    }
-    AppState.lastClient = existing;
-    return existing;
-  }
-  const data = { id: uid('cli'), name, phone: (phone || '').trim(), priceGroupId: '', createdAt: Date.now() };
-  await DB.put('clients', data);
-  AppState.clients.push(data);
-  AppState.lastClient = data;
-  return data;
-}
-
-
-window.renderClients = renderClients;
-window.openClientForm = openClientForm;
-window.findOrCreateClientQuick = findOrCreateClientQuick;
-
-/* ===== NATURA VIDA V7.2.3 — Clientes saneados, mayoristas ligeros y WhatsApp ===== */
-function onlyDigitsV723(value) {
-  return String(value || '').replace(/\D+/g, '');
-}
-function normalizePhoneV723(value) {
-  let d = onlyDigitsV723(value);
-  if (d.startsWith('591')) d = d.slice(3);
-  if (d.startsWith('0') && d.length > 8) d = d.replace(/^0+/, '');
-  return d.slice(-8);
-}
-function whatsappUrlV723(phone, message = '') {
-  const d = normalizePhoneV723(phone);
-  if (!d || d.length < 7) return '';
-  const text = message ? `&text=${encodeURIComponent(message)}` : '';
-  return `https://api.whatsapp.com/send?phone=591${d}${text}`;
-}
-function whatsappIntentV725(phone, message = '') {
-  const d = normalizePhoneV723(phone);
-  if (!d || d.length < 7) return '';
-  const text = message ? `&text=${encodeURIComponent(message)}` : '';
-  return `intent://send?phone=591${d}${text}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
-}
-function openWhatsAppV723(phone, name = '') {
-  const msg = name ? `Hola ${name}, le escribo de Natura Vida Bolivia.` : 'Hola, le escribo de Natura Vida Bolivia.';
-  const url = whatsappUrlV723(phone, msg);
-  if (!url) return showToast('Este cliente no tiene un WhatsApp válido.', 'error');
-  const intent = whatsappIntentV725(phone, msg);
-  try { window.location.href = intent; setTimeout(() => window.open(url, '_blank', 'noopener'), 900); }
-  catch (_) { window.open(url, '_blank', 'noopener'); }
-}
-function whatsappButtonLabelV725(){ return '<svg class="waSvgV730" viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M16 3a12.7 12.7 0 0 0-11 19l-1.7 6.2 6.4-1.7A12.8 12.8 0 1 0 16 3Zm0 23.2c-2.1 0-4.1-.6-5.8-1.6l-.4-.2-3.8 1 1-3.7-.3-.4a10.5 10.5 0 1 1 9.3 4.9Zm5.8-7.9c-.3-.2-1.9-.9-2.2-1s-.5-.2-.8.2-.8 1-1 1.2-.4.2-.7.1a8.5 8.5 0 0 1-2.5-1.6 9.4 9.4 0 0 1-1.7-2.1c-.2-.3 0-.5.1-.7l.5-.6.3-.6c.1-.2 0-.5 0-.7s-.8-2-1.1-2.7c-.3-.7-.6-.6-.8-.6h-.7c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9s1.2 3.3 1.4 3.5c.2.2 2.4 3.7 5.8 5.2.8.3 1.4.5 1.9.7.8.3 1.6.2 2.2.1.7-.1 1.9-.8 2.2-1.5.3-.7.3-1.4.2-1.5-.1-.2-.4-.3-.7-.5Z"/></svg>'; }
-function customerTypeForSaleV723(saleType) {
-  if (['market', 'reseller_wholesale', 'wholesale', 'representative_transfer'].includes(String(saleType || ''))) return 'wholesale';
-  if (['unit', 'reseller_unit'].includes(String(saleType || ''))) return 'unit';
-  return 'unclassified';
-}
-function customerTypeLabelV723(type) {
-  return ({ unit: 'Unitario', wholesale: 'Mayorista', mixed: 'Mixto', unclassified: 'Sin clasificar' })[type || 'unclassified'] || 'Sin clasificar';
-}
-function customerTypeClassV723(type) {
-  return ({ unit: 'unit', wholesale: 'wholesale', mixed: 'mixed', unclassified: 'unclassified' })[type || 'unclassified'] || 'unclassified';
-}
-function clientTypeMatchesV723(client, preferred, showAll = false) {
-  if (showAll || !preferred) return true;
-  const t = client.customerType || client.type || 'unclassified';
-  if (t === 'mixed' || t === 'unclassified') return true;
-  return t === preferred;
-}
-function clientSearchTextV723(client) {
-  return normalizeSearch([client.name, client.phone, client.businessName, client.city, client.address].filter(Boolean).join(' '));
-}
-function clientSalesV723(clientOrId) {
-  const id = typeof clientOrId === 'string' ? clientOrId : clientOrId && clientOrId.id;
-  const c = typeof clientOrId === 'object' ? clientOrId : AppState.clients.find(x => x.id === id);
-  const phone = c ? normalizePhoneV723(c.phone) : '';
-  const name = c ? normalizeSearch(c.name) : '';
-  return (AppState.sales || []).filter(s => (id && s.clientId === id) || (phone && normalizePhoneV723(s.clientPhone) === phone) || (name && normalizeSearch(s.clientName) === name));
-}
-function commercialStatusV723(client) {
-  const sales = clientSalesV723(client).filter(s => !s.deletedAt);
-  if (!sales.length) return { label: 'Nuevo', cls: 'blue' };
-  const now = Date.now();
-  const last = Math.max(...sales.map(s => Number(s.date || s.createdAt || 0)).filter(Boolean));
-  const days = last ? Math.floor((now - last) / 86400000) : 999;
-  const total = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
-  if (days > 90) return { label: 'Inactivo', cls: 'gray' };
-  if (sales.length >= 5 || total >= 2000) return { label: 'Consolidado', cls: 'green' };
-  if (sales.length >= 2) return { label: 'Recurrente', cls: 'yellow' };
-  return { label: 'En seguimiento', cls: 'orange' };
-}
-function betterClientNameV723(a, b) {
-  const an = String(a || '').trim();
-  const bn = String(b || '').trim();
-  if (!an) return bn;
-  if (!bn) return an;
-  return bn.length > an.length ? bn : an;
-}
-function mergeTextV723(a, b) {
-  return String(a || '').trim() || String(b || '').trim();
-}
-function buildClientRecordV723(base = {}, data = {}) {
-  const phone = normalizePhoneV723(data.phone ?? base.phone);
-  const customerType = data.customerType || base.customerType || data.type || base.type || 'unclassified';
-  return Object.assign({}, base, data, {
-    id: base.id || data.id || uid('cli'),
-    name: String(data.name ?? base.name ?? '').trim(),
-    phone,
-    customerType,
-    businessName: String(data.businessName ?? base.businessName ?? '').trim(),
-    city: String(data.city ?? base.city ?? '').trim(),
-    address: String(data.address ?? base.address ?? '').trim(),
-    latitude: data.latitude ?? base.latitude ?? '',
-    longitude: data.longitude ?? base.longitude ?? '',
-    locationLabel: String(data.locationLabel ?? base.locationLabel ?? base.location ?? '').trim(),
-    storePhoto: data.storePhoto || base.storePhoto || '',
-    notes: String(data.notes ?? base.notes ?? '').trim(),
-    aliases: Array.from(new Set([...(base.aliases || []), ...(data.aliases || [])].filter(Boolean))),
-    createdAt: base.createdAt || data.createdAt || Date.now(),
-    updatedAt: Date.now()
-  });
-}
-
-async function saveClientV723(record) {
-  await DB.put('clients', record);
-  const idx = AppState.clients.findIndex(c => c.id === record.id);
-  if (idx >= 0) AppState.clients[idx] = record; else AppState.clients.push(record);
-  return record;
-}
-
-function clientCardHtmlV723(c) {
-  const purchases = clientSalesV723(c);
-  const status = commercialStatusV723(c);
-  const type = c.customerType || 'unclassified';
-  const photo = c.storePhoto ? `<img src="${c.storePhoto}" loading="lazy" decoding="async" alt="">` : `<span>${type === 'wholesale' ? '🏪' : '👤'}</span>`;
-  return `<div class="card clientCardV723" data-id="${c.id}" data-search="${escapeHtml([c.name,c.phone,c.businessName,c.city,c.address].filter(Boolean).join(' '))}">
-    <div class="clientPhotoV723">${photo}</div>
-    <div class="clientMainV723">
-      <div class="clientTopV723"><div class="name">${escapeHtml(c.name || 'Sin nombre')}</div><span class="typePillV723 ${customerTypeClassV723(type)}">${customerTypeLabelV723(type)}</span></div>
-      ${c.businessName && c.businessName !== c.name ? `<div class="costline">🏪 ${escapeHtml(c.businessName)}</div>` : ''}
-      <div class="costline">📞 ${escapeHtml(c.phone || 'sin teléfono')} ${c.phone ? `<button class="waMiniV723 waIconOnlyV725" data-wa="${c.id}" title="Abrir WhatsApp normal">${whatsappButtonLabelV725()}</button>` : ''}</div>
-      <div class="costline">🛒 ${purchases.length} compra(s) · <span class="trust ${status.cls}">${status.label}</span>${(c.priceGroupId || Number(c.customDiscountPercent||0)>0) ? ` · <span class="priceBadge group" title="${escapeHtml(window.clientBenefitLabelV730 ? clientBenefitLabelV730(c) : 'Beneficio comercial')}">Beneficio</span>` : ''}</div>
-      ${c.city || c.address ? `<div class="costline">📍 ${escapeHtml([c.city, c.address].filter(Boolean).join(' · '))}</div>` : ''}
-    </div>
-    <div class="cardactions">
-      <button class="histClientBtn" data-id="${c.id}">📜 Historial</button>
-      <button class="quoteClientBtnV725" data-id="${c.id}">💬 Precios</button>
-      <button class="benefitClientBtnV725" data-id="${c.id}">🎁 Beneficio</button>
-      <button class="editClientBtn" data-id="${c.id}">✏️ Editar</button>
-      <button class="danger delClientBtn" data-id="${c.id}">🗑️</button>
-    </div>
-  </div>`;
-}
-
-function renderClients() {
-  $('#fabAdd').classList.remove('hidden');
-  $('#fabAdd').onclick = () => openClientForm(null);
-  const main = $('#mainArea');
-  const duplicates = findClientDuplicateGroupsV723();
-  main.innerHTML = `
-    <section class="v7PageHead"><span class="v7Eyebrow">Directorio comercial</span><h1>Clientes</h1><p>Clientes unitarios y mayoristas con WhatsApp, estado automático e historial.</p></section>
-    <div class="toolrow clientToolbarV723"><input type="text" id="searchInput" placeholder="Buscar cliente, teléfono o tienda..." value="${escapeHtml(_clientSearch)}"><button class="btn outline" id="cleanClientsV723">Saneamiento${duplicates.length ? ` (${duplicates.length})` : ''}</button></div>
-    ${AppState.clients.length === 0 ? `<div class="empty"><span class="ic">👤</span><h3>Aún no hay clientes</h3><p>Se agregan automáticamente al registrar una venta, o créalos aquí.</p></div>` : `<div class="clientListV723">${AppState.clients.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map(clientCardHtmlV723).join('')}</div>`}
-  `;
-  bindStableSearch('#searchInput', '#mainArea .clientCardV723', value => { _clientSearch = value; });
-  $('#cleanClientsV723')?.addEventListener('click', openClientCleanupV723);
-  $all('.editClientBtn').forEach(b => b.addEventListener('click', () => openClientForm(b.dataset.id)));
-  $all('.delClientBtn').forEach(b => b.addEventListener('click', () => confirmDeleteClient(b.dataset.id)));
-  $all('.histClientBtn').forEach(b => b.addEventListener('click', () => openClientHistory(b.dataset.id)));
-  $all('.waMiniV723').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); const c = AppState.clients.find(x => x.id === b.dataset.wa); if (c) openWhatsAppV723(c.phone, c.name); }));
-  $all('.quoteClientBtnV725').forEach(b => b.addEventListener('click', () => { const c=AppState.clients.find(x=>x.id===b.dataset.id); if(c && window.openQuoteForm) openQuoteForm({client:c, priceGroupId:c.priceGroupId||''}); }));
-  $all('.benefitClientBtnV725').forEach(b => b.addEventListener('click', () => openClientBenefitV725(b.dataset.id)));
-}
-
-function openClientForm(id, prefill = {}) {
-  const c = id ? AppState.clients.find(x => x.id === id) : null;
-  const current = buildClientRecordV723(c || {}, prefill || {});
-  let photoData = current.storePhoto || '';
-  const html = `
-    <h2>${c ? 'Editar cliente' : 'Nuevo cliente'} <span class="x" id="closeSheet">✕</span></h2>
-    <div class="field"><label>${current.customerType === 'wholesale' ? 'Nombre de tienda / negocio' : 'Nombre del cliente'}</label><input type="text" id="f_cname" autocomplete="off" placeholder="Ej: Comercial María" value="${escapeHtml(current.name || '')}"></div>
-    <div class="field-row"><div class="field"><label>Celular / WhatsApp</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="f_cphone" autocomplete="off" placeholder="Ej: 71234567" value="${escapeHtml(current.phone || '')}"><button type="button" class="waIconBtnV723" id="f_cwa"><span class="waLogoV725">☎</span></button></div></div><div class="field"><label>Tipo</label><select id="f_ctype"><option value="unit" ${current.customerType==='unit'?'selected':''}>Unitario</option><option value="wholesale" ${current.customerType==='wholesale'?'selected':''}>Mayorista</option><option value="mixed" ${current.customerType==='mixed'?'selected':''}>Mixto</option><option value="unclassified" ${current.customerType==='unclassified'?'selected':''}>Sin clasificar</option></select></div></div>
-    <div id="wholesaleFieldsV723" class="wholesaleFieldsV723">
-      <div class="field"><label>Ciudad</label><input id="f_ccity" autocomplete="off" value="${escapeHtml(current.city || '')}" placeholder="Ej: Santa Cruz"></div>
-      <div class="field"><label>Dirección</label><input id="f_caddress" autocomplete="off" value="${escapeHtml(current.address || '')}" placeholder="Mercado, avenida, local o referencia principal"></div>
-      <div class="field-row"><div class="field"><label>Latitud</label><input id="f_clat" readonly value="${escapeHtml(current.latitude || '')}"></div><div class="field"><label>Longitud</label><input id="f_clng" readonly value="${escapeHtml(current.longitude || '')}"></div></div>
-      <button type="button" class="btn ghost block" id="captureClientGpsV723">Capturar ubicación GPS</button>
-      <div class="field"><label>Dato de ubicación</label><input id="f_clocation" autocomplete="off" value="${escapeHtml(current.locationLabel || '')}" placeholder="Se completa al capturar GPS o puedes escribir referencia corta"></div>
-      <div class="field"><label>Foto de tienda</label><label class="photoClientPickV723"><input type="file" id="f_cphoto" accept="image/*" capture="environment"><span id="clientPhotoTextV723">${photoData ? 'Cambiar foto' : 'Tocar para sacar/subir foto'}</span><img id="clientPhotoPreviewV723" class="${photoData ? '' : 'hidden'}" src="${photoData}" alt=""></label></div>
-    </div>
-    <div class="field"><label>Observaciones</label><textarea id="f_cnotes" rows="3" placeholder="Dato útil para atender mejor al cliente">${escapeHtml(current.notes || '')}</textarea></div>
-    ${AppState.settings.priceGroupsEnabled ? `<div class="field"><label>Grupo de precio asignado</label><select id="f_cgroup"><option value="">Sin grupo</option>${AppState.priceGroups.map(g => `<option value="${g.id}" ${current.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></div>` : ''}
-    <div class="actions"><button class="btn outline block" id="cancelForm">Cancelar</button><button class="btn block" id="saveForm">${c ? 'Guardar cambios' : 'Crear cliente'}</button></div>
-  `;
-  return openSheet(html, (overlay, close) => {
-    const typeSel = $('#f_ctype', overlay);
-    const toggleWholesale = () => { const t = typeSel.value; $('#wholesaleFieldsV723', overlay).classList.toggle('hidden', !(t === 'wholesale' || t === 'mixed')); };
-    toggleWholesale();
-    typeSel.addEventListener('change', toggleWholesale);
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#cancelForm', overlay).addEventListener('click', close);
-    $('#f_cwa', overlay).addEventListener('click', () => openWhatsAppV723($('#f_cphone', overlay).value, $('#f_cname', overlay).value));
-    $('#captureClientGpsV723', overlay)?.addEventListener('click', () => {
-      if (!navigator.geolocation) return showToast('Este dispositivo no permite ubicación.', 'error');
-      const btn = $('#captureClientGpsV723', overlay); btn.disabled = true; btn.textContent = 'Capturando ubicación…';
-      navigator.geolocation.getCurrentPosition(pos => {
-        const lat = pos.coords.latitude.toFixed(6); const lng = pos.coords.longitude.toFixed(6);
-        $('#f_clat', overlay).value = lat; $('#f_clng', overlay).value = lng;
-        if (!$('#f_clocation', overlay).value.trim()) $('#f_clocation', overlay).value = `GPS capturado: ${lat}, ${lng}`;
-        btn.disabled = false; btn.textContent = 'Ubicación GPS capturada';
-      }, () => { btn.disabled = false; btn.textContent = 'Capturar ubicación GPS'; showToast('No se pudo capturar ubicación.', 'error'); }, { enableHighAccuracy: true, timeout: 12000 });
-    });
-    $('#f_cphoto', overlay)?.addEventListener('change', async e => {
-      const file = e.target.files && e.target.files[0]; if (!file) return;
-      try { photoData = await readImageFile(file, { optimize: true, maxEdge: 900, quality: 0.86, mimeType: 'image/jpeg' }); $('#clientPhotoPreviewV723', overlay).src = photoData; $('#clientPhotoPreviewV723', overlay).classList.remove('hidden'); $('#clientPhotoTextV723', overlay).textContent = 'Foto lista'; }
-      catch (err) { showToast(err.message || 'No se pudo leer la foto.', 'error'); }
-    });
-    $('#saveForm', overlay).addEventListener('click', async () => {
-      const name = $('#f_cname', overlay).value.trim();
-      if (!name) return showToast('Ponle un nombre al cliente o tienda.', 'error');
-      const type = $('#f_ctype', overlay).value || 'unclassified';
-      const record = buildClientRecordV723(c || {}, {
-        name,
-        phone: $('#f_cphone', overlay).value,
-        customerType: type,
-        priceGroupId: $('#f_cgroup', overlay) ? $('#f_cgroup', overlay).value : '',
-        city: $('#f_ccity', overlay) ? $('#f_ccity', overlay).value : '',
-        address: $('#f_caddress', overlay) ? $('#f_caddress', overlay).value : '',
-        latitude: $('#f_clat', overlay) ? $('#f_clat', overlay).value : '',
-        longitude: $('#f_clng', overlay) ? $('#f_clng', overlay).value : '',
-        locationLabel: $('#f_clocation', overlay) ? $('#f_clocation', overlay).value : '',
-        storePhoto: photoData,
-        notes: $('#f_cnotes', overlay).value
-      });
-      const btn = $('#saveForm', overlay); btn.disabled = true; btn.textContent = 'Guardando en Supabase…';
-      try { await saveClientV723(record); AppState.lastClient = record; close(); if (window._afterClientSaved) { window._afterClientSaved(record); window._afterClientSaved = null; } if (AppState.currentTab === 'clientes') renderClients(); showToast(c ? 'Cliente actualizado.' : 'Cliente creado.'); }
-      catch (err) { btn.disabled = false; btn.textContent = c ? 'Guardar cambios' : 'Crear cliente'; showToast(err.message || 'No se pudo guardar el cliente.', 'error'); }
-    });
-  });
-}
-
-async function findOrCreateClientQuick(name, phone, customerType = 'unclassified', extra = {}) {
-  name = String(name || '').trim(); phone = normalizePhoneV723(phone || '');
-  if (!name) return null;
-  let existing = null;
-  if (phone) existing = AppState.clients.find(c => normalizePhoneV723(c.phone) === phone);
-  if (!existing) existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
-  if (existing) {
-    const updated = buildClientRecordV723(existing, Object.assign({}, extra, { name: betterClientNameV723(existing.name, name), phone: phone || existing.phone, customerType: existing.customerType && existing.customerType !== 'unclassified' ? existing.customerType : customerType }));
-    await saveClientV723(updated); AppState.lastClient = updated; return updated;
-  }
-  const data = buildClientRecordV723({}, Object.assign({}, extra, { name, phone, customerType }));
-  await saveClientV723(data); AppState.lastClient = data; return data;
-}
-
-function openClientSelectorSheet(options = {}) {
-  const preferred = options.customerType || customerTypeForSaleV723(options.saleType);
-  let showAll = false;
-  const title = preferred === 'wholesale' ? 'Seleccionar mayorista' : 'Seleccionar cliente';
-  openSheet(`
-    <h2>${title} <span class="x" id="closeSheet">✕</span></h2>
-    <div class="clientPickerHeadV723"><input id="clientPickerSearchV723" autocomplete="off" placeholder="Buscar por nombre o teléfono"><button class="btn outline" id="clientPickerAllV723">Ver todos</button></div>
-    <div id="clientPickerListV723" class="clientPickerListV723"></div>
-    <button class="btn block" id="createPickerClientV723">+ Crear nuevo ${preferred === 'wholesale' ? 'mayorista' : 'cliente'}</button>
-  `, (overlay, close) => {
-    const render = () => {
-      const q = normalizeSearch($('#clientPickerSearchV723', overlay).value);
-      const clients = AppState.clients.filter(c => clientTypeMatchesV723(c, preferred, showAll)).filter(c => !q || clientSearchTextV723(c).includes(q)).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
-      $('#clientPickerListV723', overlay).innerHTML = clients.length ? clients.map(c => {
-        const status = commercialStatusV723(c);
-        return `<button type="button" class="clientPickItemV723" data-id="${c.id}"><strong>${escapeHtml(c.name || 'Sin nombre')}</strong><span>${escapeHtml(c.phone || 'sin teléfono')} · ${customerTypeLabelV723(c.customerType)}</span><small>${status.label}${c.city ? ` · ${escapeHtml(c.city)}` : ''}</small></button>`;
-      }).join('') : `<div class="v7Empty small"><span>👤</span><p>No hay coincidencias.</p></div>`;
-      $all('.clientPickItemV723', overlay).forEach(b => b.addEventListener('click', () => { const c = AppState.clients.find(x => x.id === b.dataset.id); if (c && options.onSelect) options.onSelect(c); close(); }));
-    };
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#clientPickerSearchV723', overlay).addEventListener('input', render);
-    $('#clientPickerAllV723', overlay).addEventListener('click', () => { showAll = !showAll; $('#clientPickerAllV723', overlay).textContent = showAll ? 'Filtrar' : 'Ver todos'; render(); });
-    $('#createPickerClientV723', overlay).addEventListener('click', () => { const name = $('#clientPickerSearchV723', overlay).value.trim(); close(); window._afterClientSaved = c => { if (options.onSelect) options.onSelect(c); }; openClientForm(null, { name, customerType: preferred }); });
-    render();
-    setTimeout(() => $('#clientPickerSearchV723', overlay)?.focus(), 80);
-  });
-}
-
-function findClientDuplicateGroupsV723() {
-  const groups = [];
-  const used = new Set();
-  const clients = AppState.clients || [];
-  for (let i = 0; i < clients.length; i++) {
-    const a = clients[i]; if (used.has(a.id)) continue;
-    const phoneA = normalizePhoneV723(a.phone); const nameA = normalizeSearch(a.name);
-    const matches = clients.filter((b, idx) => idx > i && !used.has(b.id) && ((phoneA && normalizePhoneV723(b.phone) === phoneA) || (nameA && normalizeSearch(b.name) && (normalizeSearch(b.name).includes(nameA) || nameA.includes(normalizeSearch(b.name))))));
-    if (matches.length) { const group = [a, ...matches]; group.forEach(c => used.add(c.id)); groups.push(group); }
-  }
-  return groups;
-}
-async function mergeClientGroupV723(group) {
-  if (!group || group.length < 2) return;
-  const target = group.slice().sort((a,b)=>String(b.name||'').length-String(a.name||'').length)[0];
-  const merged = group.reduce((acc, c) => buildClientRecordV723(acc, {
-    name: betterClientNameV723(acc.name, c.name), phone: acc.phone || c.phone, customerType: acc.customerType !== 'unclassified' ? acc.customerType : (c.customerType || 'unclassified'), businessName: mergeTextV723(acc.businessName, c.businessName), city: mergeTextV723(acc.city, c.city), address: mergeTextV723(acc.address, c.address), latitude: acc.latitude || c.latitude, longitude: acc.longitude || c.longitude, locationLabel: mergeTextV723(acc.locationLabel, c.locationLabel || c.location), storePhoto: acc.storePhoto || c.storePhoto, notes: [acc.notes, c.notes].filter(Boolean).join(acc.notes && c.notes ? '\n' : ''), aliases: [...(acc.aliases || []), c.name].filter(Boolean)
-  }), target);
-  await saveClientV723(merged);
-  const duplicateIds = group.map(c => c.id).filter(id => id !== merged.id);
-  for (const sale of AppState.sales || []) {
-    if (duplicateIds.includes(sale.clientId)) {
-      const updatedSale = Object.assign({}, sale, { clientId: merged.id, clientName: merged.name, clientPhone: merged.phone });
-      await DB.put('sales', updatedSale).catch(() => null);
-      const idx = AppState.sales.findIndex(s => s.id === sale.id); if (idx >= 0) AppState.sales[idx] = updatedSale;
-    }
-  }
-  for (const id of duplicateIds) { await DB.delete('clients', id).catch(() => null); }
-  AppState.clients = AppState.clients.filter(c => !duplicateIds.includes(c.id));
-}
-function openClientCleanupV723() {
-  const groups = findClientDuplicateGroupsV723();
-  openSheet(`<h2>Saneamiento de clientes <span class="x" id="closeSheet">✕</span></h2>${groups.length ? groups.map((g,i)=>`<div class="duplicateBoxV723"><strong>Posible duplicado ${i+1}</strong>${g.map(c=>`<p>${escapeHtml(c.name)} · ${escapeHtml(c.phone || 'sin teléfono')}</p>`).join('')}<button class="btn block mergeGroupV723" data-i="${i}">Fusionar este grupo</button></div>`).join('') : `<div class="v7Empty"><span>✓</span><h3>No se detectaron duplicados claros</h3><p>La revisión usa coincidencia de teléfono y nombres muy parecidos.</p></div>`}<button class="btn outline block" id="closeSheet2">Cerrar</button>`, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close); $('#closeSheet2', overlay).addEventListener('click', close);
-    $all('.mergeGroupV723', overlay).forEach(b => b.addEventListener('click', async () => { b.disabled = true; b.textContent = 'Fusionando…'; await mergeClientGroupV723(groups[Number(b.dataset.i)]); showToast('Clientes fusionados.'); close(); renderClients(); }));
-  });
-}
-
-window.renderClients = renderClients;
-window.openClientForm = openClientForm;
-window.findOrCreateClientQuick = findOrCreateClientQuick;
-window.openClientSelectorSheet = openClientSelectorSheet;
-window.openWhatsAppV723 = openWhatsAppV723;
-window.customerTypeForSaleV723 = customerTypeForSaleV723;
-window.commercialStatusV723 = commercialStatusV723;
-window.buildClientRecordV723 = buildClientRecordV723;
-window.saveClientV723 = saveClientV723;
-window.normalizePhoneV723 = normalizePhoneV723;
-window.clientSalesV723 = clientSalesV723;
-// openClientBenefitV725 se incorpora en v7-commercial-center.js
+window.generateCatalogPdf = generateCatalogPdf;
+window.openCatalogPdfOptions = openCatalogPdfOptions;
+window.shareCatalogPdf = shareCatalogPdf;

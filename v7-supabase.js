@@ -1,324 +1,139 @@
-/* NATURA VIDA V7 — compra online, pedidos y venta directa a representantes. */
+/* NATURA VIDA V7 — inventario propio y ventas al contado del representante.
+   V7.2.3: precios manuales por producto, grupos y trazabilidad. */
 
 (() => {
-  let orderCart = {};
-  let orderSearch = '';
-  let orderNote = '';
-  let editingOrderId = null;
+  const originalRenderInventario = window.renderInventario;
+  const originalRenderVender = window.renderVender;
+  let saleType = 'reseller_unit';
+  let saleSearch = '';
+  let saleCart = {};
+  let saleManualPrices = {};
+  let saleSelectedGroup = null;
 
-  const STATUS = {
-    submitted: ['Enviado', 'info'],
-    modified: ['Modificado', 'warning'],
-    approved_pending_payment: ['Aprobado · pendiente de pago', 'warning'],
-    paid: ['Pagado · stock transferido', 'success'],
-    cancelled: ['Cancelado', 'muted'],
-    rejected: ['Rechazado', 'danger']
-  };
-
-  function statusMeta(status) { return STATUS[status] || [status || 'Enviado', 'info']; }
-  function centralStock(p) { return Math.max(0, Number(p.adminStock != null ? p.adminStock : p.stock) || 0); }
-  function representativeOrderPrice(p) {
-    const base = representativePrice(p);
-    const groupId = AppState.session.priceGroupId || '';
-    const grouped = groupId && window.applyPercentGroupV7 ? applyPercentGroupV7(base, groupId) : base;
-    const discount = Math.min(100, Math.max(0, Number(AppState.session.discountPercent || 0)));
-    return roundBs(grouped * (1 - discount / 100));
-  }
-  function cartUnits() { return Object.values(orderCart).reduce((s, q) => s + Number(q || 0), 0); }
-  function cartItems() {
-    return Object.entries(orderCart).map(([id, qty]) => {
-      const p = AppState.products.find(x => x.id === id);
-      if (!p) return null;
-      const unitPrice = representativeOrderPrice(p);
-      return { productId: p.id, productName: p.name, category: p.category || 'General', qty: Number(qty), unitPrice, subtotal: roundBs(unitPrice * Number(qty)) };
-    }).filter(Boolean);
-  }
-  function cartTotal() { return cartItems().reduce((s, i) => s + i.subtotal, 0); }
-
-  async function currentOrders() {
-    const rows = await DB.getAll('purchaseOrders').catch(() => []);
-    AppState.purchaseOrders = rows;
-    return rows;
-  }
-
-  function changeOrderQty(productId, delta) {
-    const p = AppState.products.find(x => x.id === productId);
-    if (!p) return;
-    const max = centralStock(p);
-    const next = Math.max(0, Math.min(max, Number(orderCart[productId] || 0) + delta));
-    if (next === 0) delete orderCart[productId]; else orderCart[productId] = next;
-    renderOrderRequestV7();
-  }
-
-  function renderOrderCartBar() {
-    let bar = $('#cartBar');
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'cartBar';
-      bar.className = 'cartBar v7CartBar';
-      $('#app').appendChild(bar);
-    }
-    if (!cartUnits()) { bar.classList.add('hidden'); return; }
-    bar.classList.remove('hidden');
-    bar.innerHTML = `<div><strong>${cartUnits()} unidad(es)</strong><span>${fmtMoney(cartTotal())}</span></div><button class="btn" id="openOrderCartV7">Ver carrito</button>`;
-    $('#openOrderCartV7').addEventListener('click', openOrderCartSheet);
-  }
-
-  function orderCard(order, representativeView = false) {
-    const [label, tone] = statusMeta(order.status);
-    const canEdit = representativeView && ['submitted', 'modified', 'approved_pending_payment'].includes(order.status);
-    const canCancel = representativeView && !['paid', 'cancelled', 'rejected'].includes(order.status);
-    return `<article class="v7OrderCard ${tone}">
-      <div class="v7OrderTop"><div><span class="v7DocNumber">${escapeHtml(order.orderNumber || 'Pedido')}</span><strong>${representativeView ? 'Compra a Natura Vida' : escapeHtml(order.representativeName || 'Representante')}</strong></div><span class="v7Status ${tone}">${escapeHtml(label)}</span></div>
-      <div class="v7OrderItems">${(order.items || []).slice(0,4).map(i => `<span>${escapeHtml(i.productName)} <b>× ${i.qty}</b></span>`).join('')}${(order.items || []).length > 4 ? `<span>+ ${(order.items || []).length - 4} producto(s)</span>` : ''}</div>
-      <div class="v7OrderFoot"><span>${fmtDateTime(order.createdAt)}</span><strong>${fmtMoney(order.total || 0)}</strong></div>
-      <div class="v7OrderActions">
-        ${canEdit ? `<button class="btn sm outline v7EditOwnOrder" data-id="${order.id}">Modificar</button>` : ''}
-        ${canCancel ? `<button class="btn sm ghost dangerText v7CancelOwnOrder" data-id="${order.id}">Cancelar</button>` : ''}
-        ${order.status === 'approved_pending_payment' ? `<button class="btn sm v7PaymentOrder" data-id="${order.id}">Ver QR y pagar</button>` : ''}
-        ${order.status === 'paid' ? `<button class="btn sm v7ReceiptOrder" data-id="${order.id}">Ver recibo</button>` : ''}
-      </div>
-    </article>`;
-  }
-
-  async function renderOrderRequestV7() {
-    if (isAdmin()) return renderAdminOrdersInboxV7();
+  function renderRepresentativeInventoryV7() {
     $('#fabAdd').classList.add('hidden');
-    const orders = (await currentOrders()).filter(o => o.representativeId === AppState.session.userId).sort((a,b)=>b.createdAt-a.createdAt);
-    const products = AppState.products.filter(p => p.status !== 'archived');
-    const discount = Number(AppState.session.discountPercent || 0);
-    const repGroup = AppState.priceGroups.find(g => g.id === (AppState.session.priceGroupId || ''));
+    const products = AppState.products.filter(p => p.status !== 'archived' && Number(p.stock || 0) > 0);
+    const totalUnits = products.reduce((s,p)=>s+Number(p.stock||0),0);
+    const invested = products.reduce((s,p)=>s+(resellerEffectiveCost(p)*Number(p.stock||0)),0);
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead v7BuyHead"><span class="v7Eyebrow">Catálogo central</span><h1>Compra online</h1><p>Elige productos, envía tu solicitud y recibe el stock cuando el administrador confirme el pago.</p>${repGroup ? `<span class="v7DiscountChip">Grupo: ${escapeHtml(repGroup.name)}</span>` : ''}${discount > 0 ? `<span class="v7DiscountChip">Descuento personal: ${discount}%</span>` : ''}</section>
-      ${editingOrderId ? `<div class="v7EditBanner"><span>Editando pedido ${escapeHtml((orders.find(o=>o.id===editingOrderId)||{}).orderNumber || '')}</span><button id="cancelEditOrderV7">Cancelar edición</button></div>` : ''}
-      <div class="v7SearchBox"><span>⌕</span><input id="v7OrderSearch" placeholder="Buscar producto o categoría" value="${escapeHtml(orderSearch)}"></div>
-      <section class="v7ProductGrid">
-        ${products.map(p => {
-          const stock = centralStock(p); const qty = Number(orderCart[p.id] || 0); const price = representativeOrderPrice(p);
-          return `<article class="v7ProductCard ${stock === 0 ? 'soldout' : ''}">
-            <div class="v7ProductImage">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span>NV</span>'}${stock === 0 ? '<em>AGOTADO</em>' : ''}</div>
-            <div class="v7ProductBody"><small>${escapeHtml(p.category || 'General')}</small><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.description || '')}</p><div class="v7ProductPrice"><strong>${fmtMoney(price)}</strong><span>${stock} disponibles</span></div>
-            <div class="v7Stepper"><button data-minus="${p.id}" ${stock===0?'disabled':''}>−</button><b>${qty}</b><button data-plus="${p.id}" ${stock===0?'disabled':''}>+</button></div></div>
-          </article>`;
-        }).join('') || `<div class="v7Empty"><span>🌿</span><h3>No hay productos disponibles</h3><p>El catálogo aparecerá cuando el administrador publique productos activos.</p></div>`}
-      </section>
-      <section class="v7Panel v7OrderHistory"><div class="v7PanelHead"><div><span class="v7Eyebrow">Registro permanente</span><h2>Mis pedidos</h2></div><span>${orders.length}</span></div>${orders.map(o=>orderCard(o,true)).join('') || '<div class="v7EmptyInline"><span>🛒</span><div><strong>Aún no hiciste pedidos</strong><small>Tu historial aparecerá aquí.</small></div></div>'}</section>`;
-    bindStableSearch('#v7OrderSearch', '#mainArea .v7ProductCard', value => { orderSearch = value; });
-    $all('[data-plus]').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.plus, 1)));
-    $all('[data-minus]').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.minus, -1)));
-    if ($('#cancelEditOrderV7')) $('#cancelEditOrderV7').addEventListener('click', () => { editingOrderId = null; orderCart = {}; orderNote = ''; renderOrderRequestV7(); });
-    $all('.v7EditOwnOrder').forEach(b => b.addEventListener('click', () => editOwnOrder(b.dataset.id, orders)));
-    $all('.v7CancelOwnOrder').forEach(b => b.addEventListener('click', () => cancelOwnOrder(b.dataset.id)));
-    $all('.v7PaymentOrder, .v7ReceiptOrder').forEach(b => b.addEventListener('click', () => {
-      const o = orders.find(x => x.id === b.dataset.id); if (o) openV7ReceiptPreview(o, 'order');
-    }));
-    renderOrderCartBar();
+      <section class="v7PageHead"><span class="v7Eyebrow">Productos confirmados y pagados</span><h1>Inventario propio</h1><p>Tu stock se actualiza únicamente cuando Natura Vida confirma el pago de una compra.</p></section>
+      <section class="v7MetricGrid compact"><article class="v7MetricCard"><span>Productos</span><strong>${products.length}</strong></article><article class="v7MetricCard"><span>Unidades</span><strong>${totalUnits}</strong></article><article class="v7MetricCard primary"><span>Inversión estimada</span><strong>${fmtMoney(invested)}</strong></article></section>
+      <div class="v7CashNotice">Puedes definir libremente tu precio unitario y mayorista. Durante la venta también puedes negociar precios por producto.</div>
+      <section class="v7ProductGrid v7OwnInventory">
+        ${products.map(p=>`<article class="v7ProductCard"><div class="v7ProductImage">${p.photo?`<img src="${p.photo}" alt="" loading="lazy" decoding="async">`:'<span>NV</span>'}</div><div class="v7ProductBody"><small>${escapeHtml(p.category||'General')}</small><h3>${escapeHtml(p.name)}</h3><div class="v7StockBig"><span>Stock propio</span><strong>${p.stock}</strong></div><div class="v7PricePair"><div><span>Unitario</span><strong>${fmtMoney(resellerLocalUnitPrice(p))}</strong></div><div><span>Mayorista</span><strong>${fmtMoney(resellerLocalWholesalePrice(p))}</strong></div></div><button class="btn outline block v7EditOwnPrices" data-id="${p.id}">Editar mis precios base</button><button class="btn block v7SellOwnProduct" data-id="${p.id}">Vender</button></div></article>`).join('') || `<div class="v7Empty"><span>📦</span><h3>Aún no tienes inventario</h3><p>Compra productos en Compra online. Aparecerán aquí después de confirmar el pago.</p><button class="btn" id="goBuyFromEmpty">Ir a Compra online</button></div>`}
+      </section>`;
+    $all('.v7EditOwnPrices').forEach(b=>b.addEventListener('click',()=>openOwnPriceEditor(b.dataset.id)));
+    $all('.v7SellOwnProduct').forEach(b=>b.addEventListener('click',()=>{saleCart={[b.dataset.id]:1};saleManualPrices={};navigateTo('vender');}));
+    if($('#goBuyFromEmpty'))$('#goBuyFromEmpty').addEventListener('click',()=>navigateTo('compra'));
   }
 
-  function editOwnOrder(id, orders) {
-    const order = orders.find(o => o.id === id); if (!order) return;
-    editingOrderId = id; orderCart = {}; orderNote = order.note || '';
-    (order.items || []).forEach(i => { orderCart[i.productId] = Number(i.qty || 0); });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    renderOrderRequestV7();
-  }
-
-  async function cancelOwnOrder(id) {
-    if (!confirmDialog('¿Cancelar este pedido? Solo puede cancelarse antes de confirmar el pago.')) return;
-    const res = await cancelPurchaseOrderV7(id);
-    showToast(res.ok ? 'Pedido cancelado.' : res.message, res.ok ? undefined : 'error');
-    if (res.ok) renderOrderRequestV7();
-  }
-
-  function openOrderCartSheet() {
-    const items = cartItems();
-    openSheet(`
-      <h2>${editingOrderId ? 'Modificar pedido' : 'Confirmar pedido'} <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7CartList">${items.map(i => `<div><span><strong>${escapeHtml(i.productName)}</strong><small>${i.qty} × ${fmtMoney(i.unitPrice)}</small></span><b>${fmtMoney(i.subtotal)}</b></div>`).join('')}</div>
-      <div class="field"><label>Nota para el administrador</label><textarea id="v7OrderNote" rows="3" placeholder="Ej.: enviar por flota, confirmar horario...">${escapeHtml(orderNote)}</textarea></div>
-      <div class="v7TotalLine"><span>Total al contado</span><strong>${fmtMoney(cartTotal())}</strong></div>
-      <div class="v7CashNotice">El stock pasa a tu inventario únicamente cuando el administrador confirma el pago.</div>
-      <button class="btn block" id="submitOrderV7">${editingOrderId ? 'Guardar modificación' : 'Enviar pedido'}</button>
-      <button class="btn outline block" id="clearOrderV7">Vaciar carrito</button>
-    `, (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#clearOrderV7', overlay).addEventListener('click', () => { orderCart = {}; orderNote = ''; editingOrderId = null; close(); renderOrderRequestV7(); });
-      $('#submitOrderV7', overlay).addEventListener('click', async () => {
-        if (!navigator.onLine) return showToast('Se necesita internet para enviar el pedido.', 'error');
-        orderNote = $('#v7OrderNote', overlay).value.trim();
-        const payload = { items: cartItems(), total: cartTotal(), note: orderNote, representativeName: AppState.session.fullName, representativePhone: AppState.session.phone || '', representativeCity: AppState.session.city || '', source: 'representative', status: editingOrderId ? 'modified' : 'submitted', paymentStatus: 'pending', updatedAt: Date.now() };
-        const btn = $('#submitOrderV7', overlay); btn.disabled = true; btn.textContent = 'Guardando en Supabase…';
-        const res = editingOrderId ? await representativeUpdateOrderV7(editingOrderId, payload) : await createPurchaseOrderV7(Object.assign({ id: uid('order'), createdAt: Date.now() }, payload));
-        if (!res.ok) { btn.disabled = false; btn.textContent = 'Reintentar'; return showToast(res.message, 'error'); }
-        orderCart = {}; orderNote = ''; editingOrderId = null; close(); showToast('Pedido enviado correctamente.'); renderOrderRequestV7();
-      });
+  function openOwnPriceEditor(id) {
+    const p=AppState.products.find(x=>x.id===id); if(!p)return;
+    const base=resellerAcquisitionCost(p); const extra=resellerAdditionalCost(p);
+    openSheet(`<h2>Mis precios base <span class="x" id="closeSheet">✕</span></h2><div class="v7ProductMini"><div>${p.photo?`<img src="${p.photo}" alt="" loading="lazy" decoding="async">`:'NV'}</div><span><strong>${escapeHtml(p.name)}</strong><small>Stock oficial: ${p.stock} · no editable</small></span></div><div class="field-row"><div class="field"><label>Costo promedio pagado a Natura Vida</label><input value="${base}" readonly></div><div class="field"><label>Transporte / costo adicional</label><input id="ownExtra" type="number" min="0" step="0.01" value="${extra||0}"></div></div><div class="field-row"><div class="field"><label>Mi precio unitario base</label><input id="ownUnit" type="number" min="0" step="0.01" value="${resellerLocalUnitPrice(p)||''}"></div><div class="field"><label>Mi precio mayorista base</label><input id="ownWholesale" type="number" min="0" step="0.01" value="${resellerLocalWholesalePrice(p)||''}"></div></div><div class="field"><label>Nota comercial opcional</label><input id="ownNote" value="${escapeHtml(p.resellerLocalNote||'')}" placeholder="Ej.: envío incluido"></div><div class="v7PricePreview"><span>Costo real estimado</span><strong id="ownCostPreview"></strong></div><button class="btn block" id="saveOwnPrices">Guardar precios base</button>`,(overlay,close)=>{
+      const calc=()=>{$('#ownCostPreview',overlay).textContent=fmtMoney(base+Number($('#ownExtra',overlay).value||0));};calc();$('#ownExtra',overlay).addEventListener('input',calc);$('#closeSheet',overlay).addEventListener('click',close);
+      $('#saveOwnPrices',overlay).addEventListener('click',async()=>{const additionalCost=roundBs(Number($('#ownExtra',overlay).value||0));const unitPrice=roundBs(Number($('#ownUnit',overlay).value||0));const wholesalePrice=roundBs(Number($('#ownWholesale',overlay).value||0));const real=roundBs(base+additionalCost);if(unitPrice<=0||wholesalePrice<=0)return showToast('Ingresa ambos precios de venta.','error');if(unitPrice<real||wholesalePrice<real)return showToast('Los precios base no pueden quedar por debajo de tu costo real.','error');const btn=$('#saveOwnPrices',overlay);btn.disabled=true;btn.textContent='Guardando…';const res=await updateRepresentativeInventoryRemote(p.id,0,{additionalCost,unitPrice,wholesalePrice,note:$('#ownNote',overlay).value.trim()});if(!res.ok){btn.disabled=false;btn.textContent='Reintentar';return showToast(res.message,'error');}p.resellerAdditionalCost=additionalCost;p.resellerLocalUnitPrice=unitPrice;p.resellerLocalWholesalePrice=wholesalePrice;p.resellerLocalNote=$('#ownNote',overlay).value.trim();await DB.put('products',p,{silent:true});close();showToast('Precios actualizados.');renderRepresentativeInventoryV7();});
     });
   }
 
-  function adminOrderActions(order) {
-    if (order.status === 'paid') return `<button class="btn sm v7ReceiptAdminOrder" data-id="${order.id}">Recibo</button>`;
-    if (['cancelled','rejected'].includes(order.status)) return '';
-    return `${['submitted','modified','approved_pending_payment'].includes(order.status) ? `<button class="btn sm outline v7AdminEditOrder" data-id="${order.id}">${order.status === 'approved_pending_payment' ? 'Modificar antes del pago' : 'Revisar / modificar'}</button>` : ''}${['submitted','modified'].includes(order.status) ? `<button class="btn sm v7ApproveOrder" data-id="${order.id}">Aprobar</button>` : ''}${order.status === 'approved_pending_payment' ? `<button class="btn sm outline v7PaymentAdminOrder" data-id="${order.id}">Orden de pago</button><button class="btn sm v7ConfirmPayment" data-id="${order.id}">Confirmar pago</button>` : ''}<button class="btn sm ghost dangerText v7RejectOrder" data-id="${order.id}">Rechazar</button>`;
-  }
+  function renderInventarioV7() { return isAdmin() ? originalRenderInventario() : renderRepresentativeInventoryV7(); }
 
-  async function renderAdminOrdersInboxV7() {
-    $('#fabAdd').classList.add('hidden');
-    await refreshOrdersV7().catch(() => {});
-    const orders = (await currentOrders()).sort((a,b)=>b.createdAt-a.createdAt);
-    $('#mainArea').innerHTML = `
-      <section class="v7PageHead v7AdminOrdersHead"><div><span class="v7Eyebrow">Compras de representantes</span><h1>Pedidos y cobros</h1><p>Revisa, modifica, aprueba y confirma pagos al contado.</p></div><button class="btn" id="v7DirectSaleBtn">+ Venta directa</button></section>
-      <section class="v7MetricGrid compact"><article class="v7MetricCard"><span>Nuevos</span><strong>${orders.filter(o=>['submitted','modified'].includes(o.status)).length}</strong></article><article class="v7MetricCard"><span>Pendientes de pago</span><strong>${orders.filter(o=>o.status==='approved_pending_payment').length}</strong></article><article class="v7MetricCard primary"><span>Pagados</span><strong>${orders.filter(o=>o.status==='paid').length}</strong></article></section>
-      <section class="v7AdminOrderList">${orders.map(order => { const [label,tone]=statusMeta(order.status); return `<article class="v7AdminOrderCard ${tone}"><div class="v7OrderTop"><div><span class="v7DocNumber">${escapeHtml(order.orderNumber || 'Pedido')}</span><strong>${escapeHtml(order.representativeName || 'Representante')}</strong><small>${fmtDateTime(order.createdAt)} · ${order.source === 'admin_direct' ? 'Venta directa' : 'Pedido online'}</small></div><span class="v7Status ${tone}">${escapeHtml(label)}</span></div><div class="v7OrderItems">${(order.items||[]).map(i=>`<span>${escapeHtml(i.productName)} <b>× ${i.qty}</b> · ${fmtMoney(i.subtotal)}</span>`).join('')}</div>${order.note?`<div class="v7OrderNote">${escapeHtml(order.note)}</div>`:''}<div class="v7OrderFoot"><span>${order.receiptNumber ? escapeHtml(order.receiptNumber) : 'Pago al contado'}</span><strong>${fmtMoney(order.total)}</strong></div><div class="v7OrderActions">${adminOrderActions(order)}</div></article>`; }).join('') || '<div class="v7Empty"><span>📦</span><h3>Sin pedidos</h3><p>Las solicitudes aparecerán automáticamente.</p></div>'}</section>`;
-    $('#v7DirectSaleBtn').addEventListener('click', openDirectRepresentativeSale);
-    $all('.v7AdminEditOrder').forEach(b => b.addEventListener('click', () => openAdminOrderEditor(b.dataset.id, orders)));
-    $all('.v7ApproveOrder').forEach(b => b.addEventListener('click', () => approveAdminOrder(b.dataset.id)));
-    $all('.v7PaymentAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openV7ReceiptPreview(o,'order'); }));
-    $all('.v7ConfirmPayment').forEach(b => b.addEventListener('click', () => confirmAdminOrderPayment(b.dataset.id)));
-    $all('.v7RejectOrder').forEach(b => b.addEventListener('click', () => rejectAdminOrder(b.dataset.id, orders)));
-    $all('.v7ReceiptAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openV7ReceiptPreview(o,'order'); }));
-  }
+  function baseSalePrice(p) { return saleType === 'reseller_wholesale' ? resellerLocalWholesalePrice(p) : resellerLocalUnitPrice(p); }
+  function groupedSalePrice(p) { return saleSelectedGroup && window.applyPercentGroupV7 ? applyPercentGroupV7(baseSalePrice(p), saleSelectedGroup) : roundBs(baseSalePrice(p)); }
+  function saleBreakdown(p) { return buildSalePriceBreakdownV7(p, { saleType, groupId: saleSelectedGroup, seller: true, basePrice: baseSalePrice(p), groupPrice: groupedSalePrice(p), manual: saleManualPrices[p.id] }); }
+  function salePrice(p) { return saleBreakdown(p).unitPrice; }
+  function salePriceConfigured(p) { return Number(baseSalePrice(p) || 0) > 0; }
+  function saleUnits(){return Object.values(saleCart).reduce((s,q)=>s+Number(q||0),0);}
+  function manualCount(){return Object.keys(saleManualPrices).filter(id=>saleManualPrices[id]).length;}
 
-  function openAdminOrderEditor(id, orders) {
-    const order = orders.find(o => o.id === id); if (!order) return;
-    const items = JSON.parse(JSON.stringify(order.items || []));
-    const profile = (AppState.allProfiles || []).find(p => p.id === order.representativeId) || {};
-    const orderDiscount = Math.min(100, Math.max(0, Number(order.representativeDiscountPercent ?? profile.representative_discount_percent ?? 0)));
-    const suggestedOrderPrice = product => roundBs(representativePrice(product) * (1 - orderDiscount / 100));
-    openSheet(`<h2>Revisar ${escapeHtml(order.orderNumber || 'pedido')} <span class="x" id="closeSheet">✕</span></h2><div class="v7EditOrderInfo"><strong>${escapeHtml(order.representativeName || '')}</strong><span>Toda modificación será notificada al representante.</span></div><div id="v7AdminEditItems"></div><div class="field"><label>Agregar producto</label><select id="v7AddProductSelect"><option value="">Seleccionar…</option>${AppState.products.filter(p=>centralStock(p)>0).map(p=>`<option value="${p.id}">${escapeHtml(p.name)} · ${fmtMoney(suggestedOrderPrice(p))}</option>`).join('')}</select></div><div class="field"><label>Nota del administrador</label><textarea id="v7AdminOrderNote">${escapeHtml(order.adminNote || '')}</textarea></div><div class="v7TotalLine"><span>Total actualizado</span><strong id="v7AdminEditTotal"></strong></div><button class="btn block" id="v7SaveAdminOrder">Guardar y notificar</button>`, (overlay, close) => {
-      const renderItems = () => {
-        $('#v7AdminEditItems', overlay).innerHTML = items.map((i,idx)=>`<div class="v7EditItem"><div><strong>${escapeHtml(i.productName)}</strong><small>Disponible: ${centralStock(AppState.products.find(p=>p.id===i.productId)||{})}</small></div><input type="number" min="0" step="1" value="${i.qty}" data-q="${idx}"><input type="number" min="0" step="0.01" value="${i.unitPrice}" data-p="${idx}"><button data-r="${idx}">×</button></div>`).join('');
-        const recalc=()=>{items.forEach(i=>i.subtotal=roundBs(Number(i.qty||0)*Number(i.unitPrice||0))); $('#v7AdminEditTotal',overlay).textContent=fmtMoney(items.reduce((s,i)=>s+i.subtotal,0));};
-        $all('[data-q]',overlay).forEach(el=>el.addEventListener('input',()=>{items[Number(el.dataset.q)].qty=Math.max(0,Number(el.value||0));recalc();}));
-        $all('[data-p]',overlay).forEach(el=>el.addEventListener('input',()=>{items[Number(el.dataset.p)].unitPrice=Math.max(0,Number(el.value||0));recalc();}));
-        $all('[data-r]',overlay).forEach(el=>el.addEventListener('click',()=>{items.splice(Number(el.dataset.r),1);renderItems();})); recalc();
-      };
-      renderItems();
-      $('#closeSheet',overlay).addEventListener('click',close);
-      $('#v7AddProductSelect',overlay).addEventListener('change',e=>{const p=AppState.products.find(x=>x.id===e.target.value);if(!p)return;const found=items.find(i=>i.productId===p.id);if(found)found.qty+=1;else { const unitPrice=suggestedOrderPrice(p); items.push({productId:p.id,productName:p.name,category:p.category||'General',qty:1,unitPrice,subtotal:unitPrice}); }e.target.value='';renderItems();});
-      $('#v7SaveAdminOrder',overlay).addEventListener('click',async()=>{const clean=items.filter(i=>Number(i.qty)>0&&Number(i.unitPrice)>=0).map(i=>Object.assign(i,{subtotal:roundBs(Number(i.qty)*Number(i.unitPrice))}));if(!clean.length)return showToast('El pedido debe conservar al menos un producto.','error');const payload=Object.assign({},order,{items:clean,total:clean.reduce((s,i)=>s+i.subtotal,0),adminNote:$('#v7AdminOrderNote',overlay).value.trim(),status:'modified',updatedAt:Date.now()});const btn=$('#v7SaveAdminOrder',overlay);btn.disabled=true;btn.textContent='Guardando…';const res=await adminUpdateOrderV7(order.id,payload);if(!res.ok){btn.disabled=false;btn.textContent='Reintentar';return showToast(res.message,'error');}close();showToast('Pedido modificado y notificado.');renderAdminOrdersInboxV7();});
-    });
-  }
-
-  async function approveAdminOrder(id) { const res=await adminApproveOrderV7(id); showToast(res.ok?'Pedido aprobado. Esperando pago.':res.message,res.ok?undefined:'error'); if(res.ok)renderAdminOrdersInboxV7(); }
-  async function confirmAdminOrderPayment(id) { if(!confirmDialog('¿Confirmas que el pago total fue recibido? Al confirmar, el stock pasará al representante.'))return; const res=await adminConfirmOrderPaymentV7(id); showToast(res.ok?'Pago confirmado y stock transferido.':res.message,res.ok?undefined:'error'); if(res.ok){await renderAdminOrdersInboxV7();const orders=await currentOrders();const o=orders.find(x=>x.id===id);if(o)openV7ReceiptPreview(o,'order');} }
-  async function rejectAdminOrder(id, orders) { if(!confirmDialog('¿Rechazar este pedido?'))return; const order=orders.find(o=>o.id===id);const res=await adminUpdateOrderV7(id,Object.assign({},order,{status:'rejected',updatedAt:Date.now()}));showToast(res.ok?'Pedido rechazado.':res.message,res.ok?undefined:'error');if(res.ok)renderAdminOrdersInboxV7(); }
-
-  async function openDirectRepresentativeSale() {
-    const reps = await activeRepresentativesV7();
-    if (!reps.length) return showToast('No hay representantes activos.', 'error');
-
-    let selectedRep = reps[0].id;
-    const cart = {};
-    const priceForRepresentative = (product) => {
-      const rep = reps.find(r => r.id === selectedRep) || {};
-      const discount = Math.min(100, Math.max(0, Number(rep.representative_discount_percent || 0)));
-      return roundBs(representativePrice(product) * (1 - discount / 100));
+  function saleItems(){return Object.entries(saleCart).map(([id,qty])=>{
+    const p=AppState.products.find(x=>x.id===id);if(!p)return null;
+    const b=saleBreakdown(p); const q=Number(qty||0); const cost=resellerEffectiveCost(p); const signed=roundBs(b.unitPrice-b.basePrice);
+    return {
+      productId:p.id, productName:p.name, category:p.category||'General', qty:q,
+      originalUnitPrice:b.basePrice, groupUnitPrice:b.groupPrice, manualUnitPrice:b.manual?b.unitPrice:null,
+      unitPrice:b.unitPrice, priceSource:b.source, priceAdjustmentType:b.sign, priceAdjustmentAmount:b.adjustmentAmount,
+      priceAdjustmentSigned:b.adjustmentSigned, priceAdjustmentPercent:b.adjustmentPercent, manualPriceReason:b.manualReason||'',
+      groupId:b.groupId, groupName:b.groupName,
+      unitCost:cost, subtotal:roundBs(b.unitPrice*q), originalSubtotal:roundBs(b.basePrice*q), groupSubtotal:roundBs(b.groupPrice*q),
+      discountAmount:signed<0?roundBs(Math.abs(signed)*q):0, surchargeAmount:signed>0?roundBs(signed*q):0,
+      profit:roundBs((b.unitPrice-cost)*q), sellerUnitProfit:roundBs(b.unitPrice-cost), sellerProfit:roundBs((b.unitPrice-cost)*q)
     };
+  }).filter(Boolean);}
+  function saleTotal(){return saleItems().reduce((s,i)=>s+i.subtotal,0);}
 
+  function changeSaleQty(id,delta){const p=AppState.products.find(x=>x.id===id);if(!p)return;if(delta>0&&!salePriceConfigured(p)){showToast('Configura primero tu precio base para este producto.','error');return openOwnPriceEditor(id);}const next=Math.max(0,Math.min(Number(p.stock||0),Number(saleCart[id]||0)+delta));if(next===0){delete saleCart[id];delete saleManualPrices[id];}else saleCart[id]=next;renderRepresentativeSalesV7();}
+
+  function openRepPriceEditor(id){
+    const p=AppState.products.find(x=>x.id===id); if(!p||!saleCart[id])return showToast('Agrega primero el producto al carrito.','error');
+    openSalePriceEditorV7({product:p,breakdown:saleBreakdown(p),manual:saleManualPrices[id],onApply:entry=>{saleManualPrices[id]=entry;renderRepresentativeSalesV7();showToast('Precio manual aplicado.');},onReset:()=>{delete saleManualPrices[id];renderRepresentativeSalesV7();showToast('Precio restablecido.');}});
+  }
+
+  function renderSaleCartBar(){let bar=$('#cartBar');if(!bar){bar=document.createElement('div');bar.id='cartBar';bar.className='cartBar v7CartBar';$('#app').appendChild(bar);}if(!saleUnits()){bar.classList.add('hidden');return;}bar.classList.remove('hidden');bar.innerHTML=`<div><strong>${saleUnits()} unidad(es)${manualCount()?` · ${manualCount()} manual`:''}</strong><span>${fmtMoney(saleTotal())}</span></div><button class="btn" id="v7SaleCheckout">Cobrar</button>`;$('#v7SaleCheckout').addEventListener('click',openSaleCheckoutV7);}
+
+  function renderRepresentativeSalesV7(){
+    $('#fabAdd').classList.add('hidden');
+    const products=AppState.products.filter(p=>p.status!=='archived'&&Number(p.stock||0)>0);
+    const groupsEnabled=AppState.settings.priceGroupsEnabled&&AppState.priceGroups.length>0;
+    $('#mainArea').innerHTML=`<section class="v7PageHead"><span class="v7Eyebrow">Ventas a tus clientes</span><h1>Vender</h1><p>Elige venta unitaria o mayorista. Puedes aplicar grupos y excepciones manuales.</p></section><div class="v7Segment"><button data-sale-type="reseller_unit" class="${saleType==='reseller_unit'?'active':''}">Venta unitaria</button><button data-sale-type="reseller_wholesale" class="${saleType==='reseller_wholesale'?'active':''}">Venta mayorista</button></div>${groupsEnabled?`<div class="field"><label>Grupo / zona de venta opcional</label><select id="repSaleGroup"><option value="">Sin grupo / precio base</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${saleSelectedGroup===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select><small>Los precios manuales se mantienen como excepción.</small></div>`:''}<div class="v7SearchBox"><span>⌕</span><input id="v7SaleSearch" placeholder="Buscar en mi inventario" value="${escapeHtml(saleSearch)}"></div><section class="v7ProductGrid">${products.map(p=>{const q=Number(saleCart[p.id]||0);const configured=salePriceConfigured(p);const b=saleBreakdown(p);return`<article class="v7ProductCard ${configured?'':'unpriced'} price-${b.source} adjust-${b.sign}"><div class="v7ProductImage">${p.photo?`<img src="${p.photo}" alt="" loading="lazy" decoding="async">`:'<span>NV</span>'}${configured?salePriceBadgeV7(b):'<em>CONFIGURA PRECIO</em>'}</div><div class="v7ProductBody"><small>${escapeHtml(p.category||'General')}</small><h3>${escapeHtml(p.name)}</h3><div class="v7ProductPrice"><strong>${configured?fmtMoney(b.unitPrice):'Sin precio'}</strong><span>Stock: ${p.stock}</span></div>${configured&&b.source!=='normal'?`<div class="priceTrace">${salePriceLabelV7(b)} · Base ${fmtMoney(b.basePrice)}</div>`:''}${configured?`<div class="v7Stepper"><button data-sale-minus="${p.id}">−</button><b>${q}</b><button data-sale-plus="${p.id}">+</button></div>${q>0?`<button class="miniEditPrice" data-rep-edit-price="${p.id}">✎ Editar precio</button>`:''}`:`<button class="btn outline block v7ConfigureSalePrice" data-id="${p.id}">Configurar precio base</button>`}</div></article>`}).join('')||`<div class="v7Empty"><span>🌱</span><h3>Sin productos para vender</h3><p>Necesitas stock confirmado en tu Inventario propio.</p></div>`}</section>`;
+    $all('[data-sale-type]').forEach(b=>b.addEventListener('click',()=>{saleType=b.dataset.saleType;saleCart={};saleManualPrices={};renderRepresentativeSalesV7();}));
+    const group=$('#repSaleGroup'); if(group)group.addEventListener('change',()=>{if(manualCount()){const keep=window.confirm(`Hay ${manualCount()} producto(s) con precio manual.\n\nAceptar: mantener precios manuales.\nCancelar: reemplazar todos con el grupo.`);if(!keep)saleManualPrices={};}saleSelectedGroup=group.value||null;renderRepresentativeSalesV7();});
+    bindStableSearch('#v7SaleSearch','#mainArea .v7ProductCard',value=>{saleSearch=value;});$all('[data-sale-plus]').forEach(b=>b.addEventListener('click',()=>changeSaleQty(b.dataset.salePlus,1)));$all('[data-sale-minus]').forEach(b=>b.addEventListener('click',()=>changeSaleQty(b.dataset.saleMinus,-1)));$all('[data-rep-edit-price]').forEach(b=>b.addEventListener('click',()=>openRepPriceEditor(b.dataset.repEditPrice)));$all('.v7ConfigureSalePrice').forEach(b=>b.addEventListener('click',()=>openOwnPriceEditor(b.dataset.id)));renderSaleCartBar();
+  }
+
+  async function saveV7Client(data){
+    let phone = window.normalizePhoneV723 ? normalizePhoneV723(data.phone || '') : String(data.phone || '').trim();
+    let client=AppState.clients.find(c=>(phone && window.normalizePhoneV723 && normalizePhoneV723(c.phone)===phone)||normalizeSearch(c.name)===normalizeSearch(data.name));
+    if (window.buildClientRecordV723 && window.saveClientV723) return saveClientV723(buildClientRecordV723(client || {}, Object.assign({}, data, { phone })));
+    const row=Object.assign({},client||{id:uid('cli'),createdAt:Date.now()},{name:data.name,phone:phone||'',customerType:data.customerType,businessName:data.businessName||'',address:data.address||'',city:data.city||'',locationLabel:data.locationLabel||data.location||'',notes:data.notes||'',updatedAt:Date.now()});
+    await DB.put('clients',row); const idx=AppState.clients.findIndex(c=>c.id===row.id);if(idx>=0)AppState.clients[idx]=row;else AppState.clients.push(row);return row;
+  }
+
+  function openSaleCheckoutV7(){
+    const items = saleItems(); const total = saleTotal();
+    if (!items.length) return showToast('Selecciona al menos un producto.', 'error');
+    if (items.some(i => Number(i.unitPrice || 0) <= 0) || total <= 0) return showToast('Todos los productos deben tener un precio de venta válido.', 'error');
+    const discounts=items.reduce((s,i)=>s+Number(i.discountAmount||0),0); const surcharges=items.reduce((s,i)=>s+Number(i.surchargeAmount||0),0);
+    const operation = { id: uid('sale'), documentNumber: '', client: null, sale: null, submitting: false };
     openSheet(`
-      <h2>Venta directa a representante <span class="x" id="closeSheet">✕</span></h2>
-      <div class="field">
-        <label>Representante activo</label>
-        <select id="v7DirectRep">
-          ${reps.map(r => `<option value="${r.id}">${escapeHtml(r.full_name || r.email)} · ${escapeHtml(r.city || '')}${Number(r.representative_discount_percent || 0) > 0 ? ` · descuento ${Number(r.representative_discount_percent)}%` : ''}</option>`).join('')}
-        </select>
-      </div>
-      <div class="v7CashNotice">Se generará una operación pendiente de pago. El stock se transferirá al confirmar el pago.</div>
-      <div class="v7DirectProducts">
-        ${AppState.products.filter(p => p.status !== 'archived').map(p => `
-          <div>
-            <span>
-              <strong>${escapeHtml(p.name)}</strong>
-              <small data-direct-price="${p.id}">${fmtMoney(priceForRepresentative(p))} · ${centralStock(p)} disponibles</small>
-            </span>
-            <input type="number" min="0" max="${centralStock(p)}" value="0" data-direct="${p.id}" ${centralStock(p) === 0 ? 'disabled' : ''}>
-          </div>
-        `).join('')}
-      </div>
-      <div class="field"><label>Nota</label><textarea id="v7DirectNote" placeholder="Detalle de entrega o acuerdo"></textarea></div>
-      <div class="v7TotalLine"><span>Total</span><strong id="v7DirectTotal">Bs 0</strong></div>
-      <button class="btn block" id="v7CreateDirectSale">Crear venta pendiente de pago</button>
+      <h2>Confirmar venta al contado <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7CartList">${items.map(i => `<div class="priceLine ${i.priceSource}"><span><strong>${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource,sign:i.priceAdjustmentType})}</strong><small>${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource,sign:i.priceAdjustmentType,adjustmentAmount:i.priceAdjustmentAmount,groupName:i.groupName})}</small>${i.manualPriceReason?`<small>${escapeHtml(i.manualPriceReason)}</small>`:''}</span><b>${fmtMoney(i.subtotal)}</b></div>`).join('')}</div>
+      ${(discounts||surcharges)?`<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>`:''}
+      <div class="v7TotalLine"><span>Total a cobrar</span><strong>${fmtMoney(total)}</strong></div>
+      <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="v7AmountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="v7PendingBalance" readonly value="0"></div></div>
+      <div class="field"><label>Motivo si queda saldo pendiente</label><input id="v7PendingReason" placeholder="Ej.: saldo pendiente, transferencia pendiente"></div>
+      <div class="v7CashNotice">Si queda saldo, aparecerá en Ventas por cobrar. La venta descuenta stock al confirmarse.</div>
+      <div class="sectiontitle2"><span>Cliente</span></div>
+      <div class="field"><label>Nombre *</label><div class="clientInputRow"><input id="v7ClientName" autocomplete="off" placeholder="Nombre del cliente o tienda"><button type="button" class="miniClientPick" id="pickRepClientV723">▾</button></div><small>${saleType === 'reseller_wholesale' ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
+      <div class="field"><label>WhatsApp</label><div class="clientInputRow"><input id="v7ClientPhone" inputmode="tel" autocomplete="off"><button type="button" class="waIconBtnV723" id="v7ClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
+      <input type="hidden" id="v7ClientType" value="${saleType === 'reseller_wholesale' ? 'wholesale' : 'unit'}">
+      ${saleType === 'reseller_wholesale' ? `<button type="button" class="btn outline block" id="registerRepWholesaleV725">Registrar datos de mayorista</button>` : ''}
+      <details class="v7OptionalDetails"><summary>Datos opcionales del cliente</summary><div class="field"><label>Dirección</label><input id="v7ClientAddress"></div><div class="field"><label>Ciudad</label><input id="v7ClientCity"></div><div class="field"><label>Dato de ubicación</label><input id="v7ClientLocation"></div><div class="field"><label>Observaciones</label><textarea id="v7ClientNotes"></textarea></div></details>
+      <div class="actions stickyActions"><button class="btn block" id="confirmSaleV7">Confirmar pago y generar recibo</button></div>
     `, (overlay, close) => {
-      const refreshVisiblePrices = () => {
-        AppState.products.forEach(product => {
-          const el = $(`[data-direct-price="${product.id}"]`, overlay);
-          if (el) el.textContent = `${fmtMoney(priceForRepresentative(product))} · ${centralStock(product)} disponibles`;
-        });
-      };
-      const recalc = () => {
-        $all('[data-direct]', overlay).forEach(el => {
-          cart[el.dataset.direct] = Math.max(0, Number(el.value || 0));
-        });
-        const total = Object.entries(cart).reduce((sum, [id, qty]) => {
-          const product = AppState.products.find(x => x.id === id);
-          return sum + (product ? priceForRepresentative(product) * qty : 0);
-        }, 0);
-        $('#v7DirectTotal', overlay).textContent = fmtMoney(total);
-      };
-
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#v7DirectRep', overlay).addEventListener('change', event => {
-        selectedRep = event.target.value;
-        refreshVisiblePrices();
-        recalc();
-      });
-      $all('[data-direct]', overlay).forEach(el => el.addEventListener('input', recalc));
-
-      $('#v7CreateDirectSale', overlay).addEventListener('click', async () => {
-        recalc();
-        const rep = reps.find(r => r.id === selectedRep);
-        const items = Object.entries(cart)
-          .filter(([, qty]) => qty > 0)
-          .map(([id, qty]) => {
-            const product = AppState.products.find(x => x.id === id);
-            const unitPrice = priceForRepresentative(product);
-            return {
-              productId: id,
-              productName: product.name,
-              category: product.category || 'General',
-              qty,
-              unitPrice,
-              subtotal: roundBs(qty * unitPrice)
-            };
-          });
-
-        if (!items.length) return showToast('Selecciona al menos un producto.', 'error');
-
-        const order = {
-          id: uid('order'),
-          source: 'admin_direct',
-          representativeName: rep.full_name || rep.email,
-          representativePhone: rep.phone || '',
-          representativeCity: rep.city || '',
-          representativeDiscountPercent: Number(rep.representative_discount_percent || 0),
-          items,
-          total: items.reduce((sum, item) => sum + item.subtotal, 0),
-          note: $('#v7DirectNote', overlay).value.trim(),
-          status: 'approved_pending_payment',
-          paymentStatus: 'pending',
-          createdAt: Date.now()
-        };
-
-        const btn = $('#v7CreateDirectSale', overlay);
-        btn.disabled = true;
-        btn.textContent = 'Guardando…';
-        const res = await adminCreateDirectOrderV7(selectedRep, order);
-        if (!res.ok) {
-          btn.disabled = false;
-          btn.textContent = 'Reintentar';
-          return showToast(res.message, 'error');
-        }
-        close();
-        showToast('Venta creada y notificada al representante.');
-        renderAdminOrdersInboxV7();
+      $('#closeSheet', overlay).addEventListener('click', () => { if (!operation.submitting) close(); });
+      const fillClientV723 = (c) => { if (!c) return; operation.client = c; $('#v7ClientName', overlay).value = c.name || ''; $('#v7ClientPhone', overlay).value = c.phone || ''; $('#v7ClientAddress', overlay).value = c.address || ''; $('#v7ClientCity', overlay).value = c.city || ''; $('#v7ClientLocation', overlay).value = c.locationLabel || c.location || ''; $('#v7ClientNotes', overlay).value = c.notes || ''; let rebuildForBenefit=false; if (c.priceGroupId && c.priceGroupId !== saleSelectedGroup) { const g=AppState.priceGroups.find(x=>x.id===c.priceGroupId); if(g && window.confirm(`Este cliente tiene beneficio/grupo: ${g.name}. ¿Aplicarlo a esta venta?`)){ saleSelectedGroup=c.priceGroupId; rebuildForBenefit=true; } } const personalPct=Number(c.customDiscountPercent||0); const benefitActive=!c.benefitUntil||new Date(`${c.benefitUntil}T23:59:59`).getTime()>=Date.now(); if(personalPct>0&&benefitActive&&window.confirm(`Este cliente tiene ${personalPct}% de descuento personal adicional. ¿Aplicarlo a esta venta?`)){ Object.keys(saleCart).forEach(productId=>{const product=AppState.products.find(p=>p.id===productId);if(!product)return;const reference=groupedSalePrice(product);saleManualPrices[productId]={manualPrice:roundBs(Math.max(0,reference*(1-personalPct/100))),mode:'client_benefit',value:personalPct,reason:c.benefitNote||`Beneficio personal ${personalPct}%`};}); rebuildForBenefit=true;} if(rebuildForBenefit){AppState.lastClient=c;close();setTimeout(openSaleCheckoutV7,80);} };
+      $('#pickRepClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType, onSelect: fillClientV723 }));
+      if ($('#registerRepWholesaleV725', overlay)) $('#registerRepWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#v7ClientName', overlay).value.trim(), phone: $('#v7ClientPhone', overlay).value.trim(), customerType: 'wholesale' }); });
+      $('#v7ClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#v7ClientPhone', overlay).value, $('#v7ClientName', overlay).value));
+      const updatePaymentV725=()=>{const paid=Math.max(0,Number($('#v7AmountPaid',overlay).value||0));$('#v7PendingBalance',overlay).value=roundBs(Math.max(0,total-paid));};
+      $('#v7AmountPaid',overlay).addEventListener('input',updatePaymentV725); updatePaymentV725();
+      $('#v7ClientName', overlay).addEventListener('blur', () => { const c = AppState.clients.find(x => normalizeSearch(x.name) === normalizeSearch($('#v7ClientName', overlay).value)); if (c) fillClientV723(c); });
+      $('#confirmSaleV7', overlay).addEventListener('click', async () => {
+        if (operation.submitting) return; const name = $('#v7ClientName', overlay).value.trim(); if (!name) return showToast('Ingresa el nombre del cliente.', 'error'); if (!navigator.onLine) return showToast('Se necesita internet para registrar la venta.', 'error');
+        const btn = $('#confirmSaleV7', overlay); operation.submitting = true; btn.disabled = true; btn.textContent = 'Verificando stock y guardando…';
+        try {
+          const productRefresh = await syncCloudProductsToLocal(); if (productRefresh && productRefresh.ok === false) throw new Error(productRefresh.message);
+          for (const item of items) { const current = AppState.products.find(p => p.id === item.productId); if (!current || Number(current.stock || 0) < Number(item.qty || 0)) throw new Error(`Stock insuficiente para ${item.productName}. Actualiza el carrito y vuelve a intentarlo.`); }
+          if (!operation.client) operation.client = await saveV7Client({ name, phone: $('#v7ClientPhone', overlay).value.trim(), customerType: $('#v7ClientType', overlay).value, address: $('#v7ClientAddress', overlay).value.trim(), city: $('#v7ClientCity', overlay).value.trim(), locationLabel: $('#v7ClientLocation', overlay).value.trim(), notes: $('#v7ClientNotes', overlay).value.trim() });
+          if (!operation.documentNumber) { const num = await nextDocumentNumberV7('NV-VTA'); if (!num.ok) throw new Error(num.message); operation.documentNumber = num.number; }
+          if (!operation.sale) { const paidNow=roundBs(Math.min(total,Math.max(0,Number($('#v7AmountPaid',overlay).value||0)))); const pendingNow=roundBs(Math.max(0,total-paidNow)); operation.sale = { id: operation.id, documentNumber: operation.documentNumber, receiptNumber: operation.documentNumber, type: saleType, role: AppState.session.roleName, sellerId: AppState.session.onlineUserId || AppState.session.userId, sellerName: AppState.session.fullName, sellerBusinessName: window.myCommercialProfile ? (myCommercialProfile().businessName || '') : '', sellerQrUrl: window.myCommercialProfile ? (myCommercialProfile().qrUrl || '') : '', sellerReceiptMessage: window.myCommercialProfile ? (myCommercialProfile().receiptMessage || '') : '', groupId: saleSelectedGroup, groupName: saleSelectedGroup ? ((AppState.priceGroups.find(g=>g.id===saleSelectedGroup)||{}).name||'') : null, items, total, originalTotal: items.reduce((s,i)=>s+i.originalSubtotal,0), discountTotal: discounts, surchargeTotal: surcharges, sellerProfit: items.reduce((sum, item) => sum + Number(item.profit || 0), 0), clientId: operation.client.id, clientName: operation.client.name, clientPhone: operation.client.phone, clientCity: operation.client.city || '', clientAddress: operation.client.address || '', clientBusinessName: operation.client.businessName || '', customerType: operation.client.customerType || '', paymentMethod: 'cash', paymentStatus: pendingNow>0 ? (paidNow>0?'partial':'pending') : 'paid', amountPaid: paidNow, pendingBalance: pendingNow, pendingReason: pendingNow>0 ? $('#v7PendingReason',overlay).value.trim() : '', date: Date.now(), syncStatus: 'cloud' }; }
+          await DB.put('sales', operation.sale); await Promise.all([syncCloudProductsToLocal().catch(() => null), window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()]); if (!AppState.sales.some(s => s.id === operation.sale.id)) AppState.sales.push(operation.sale); close(); saleCart = {}; saleManualPrices = {}; showToast('Venta registrada y stock actualizado.'); openV7ReceiptPreview(operation.sale, 'sale'); renderRepresentativeSalesV7();
+        } catch (err) { operation.submitting = false; btn.disabled = false; btn.textContent = 'Reintentar la misma operación'; const message = window.messageFromError ? messageFromError(err, 'No se pudo guardar la venta.') : (err.message || 'No se pudo guardar la venta.'); showToast(message, 'error'); }
       });
     });
   }
 
-  Object.assign(window, {
-    renderOrderRequest: renderOrderRequestV7,
-    renderAdminOrdersInbox: renderAdminOrdersInboxV7,
-    renderOrderRequestV7,
-    renderAdminOrdersInboxV7
-  });
+  function renderVenderV7(){return isAdmin()?originalRenderVender():renderRepresentativeSalesV7();}
+  Object.assign(window,{renderInventario:renderInventarioV7,renderVender:renderVenderV7,renderRepresentativeInventoryV7,renderRepresentativeSalesV7,openOwnPriceEditor});
 })();

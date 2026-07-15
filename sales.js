@@ -1,153 +1,200 @@
-/* pricegroups.js — Grupos de precio configurables: nombre, color, % de ganancia/descuento. */
+/* orders.js — Pedidos conectados directamente a Supabase. */
 
-const GROUP_COLORS = ['#01773B', '#83AD41', '#D98E1E', '#3B7DD8', '#A23B9E', '#D84343', '#2B8C8C', '#7A5C2E'];
+let _orderCart = {};
+let _orderNote = '';
 
-function renderPriceGroups() {
-  $('#fabAdd').classList.remove('hidden');
-  $('#fabAdd').onclick = () => openPriceGroupForm(null);
-  const main = $('#mainArea');
+function orderCount() {
+  return Object.values(_orderCart).reduce((s, q) => s + q, 0);
+}
 
-  let html = `
-    <div class="banner">
-      💲 Los grupos de precio se calculan sobre el <b>precio de abastecimiento</b> del producto. Activa o desactiva esta función en Ajustes.
-    </div>
-  `;
+function orderTotalBase() {
+  return Object.entries(_orderCart).reduce((sum, [id, qty]) => {
+    const p = AppState.products.find(x => x.id === id);
+    return sum + (p ? representativePrice(p) * qty : 0);
+  }, 0);
+}
 
-  if (AppState.priceGroups.length === 0) {
-    html += `
-      <div class="empty">
-        <span class="ic">🏷️</span>
-        <h3>Aún no hay grupos</h3>
-        <p>Crea grupos como "Mercado", "Tienda" o "Socios" con su propio porcentaje de ganancia.</p>
-      </div>`;
-  } else {
-    AppState.priceGroups.forEach(g => {
-      html += `
-      <div class="card" data-id="${g.id}">
-        <div style="display:flex; align-items:center; gap:12px; padding:14px;">
-          <div style="width:14px; height:42px; border-radius:6px; background:${g.color}; flex-shrink:0;"></div>
-          <div style="flex:1;">
-            <div class="name">${escapeHtml(g.name)}</div>
-            <div class="costline">${g.mode === 'discount' ? 'Descuento' : 'Ganancia'} del ${g.percent}% sobre precio de abastecimiento</div>
+function renderOrderRequest() {
+  $('#fabAdd').classList.add('hidden');
+  if (!isReseller()) {
+    renderAdminOrdersInbox();
+    return;
+  }
+  const products = AppState.products.filter(p => p.status !== 'archived' && matchesSearch(p.name + ' ' + (p.category || ''), _saleSearch || ''));
+  $('#mainArea').innerHTML = `
+    <section class="dashboardPanel orderHero">
+      <div class="panelHeader"><div><span class="eyebrow">Pedido al administrador</span><h2>Solicitar reposición</h2></div></div>
+      <div class="banner">Arma tu pedido con los productos del catálogo y envíalo directamente al administrador mediante Supabase.</div>
+      <div class="miniStats">
+        <div><span>Ítems</span><strong>${orderCount()}</strong></div>
+        <div><span>Total base</span><strong>${fmtMoney(orderTotalBase())}</strong></div>
+        <div><span>Modo</span><strong>Supabase</strong></div>
+      </div>
+    </section>
+    <div class="field"><label>Nota para el administrador</label><textarea id="orderNote" placeholder="Ej.: Enviar a La Paz por flota / confirmar disponibilidad">${escapeHtml(_orderNote)}</textarea></div>
+    <div class="catalogGrid orderGrid">
+      ${products.map(p => {
+        const qty = _orderCart[p.id] || 0;
+        return `<div class="catalogCard orderProductCard">
+          <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
+          <div class="catalogBody">
+            <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span></div>
+            <div class="catalogName">${escapeHtml(p.name)}</div>
+            <div class="catalogPrice">Base: ${fmtMoney(representativePrice(p))}</div>
+            <div class="catalogStock">Stock central ref.: ${Number(p.adminStock ?? p.stock ?? 0)}</div>
+            <div class="qtyStepper"><button class="orderMinus" data-id="${p.id}">−</button><span class="qtyVal">${qty}</span><button class="orderPlus" data-id="${p.id}">+</button></div>
           </div>
-        </div>
-        <div class="cardactions">
-          <button class="editGroupBtn" data-id="${g.id}">✏️ Editar</button>
-          <button class="danger delGroupBtn" data-id="${g.id}">🗑️ Eliminar</button>
-        </div>
-      </div>`;
-    });
-  }
-
-  main.innerHTML = html;
-  $all('.editGroupBtn').forEach(b => b.addEventListener('click', () => openPriceGroupForm(b.dataset.id)));
-  $all('.delGroupBtn').forEach(b => b.addEventListener('click', () => confirmDeleteGroup(b.dataset.id)));
-}
-
-async function confirmDeleteGroup(id) {
-  const g = AppState.priceGroups.find(x => x.id === id);
-  if (!g) return;
-  if (confirmDialog(`¿Eliminar el grupo "${g.name}"? Las ventas ya registradas no se modifican.`)) {
-    try {
-      await DB.delete('priceGroups', id);
-      AppState.priceGroups = AppState.priceGroups.filter(x => x.id !== id);
-      renderPriceGroups();
-      showToast('Grupo eliminado de Supabase');
-    } catch (err) { showToast(err.message || 'No se pudo eliminar el grupo.', 'error'); }
-  }
-}
-
-function openPriceGroupForm(id) {
-  const g = id ? AppState.priceGroups.find(x => x.id === id) : null;
-  const selectedColor = g ? g.color : GROUP_COLORS[AppState.priceGroups.length % GROUP_COLORS.length];
-
-  const html = `
-    <h2>${g ? 'Editar grupo' : 'Nuevo grupo de precio'} <span class="x" id="closeSheet">✕</span></h2>
-
-    <div class="field">
-      <label>Nombre del grupo</label>
-      <input type="text" id="f_gname" placeholder="Ej: Mercado, Tienda, Socios..." value="${g ? escapeHtml(g.name) : ''}">
+        </div>`;
+      }).join('')}
     </div>
-
-    <div class="field">
-      <label>Color identificador</label>
-      <div id="colorPicker" style="display:flex; gap:8px; flex-wrap:wrap;">
-        ${GROUP_COLORS.map(c => `
-          <div class="colorDot" data-color="${c}" style="width:34px;height:34px;border-radius:50%;background:${c};cursor:pointer;border:3px solid ${c === selectedColor ? '#15171A' : 'transparent'};"></div>
-        `).join('')}
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Tipo de regla</label>
-      <div class="saletoggle" id="modeToggle">
-        <button data-mode="markup" class="${(!g || g.mode === 'markup') ? 'active' : ''}">Ganancia (+%)</button>
-        <button data-mode="discount" class="${g && g.mode === 'discount' ? 'active' : ''}">Descuento (−%)</button>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Porcentaje</label>
-      <input type="number" inputmode="decimal" step="0.1" id="f_gpercent" placeholder="Ej: 30" value="${g ? g.percent : ''}">
-    </div>
-
-    <div class="actions">
-      <button class="btn outline block" id="cancelForm">Cancelar</button>
-      <button class="btn block" id="saveForm">${g ? 'Guardar cambios' : 'Crear grupo'}</button>
+    <div class="stickyActions orderStickyActions">
+      <button class="btn outline block" id="clearOrderBtn">Limpiar pedido</button>
+      <button class="btn block" id="sendOrderBtn">Enviar pedido</button>
     </div>
   `;
-
-  openSheet(html, (overlay, close) => {
-    let chosenColor = selectedColor;
-    let chosenMode = g && g.mode === 'discount' ? 'discount' : 'markup';
-
-    $all('.colorDot', overlay).forEach(dot => dot.addEventListener('click', () => {
-      chosenColor = dot.dataset.color;
-      $all('.colorDot', overlay).forEach(d => d.style.border = '3px solid transparent');
-      dot.style.border = '3px solid #15171A';
-    }));
-
-    $all('#modeToggle button', overlay).forEach(btn => btn.addEventListener('click', () => {
-      chosenMode = btn.dataset.mode;
-      $all('#modeToggle button', overlay).forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }));
-
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#cancelForm', overlay).addEventListener('click', close);
-
-    $('#saveForm', overlay).addEventListener('click', async () => {
-      const name = $('#f_gname', overlay).value.trim();
-      const percent = parseFloat($('#f_gpercent', overlay).value) || 0;
-      if (!name) { showToast('⚠️ Ponle un nombre al grupo', 'error'); return; }
-
-      const data = {
-        id: g ? g.id : uid('grp'),
-        name, color: chosenColor, mode: chosenMode, percent,
-        createdAt: g ? g.createdAt : Date.now()
-      };
-      const saveBtn = $('#saveForm', overlay);
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Guardando en Supabase…';
-      try {
-        await DB.put('priceGroups', data);
-        if (g) {
-          const idx = AppState.priceGroups.findIndex(x => x.id === g.id);
-          AppState.priceGroups[idx] = data;
-        } else {
-          AppState.priceGroups.push(data);
-        }
-        close();
-        renderPriceGroups();
-        showToast(g ? 'Grupo actualizado en Supabase' : 'Grupo creado en Supabase');
-      } catch (err) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = g ? 'Guardar cambios' : 'Crear grupo';
-        showToast(err.message || 'No se pudo guardar el grupo.', 'error');
-      }
-    });
-  });
+  $('#orderNote').addEventListener('input', e => { _orderNote = e.target.value; });
+  $all('.orderPlus').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.id, 1)));
+  $all('.orderMinus').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.id, -1)));
+  $('#clearOrderBtn').addEventListener('click', () => { _orderCart = {}; renderOrderRequest(); });
+  $('#sendOrderBtn').addEventListener('click', submitOrderRequest);
 }
 
-window.renderPriceGroups = renderPriceGroups;
-window.openPriceGroupForm = openPriceGroupForm;
+
+async function renderAdminOrdersInbox() {
+  $('#fabAdd').classList.add('hidden');
+  if (isOnlineConfigured() && window.fetchCloudPurchaseOrders) {
+    const cloud = await fetchCloudPurchaseOrders().catch(err => ({ ok: false, message: err.message }));
+    if (cloud && cloud.ok && Array.isArray(cloud.orders)) {
+      await DB.clear('purchaseOrders').catch(() => {});
+      if (cloud.orders.length) await DB.bulkPut('purchaseOrders', cloud.orders, { silent: true }).catch(() => {});
+    }
+  }
+  const orders = (await DB.getAll('purchaseOrders').catch(() => []))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  $('#mainArea').innerHTML = `
+    <section class="dashboardPanel orderHero">
+      <div class="panelHeader"><div><span class="eyebrow">Pedidos de representantes</span><h2>Recepción de pedidos</h2></div><span class="livePill">Realtime activo</span></div>
+      <div class="banner">Los pedidos enviados por representantes aparecen automáticamente aquí y en el buzón.</div>
+      <div class="miniStats">
+        <div><span>Total pedidos</span><strong>${orders.length}</strong></div>
+        <div><span>Pendientes</span><strong>${orders.filter(o => o.status === 'pending').length}</strong></div>
+        <div><span>Total base</span><strong>${fmtMoney(orders.reduce((s,o)=>s+(Number(o.total)||0),0))}</strong></div>
+      </div>
+    </section>
+    ${orders.length ? orders.map(o => `
+      <div class="histitem orderAdminCard">
+        <div class="l">
+          <div class="pname">${escapeHtml(o.representativeName || o.representativeUsername || 'Representante')}</div>
+          <div class="meta">${(o.items || []).length} producto(s) · ${fmtDate(o.createdAt || Date.now())} · ${escapeHtml(o.status || 'pending')}</div>
+          ${o.note ? `<div class="catalogDesc">${escapeHtml(o.note)}</div>` : ''}
+          ${(o.items || []).slice(0,4).map(it => `<div class="meta">• ${escapeHtml(it.productName)} × ${it.qty}</div>`).join('')}
+        </div>
+        <div class="r"><strong>${fmtMoney(o.total || 0)}</strong>
+          ${o.status === 'pending' ? `<button class="btn sm approveOrder" data-id="${o.id}">Aprobar</button><button class="btn sm outline rejectOrder" data-id="${o.id}">Rechazar</button>` : ''}
+        </div>
+      </div>
+    `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin pedidos recibidos</h3><p>Cuando un representante envíe pedido, aparecerá aquí.</p></div>`}
+  `;
+  $all('.approveOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'approved')));
+  $all('.rejectOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'rejected')));
+}
+
+async function setOrderStatus(orderId, status) {
+  const order = await DB.get('purchaseOrders', orderId).catch(() => null);
+  if (!order) return;
+  try {
+    if (!navigator.onLine) throw new Error('Sin internet. No se modificó el pedido.');
+    if (!window.updateCloudPurchaseOrderStatus) throw new Error('Supabase no está disponible.');
+    const cloud = await updateCloudPurchaseOrderStatus(orderId, status);
+    if (!cloud || !cloud.ok) throw new Error((cloud && cloud.message) || 'No se pudo modificar el pedido.');
+    order.status = status;
+    order.updatedAt = Date.now();
+    await DB.put('purchaseOrders', order, { silent: true });
+    if (window.sendAdminMessage) {
+      await sendAdminMessage('order_status', `Pedido ${status === 'approved' ? 'aprobado' : 'rechazado'}`, `El administrador marcó un pedido como ${status}.`, { orderId, status }).catch(() => {});
+    }
+    showToast(status === 'approved' ? 'Pedido aprobado.' : 'Pedido rechazado.');
+    renderAdminOrdersInbox();
+  } catch (err) {
+    showToast(err.message || 'No se pudo modificar el pedido.', 'error');
+  }
+}
+
+function changeOrderQty(productId, delta) {
+  const current = _orderCart[productId] || 0;
+  const next = Math.max(0, current + delta);
+  if (next === 0) delete _orderCart[productId];
+  else _orderCart[productId] = next;
+  renderOrderRequest();
+}
+
+function buildOrderPayload() {
+  const items = Object.entries(_orderCart).map(([id, qty]) => {
+    const p = AppState.products.find(x => x.id === id);
+    if (!p) return null;
+    const base = representativePrice(p);
+    return { productId: p.id, productName: p.name, category: p.category || 'General', qty, unitPrice: base, subtotal: base * qty };
+  }).filter(Boolean);
+  const total = items.reduce((s, i) => s + i.subtotal, 0);
+  return {
+    id: uid('order'),
+    representativeId: AppState.session.userId,
+    representativeName: AppState.session.fullName || AppState.session.username,
+    representativeUsername: AppState.session.username,
+    note: _orderNote || '',
+    items,
+    total,
+    status: 'pending',
+    createdAt: Date.now(),
+    syncStatus: 'cloud'
+  };
+}
+
+async function submitOrderRequest() {
+  if (window.canOperate && !canOperate()) {
+    showToast('Tu cuenta aún no fue aprobada. No puedes enviar pedidos.', 'error');
+    return;
+  }
+  if (orderCount() === 0) { showToast('Selecciona productos para el pedido.', 'error'); return; }
+  if (!navigator.onLine) { showToast('Sin internet. El pedido no fue enviado.', 'error'); return; }
+
+  const btn = $('#sendOrderBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando a Supabase…'; }
+  const order = Object.assign(buildOrderPayload(), { syncStatus: 'cloud' });
+  try {
+    await DB.put('purchaseOrders', order);
+    if (window.sendAdminMessage) {
+      await sendAdminMessage(
+        'purchase_order',
+        'Nuevo pedido de representante',
+        `${order.representativeName || 'Representante'} envió un pedido por ${fmtMoney(order.total)} con ${order.items.length} producto(s).`,
+        { orderId: order.id, total: order.total, items: order.items, note: order.note, online: true }
+      ).catch(() => {});
+    }
+    _orderCart = {};
+    _orderNote = '';
+    showToast('Pedido enviado a Supabase.');
+    renderOrderRequest();
+  } catch (err) {
+    showToast(err.message || 'No se pudo enviar el pedido.', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar pedido'; }
+  }
+}
+
+
+window.renderOrderRequest = renderOrderRequest;
+window.renderAdminOrdersInbox = renderAdminOrdersInbox;
+window.submitOrderRequest = submitOrderRequest;
+window.setOrderStatus = setOrderStatus;
+
+async function fetchAndCachePurchaseOrders() {
+  if (!isOnlineConfigured() || !window.fetchCloudPurchaseOrders) return { ok: true, count: 0 };
+  const cloud = await fetchCloudPurchaseOrders().catch(err => ({ ok: false, message: err.message }));
+  if (cloud && cloud.ok && Array.isArray(cloud.orders)) {
+    await DB.clear('purchaseOrders').catch(() => {});
+    if (cloud.orders.length) await DB.bulkPut('purchaseOrders', cloud.orders, { silent: true }).catch(() => {});
+    return { ok: true, count: cloud.orders.length };
+  }
+  return cloud || { ok: true, count: 0 };
+}
+window.fetchAndCachePurchaseOrders = fetchAndCachePurchaseOrders;

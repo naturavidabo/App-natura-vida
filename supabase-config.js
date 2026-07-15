@@ -1,218 +1,395 @@
-/* receipt.js — Genera el recibo de venta: dibujo en canvas (para JPG), PDF real, compartir e imprimir.
-   Soporta ventas con MÚLTIPLES productos (carrito): sale.items = [{productName, qty, unitPrice, subtotal}] */
+/* quotes.js — Cotizaciones: cliente, productos, vigencia con calendario, activas vs vencidas. */
 
-function drawReceiptCanvas(sale) {
-  const W = 600;
-  const items = sale.items || [];
-  // Altura dinámica: cabecera fija + una línea por ítem + pie fijo
-  const headerH = 230;
-  const perItemH = 22;
-  const footerH = 140;
-  const totalH = headerH + (items.length * perItemH) + footerH;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = totalH;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  function drawAll(logoImg) {
-    let y = 36;
-
-    if (logoImg) {
-      ctx.drawImage(logoImg, 30, y - 10, 64, 64);
-    }
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#01773B';
-    ctx.font = 'bold 22px Arial';
-    ctx.fillText(AppState.settings.businessName || 'NATURA VIDA', logoImg ? 106 : 30, y + 22);
-    ctx.fillStyle = '#6B7280';
-    ctx.font = '12px Arial';
-    ctx.fillText(AppState.settings.businessSlogan || '', logoImg ? 106 : 30, y + 42);
-
-    y += 80;
-    ctx.strokeStyle = '#D8DEDA';
-    ctx.beginPath(); ctx.moveTo(30, y); ctx.lineTo(W - 30, y); ctx.stroke();
-    y += 28;
-
-    ctx.fillStyle = '#15171A';
-    ctx.font = 'bold 16px Arial';
-    ctx.fillText('RECIBO DE VENTA', 30, y);
-    ctx.textAlign = 'right';
-    ctx.font = '12px Arial';
-    ctx.fillStyle = '#6B7280';
-    ctx.fillText(new Date(sale.date).toLocaleDateString('es-BO') + '  ' + new Date(sale.date).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }), W - 30, y);
-    ctx.textAlign = 'left';
-    y += 26;
-
-    ctx.font = '13px Arial';
-    ctx.fillStyle = '#15171A';
-    ctx.fillText('Cliente: ' + (sale.clientName || '—'), 30, y); y += 20;
-    ctx.fillText('Teléfono: ' + (sale.clientPhone || '—'), 30, y);
-    if (sale.groupName) {
-      ctx.fillStyle = '#6B7280';
-      ctx.font = 'italic 11px Arial';
-      ctx.fillText('Grupo: ' + sale.groupName, 350, y);
-    }
-    y += 30;
-
-    ctx.strokeStyle = '#D8DEDA';
-    ctx.beginPath(); ctx.moveTo(30, y); ctx.lineTo(W - 30, y); ctx.stroke();
-    y += 24;
-
-    ctx.font = 'bold 12px Arial';
-    ctx.fillStyle = '#6B7280';
-    ctx.fillText('PRODUCTO', 30, y);
-    ctx.fillText('CANT.', 350, y);
-    ctx.fillText('PRECIO', 410, y);
-    ctx.textAlign = 'right';
-    ctx.fillText('SUBTOTAL', W - 30, y);
-    ctx.textAlign = 'left';
-    y += 18;
-    ctx.strokeStyle = '#D8DEDA';
-    ctx.beginPath(); ctx.moveTo(30, y); ctx.lineTo(W - 30, y); ctx.stroke();
-    y += 22;
-
-    ctx.font = '13px Arial';
-    ctx.fillStyle = '#15171A';
-    items.forEach(it => {
-      ctx.fillText((it.productName || '').slice(0, 30), 30, y);
-      ctx.fillText(`${it.qty}`, 350, y);
-      ctx.fillText(fmtMoney(it.unitPrice), 410, y);
-      ctx.textAlign = 'right';
-      ctx.fillText(fmtMoney(it.subtotal), W - 30, y);
-      ctx.textAlign = 'left';
-      y += perItemH;
-    });
-
-    y += 10;
-    ctx.strokeStyle = '#D8DEDA';
-    ctx.beginPath(); ctx.moveTo(30, y); ctx.lineTo(W - 30, y); ctx.stroke();
-    y += 36;
-
-    ctx.font = 'bold 18px Arial';
-    ctx.fillStyle = '#01773B';
-    ctx.textAlign = 'right';
-    ctx.fillText('TOTAL: ' + fmtMoney(sale.total), W - 30, y);
-    ctx.textAlign = 'left';
-
-    y += 46;
-    ctx.font = 'italic 11px Arial';
-    ctx.fillStyle = '#9CA395';
-    ctx.textAlign = 'center';
-    ctx.fillText(AppState.settings.businessSlogan || '¡Gracias por su compra!', W / 2, y);
-    ctx.textAlign = 'left';
-
-    canvas._renderedHeight = y + 24;
-  }
-
-  return new Promise((resolve) => {
-    if (AppState.settings.logo) {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => { drawAll(img); resolve(canvas); };
-      img.onerror = () => { drawAll(null); resolve(canvas); };
-      img.src = AppState.settings.logo;
-    } else {
-      drawAll(null);
-      resolve(canvas);
-    }
-  });
+function isExpired(quote) {
+  if (!quote.expiryDate) return false;
+  return new Date(quote.expiryDate + 'T23:59:59') < new Date();
 }
 
-async function openReceiptPreview(sale) {
+function renderQuotes() {
+  $('#fabAdd').classList.remove('hidden');
+  $('#fabAdd').onclick = () => openQuoteForm();
+  const main = $('#mainArea');
+
+  const active = AppState.quotes.filter(q => !isExpired(q)).sort((a, b) => b.createdAt - a.createdAt);
+  const expired = AppState.quotes.filter(q => isExpired(q)).sort((a, b) => b.createdAt - a.createdAt);
+
+  let html = `<div class="sectiontitle" style="color:var(--pine-mid); margin-top:0;">Cotizaciones activas</div>`;
+
+  if (active.length === 0) {
+    html += `<div class="empty"><span class="ic">📄</span><h3>Sin cotizaciones activas</h3><p>Toca + para crear una nueva.</p></div>`;
+  } else {
+    active.forEach(q => { html += quoteCardHtml(q, false); });
+  }
+
+  if (expired.length > 0) {
+    html += `<div class="sectiontitle" style="color:var(--gray);">Vencidas (archivo histórico)</div>`;
+    expired.forEach(q => { html += quoteCardHtml(q, true); });
+  }
+
+  main.innerHTML = html;
+  $all('.viewQuoteBtn').forEach(b => b.addEventListener('click', () => openQuotePreview(b.dataset.id)));
+  $all('.delQuoteBtn').forEach(b => b.addEventListener('click', () => confirmDeleteQuote(b.dataset.id)));
+}
+
+function quoteCardHtml(q, expired) {
+  const total = (q.items || []).reduce((s, i) => s + (i.price * i.qty), 0);
+  return `
+  <div class="card" data-id="${q.id}" style="${expired ? 'opacity:0.6;' : ''}">
+    <div style="padding:13px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="name">${escapeHtml(q.clientName)}</div>
+        <span class="pill ${expired ? 'low' : 'ok'}">${expired ? 'vencida' : 'vigente'}</span>
+      </div>
+      <div class="costline">📞 ${escapeHtml(q.clientPhone || 'sin teléfono')}</div>
+      <div class="costline">📅 Válida hasta: ${fmtDate(q.expiryDate)}</div>
+      <div class="priceline"><span class="p2">Total: ${fmtMoney(total)}</span></div>
+    </div>
+    <div class="cardactions">
+      <button class="viewQuoteBtn" data-id="${q.id}">👁️ Ver / Compartir</button>
+      <button class="danger delQuoteBtn" data-id="${q.id}">🗑️</button>
+    </div>
+  </div>`;
+}
+
+async function confirmDeleteQuote(id) {
+  if (confirmDialog('¿Eliminar esta cotización?')) {
+    try {
+      await DB.delete('quotes', id);
+      AppState.quotes = AppState.quotes.filter(x => x.id !== id);
+      renderQuotes();
+      showToast('Precios / oferta eliminada de Supabase');
+    } catch (err) { showToast(err.message || 'No se pudo eliminar la cotización.', 'error'); }
+  }
+}
+
+function openQuoteForm(prefill = {}) {
+  const prefClient = prefill.client || null;
+  const prefGroupId = prefill.priceGroupId || (prefClient && prefClient.priceGroupId) || '';
+  let items = [{ productId: '', name: '', price: 0, qty: 1 }];
+
   const html = `
-    <h2>Recibo generado <span class="x" id="closeSheet">✕</span></h2>
-    <div class="receiptCanvasWrap" id="canvasWrap"><div class="loading">Generando recibo…</div></div>
-    <div class="exportRow">
-      <div class="exportBtn" id="btnJpg"><span class="ic">🖼️</span><span class="lbl">Guardar JPG</span><span class="sub">Imagen del recibo</span></div>
-      <div class="exportBtn" id="btnPdf"><span class="ic">📄</span><span class="lbl">Guardar PDF</span><span class="sub">Documento PDF</span></div>
+    <h2>Precios / cotización <span class="x" id="closeSheet">✕</span></h2>
+
+    <div class="field">
+      <label>Nombre del cliente / posible cliente</label>
+      <input type="text" id="q_clientname" placeholder="Ej: Juan Pérez" list="clientSuggestions2" value="${prefClient ? escapeHtml(prefClient.name || '') : ''}">
+      <datalist id="clientSuggestions2">${AppState.clients.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
     </div>
-    <div class="exportRow">
-      <div class="exportBtn" id="btnShare"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
-      <div class="exportBtn" id="btnPrint"><span class="ic">🖨️</span><span class="lbl">Imprimir</span><span class="sub">Diálogo del sistema</span></div>
+    <div class="field">
+      <label>Número de teléfono</label>
+      <input type="tel" inputmode="tel" id="q_clientphone" placeholder="Ej: 71234567" value="${prefClient ? escapeHtml(prefClient.phone || '') : ''}">
     </div>
-    <div class="actions"><button class="btn outline block" id="closeSheet2">Cerrar</button></div>
+    <div class="field">
+      <label>Grupo/beneficio aplicado</label>
+      <select id="q_group"><option value="">Precio base</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${prefGroupId===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select>
+    </div>
+    <div class="field">
+      <label>Fecha límite de validez</label>
+      <input type="date" id="q_expiry" value="${todayISO()}">
+    </div>
+
+    <div class="sectiontitle2"><span>Productos cotizados</span></div>
+    <div id="quoteItemsList"></div>
+    <button type="button" class="addInsumoBtn" id="addItemBtn">+ Agregar producto</button>
+
+    <div class="totalbox">
+      <span class="lbl">Total cotizado</span>
+      <span class="val" id="q_total">${fmtMoney(0)}</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn outline block" id="cancelForm">Cancelar</button>
+      <button class="btn block" id="saveForm">Crear cotización</button>
+    </div>
   `;
 
-  openSheet(html, async (overlay, close) => {
+  openSheet(html, (overlay, close) => {
+    const listEl = $('#quoteItemsList', overlay);
+
+    function renderItems() {
+      listEl.innerHTML = items.map((it, idx) => `
+        <div class="insumo-row" data-idx="${idx}">
+          <select class="item-product" style="flex:1.6;">
+            <option value="">Seleccionar producto...</option>
+            ${AppState.products.map(p => `<option value="${p.id}" ${it.productId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+          <input type="number" inputmode="numeric" step="1" class="item-price" placeholder="Precio" value="${it.price || ''}" style="flex:0.8;">
+          <input type="number" inputmode="numeric" step="1" class="item-qty" placeholder="Cant." value="${it.qty || 1}" style="flex:0.6;">
+          <button type="button" class="insumo-del" data-idx="${idx}">✕</button>
+        </div>
+      `).join('');
+
+      $all('.item-product', listEl).forEach((sel, idx) => sel.addEventListener('change', () => {
+        const prod = AppState.products.find(p => p.id === sel.value);
+        items[idx].productId = sel.value;
+        items[idx].name = prod ? prod.name : '';
+        if (prod && !items[idx].price) { const gid = $('#q_group', overlay) ? $('#q_group', overlay).value : ''; items[idx].price = gid ? priceForGroup(prod, gid) : unitPrice(prod); }
+        renderItems();
+        updateTotal();
+      }));
+      $all('.item-price', listEl).forEach((inp, idx) => inp.addEventListener('input', () => { items[idx].price = roundBs(parseFloat(inp.value) || 0); updateTotal(); }));
+      $all('.item-qty', listEl).forEach((inp, idx) => inp.addEventListener('input', () => { items[idx].qty = parseInt(inp.value) || 1; updateTotal(); }));
+      $all('.insumo-del', listEl).forEach(btn => btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        if (items.length <= 1) items[0] = { productId: '', name: '', price: 0, qty: 1 };
+        else items.splice(idx, 1);
+        renderItems();
+        updateTotal();
+      }));
+    }
+
+    function updateTotal() {
+      const total = items.reduce((s, i) => s + ((i.price || 0) * (i.qty || 0)), 0);
+      $('#q_total', overlay).textContent = fmtMoney(total);
+    }
+
+    renderItems();
+    updateTotal();
+    $('#q_group', overlay)?.addEventListener('change', () => { items = items.map(it => { const prod = AppState.products.find(p => p.id === it.productId); return prod ? Object.assign({}, it, { price: $('#q_group', overlay).value ? priceForGroup(prod, $('#q_group', overlay).value) : unitPrice(prod) }) : it; }); renderItems(); updateTotal(); });
+
+    $('#addItemBtn', overlay).addEventListener('click', () => {
+      items.push({ productId: '', name: '', price: 0, qty: 1 });
+      renderItems();
+      updateTotal();
+    });
+
     $('#closeSheet', overlay).addEventListener('click', close);
-    $('#closeSheet2', overlay).addEventListener('click', close);
+    $('#cancelForm', overlay).addEventListener('click', close);
 
-    const canvas = await drawReceiptCanvas(sale);
-    const finalCanvas = document.createElement('canvas');
-    finalCanvas.width = canvas.width;
-    finalCanvas.height = canvas._renderedHeight || canvas.height;
-    finalCanvas.getContext('2d').drawImage(canvas, 0, 0);
+    $('#saveForm', overlay).addEventListener('click', async () => {
+      const clientName = $('#q_clientname', overlay).value.trim();
+      const clientPhone = $('#q_clientphone', overlay).value.trim();
+      const expiryDate = $('#q_expiry', overlay).value;
+      const cleanItems = items.filter(i => i.name && i.qty > 0);
 
-    const wrap = $('#canvasWrap', overlay);
-    wrap.innerHTML = '';
-    wrap.appendChild(finalCanvas);
+      if (!clientName) { showToast('⚠️ Ingresa el nombre del cliente', 'error'); return; }
+      if (!expiryDate) { showToast('⚠️ Selecciona una fecha de vigencia', 'error'); return; }
+      if (cleanItems.length === 0) { showToast('⚠️ Agrega al menos un producto', 'error'); return; }
 
-    $('#btnJpg', overlay).addEventListener('click', () => downloadCanvasAsJpg(finalCanvas, sale));
-    $('#btnPdf', overlay).addEventListener('click', () => downloadCanvasAsPdf(finalCanvas, sale));
-    $('#btnShare', overlay).addEventListener('click', () => shareReceiptCanvas(finalCanvas, sale));
-    $('#btnPrint', overlay).addEventListener('click', () => printCanvas(finalCanvas));
+      await findOrCreateClientQuick(clientName, clientPhone);
+
+      const data = {
+        id: uid('quo'),
+        clientId: prefClient ? prefClient.id : '',
+        clientName, clientPhone, expiryDate,
+        priceGroupId: $('#q_group', overlay) ? $('#q_group', overlay).value : '',
+        title: 'Precios / oferta Natura Vida',
+        items: cleanItems,
+        createdAt: Date.now()
+      };
+      const saveBtn = $('#saveForm', overlay);
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Guardando en Supabase…';
+      try {
+        await DB.put('quotes', data);
+        AppState.quotes.push(data);
+        close();
+        renderQuotes();
+        showToast('Precios / oferta creada en Supabase');
+        openQuotePreview(data.id);
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Crear cotización';
+        showToast(err.message || 'No se pudo guardar la cotización.', 'error');
+      }
+    });
   });
 }
 
-function downloadCanvasAsJpg(canvas, sale) {
-  canvas.toBlob((blob) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `recibo_${(sale.clientName || 'cliente').replace(/\s+/g, '_')}_${todayISO()}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-    showToast('Imagen descargada');
-  }, 'image/jpeg', 0.95);
+function openQuotePreview(id) {
+  const q = AppState.quotes.find(x => x.id === id);
+  if (!q) return;
+  const total = q.items.reduce((s, i) => s + (i.price * i.qty), 0);
+
+  const html = `
+    <h2>Precios / oferta <span class="x" id="closeSheet">✕</span></h2>
+    <div class="banner">Cliente: <b>${escapeHtml(q.clientName)}</b> · Tel: ${escapeHtml(q.clientPhone || '—')}<br>Válida hasta: ${fmtDate(q.expiryDate)} ${isExpired(q) ? ' · <b style="color:var(--red)">VENCIDA</b>' : ''}</div>
+    ${q.items.map(i => `
+      <div class="histitem">
+        <div class="l"><div class="pname">${escapeHtml(i.name)}</div><div class="meta">Cant: ${i.qty} × ${fmtMoney(i.price)}</div></div>
+        <div class="r">${fmtMoney(i.price * i.qty)}</div>
+      </div>
+    `).join('')}
+    <div class="totalbox"><span class="lbl">Total</span><span class="val">${fmtMoney(total)}</span></div>
+    <div class="actions">
+      <button class="btn outline block" id="shareQuoteBtn">📤 Compartir</button>
+      <button class="btn block" id="imgQuoteBtn">🖼️ Generar imagen</button>
+    </div>
+  `;
+  openSheet(html, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#shareQuoteBtn', overlay).addEventListener('click', () => shareQuoteText(q, total));
+    $('#imgQuoteBtn', overlay).addEventListener('click', () => generateQuoteImage(q, total));
+  });
 }
 
-function downloadCanvasAsPdf(canvas, sale) {
-  if (typeof window.jspdf === 'undefined') {
-    showToast('⚠️ No se pudo cargar el generador de PDF (requiere conexión la primera vez)', 'error');
-    return;
+function shareQuoteText(q, total) {
+  const lines = [
+    `*Precios / oferta — ${AppState.settings.businessName}*`,
+    `Cliente: ${q.clientName}`,
+    `Válida hasta: ${fmtDate(q.expiryDate)}`,
+    '',
+    ...q.items.map(i => `${i.name} x${i.qty} — ${fmtMoney(i.price * i.qty)}`),
+    '',
+    `Total: ${fmtMoney(total)}`
+  ];
+  const text = lines.join('\n');
+  if (navigator.share) {
+    navigator.share({ title: 'Precios / oferta', text }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(text).then(() => showToast('Copiado al portapapeles'));
   }
-  const { jsPDF } = window.jspdf;
-  const imgData = canvas.toDataURL('image/jpeg', 0.95);
-  const pdf = new jsPDF({ unit: 'pt', format: [canvas.width, canvas.height] });
-  pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
-  pdf.save(`recibo_${(sale.clientName || 'cliente').replace(/\s+/g, '_')}_${todayISO()}.pdf`);
-  showToast('PDF descargado');
 }
 
-async function shareReceiptCanvas(canvas, sale) {
-  canvas.toBlob(async (blob) => {
-    const file = new File([blob], `recibo_${todayISO()}.jpg`, { type: 'image/jpeg' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title: 'Recibo de venta',
-          text: `Recibo — ${AppState.settings.businessName} — Total: ${fmtMoney(sale.total)}`
-        });
-      } catch (e) { /* usuario canceló */ }
-    } else {
-      showToast('Tu navegador no admite compartir archivos directamente; usa "Guardar JPG" y compártelo manualmente', 'error');
+
+function drawQuoteCanvas(q, total) {
+  const W = 720;
+  const items = q.items || [];
+  const H = Math.max(720, 330 + (items.length * 46) + 180);
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#F5FAF6';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFFFFF';
+  roundRect(ctx, 34, 34, W - 68, H - 68, 28, true, false);
+
+  ctx.fillStyle = '#01773B';
+  roundRect(ctx, 34, 34, W - 68, 96, 28, true, false);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(AppState.settings.businessName || 'NATURA VIDA', 62, 82);
+  ctx.font = '14px Arial';
+  ctx.fillText(AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 62, 108);
+
+  let y = 170;
+  ctx.fillStyle = '#15171A';
+  ctx.font = 'bold 25px Arial';
+  ctx.fillText('PRECIOS / OFERTA', 62, y);
+  ctx.textAlign = 'right';
+  ctx.font = '13px Arial';
+  ctx.fillStyle = '#6B7280';
+  ctx.fillText('Fecha: ' + new Date(q.createdAt || Date.now()).toLocaleDateString('es-BO'), W - 62, y);
+  ctx.fillText('Válida hasta: ' + fmtDate(q.expiryDate), W - 62, y + 22);
+  ctx.textAlign = 'left';
+
+  y += 50;
+  ctx.fillStyle = '#EEF7F1';
+  roundRect(ctx, 62, y, W - 124, 72, 18, true, false);
+  ctx.fillStyle = '#15171A';
+  ctx.font = 'bold 16px Arial';
+  ctx.fillText('Cliente: ' + (q.clientName || '—'), 86, y + 30);
+  ctx.font = '14px Arial';
+  ctx.fillStyle = '#56635B';
+  ctx.fillText('Teléfono: ' + (q.clientPhone || '—'), 86, y + 52);
+  y += 108;
+
+  ctx.font = 'bold 13px Arial';
+  ctx.fillStyle = '#6B7280';
+  ctx.fillText('PRODUCTO', 62, y);
+  ctx.fillText('CANT.', 410, y);
+  ctx.fillText('PRECIO', 485, y);
+  ctx.textAlign = 'right';
+  ctx.fillText('SUBTOTAL', W - 62, y);
+  ctx.textAlign = 'left';
+  y += 12;
+  ctx.strokeStyle = '#DDE7DF';
+  ctx.beginPath(); ctx.moveTo(62, y); ctx.lineTo(W - 62, y); ctx.stroke();
+  y += 30;
+
+  items.forEach((it, idx) => {
+    if (idx % 2 === 0) {
+      ctx.fillStyle = '#FAFCFB';
+      roundRect(ctx, 56, y - 22, W - 112, 38, 12, true, false);
     }
-  }, 'image/jpeg', 0.95);
+    ctx.fillStyle = '#15171A';
+    ctx.font = '14px Arial';
+    ctx.fillText(String(it.name || '').slice(0, 42), 62, y);
+    ctx.fillText(String(it.qty || 0), 418, y);
+    ctx.fillText(fmtMoney(it.price || 0), 485, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtMoney((it.price || 0) * (it.qty || 0)), W - 62, y);
+    ctx.textAlign = 'left';
+    y += 46;
+  });
+
+  y += 18;
+  ctx.strokeStyle = '#DDE7DF';
+  ctx.beginPath(); ctx.moveTo(62, y); ctx.lineTo(W - 62, y); ctx.stroke();
+  y += 48;
+
+  ctx.fillStyle = '#01773B';
+  ctx.font = 'bold 30px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText('TOTAL: ' + fmtMoney(total), W - 62, y);
+  ctx.textAlign = 'left';
+
+  y += 64;
+  ctx.fillStyle = '#FFF8EB';
+  roundRect(ctx, 62, y, W - 124, 74, 18, true, false);
+  ctx.fillStyle = '#8A5A12';
+  ctx.font = 'bold 14px Arial';
+  ctx.fillText('Nota', 86, y + 28);
+  ctx.font = '13px Arial';
+  ctx.fillText('Precios sujetos a disponibilidad. Gracias por preferir productos naturales.', 86, y + 52);
+  return canvas;
 }
 
-function printCanvas(canvas) {
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-  const win = window.open('', '_blank');
-  if (!win) { showToast('⚠️ El navegador bloqueó la ventana de impresión', 'error'); return; }
-  win.document.write(`
-    <html><head><title>Imprimir recibo</title></head>
-    <body style="margin:0; display:flex; justify-content:center;">
-      <img src="${dataUrl}" style="max-width:100%;" onload="window.print();">
-    </body></html>
-  `);
-  win.document.close();
+function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+  if (w < 2 * r) r = w / 2;
+  if (h < 2 * r) r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
 }
 
-window.openReceiptPreview = openReceiptPreview;
+function generateQuoteImage(q, total) {
+  const canvas = drawQuoteCanvas(q, total);
+  openSheet(`
+    <h2>Imagen de precios <span class="x" id="closeSheet">✕</span></h2>
+    <div class="receiptCanvasWrap" id="quoteCanvasWrap"></div>
+    <div class="exportRow">
+      <div class="exportBtn" id="downloadQuoteImg"><span class="ic">🖼️</span><span class="lbl">Guardar imagen</span><span class="sub">JPG</span></div>
+      <div class="exportBtn" id="shareQuoteImg"><span class="ic">📤</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
+    </div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const wrap = $('#quoteCanvasWrap', overlay);
+    wrap.appendChild(canvas);
+    $('#downloadQuoteImg', overlay).addEventListener('click', () => {
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cotizacion_${(q.clientName || 'cliente').replace(/\s+/g, '_')}_${todayISO()}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        showToast('Imagen de precios descargada.');
+      }, 'image/jpeg', 0.95);
+    });
+    $('#shareQuoteImg', overlay).addEventListener('click', () => {
+      canvas.toBlob(async (blob) => {
+        const file = new File([blob], `cotizacion_${todayISO()}.jpg`, { type: 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try { await navigator.share({ files: [file], title: 'Precios / oferta Natura Vida', text: `Precios / oferta — ${AppState.settings.businessName}` }); } catch (_) {}
+        } else {
+          showToast('Este navegador no permite compartir imagen directa. Usa Guardar imagen.', 'error');
+        }
+      }, 'image/jpeg', 0.95);
+    });
+  });
+}
+
+window.renderQuotes = renderQuotes;
+window.openQuoteForm = openQuoteForm;
+window.openQuotePreview = openQuotePreview;

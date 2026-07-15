@@ -1,86 +1,65 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<title>NATURA VIDA — Gestión V7.5.0</title>
-<meta name="theme-color" content="#064B2E">
-<link rel="manifest" href="manifest.json?v=7.5.0">
-<link rel="apple-touch-icon" href="icons/icon-180.png">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css?v=7.5.0">
-<link rel="stylesheet" href="css/v7.css?v=7.5.0">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
-<body>
-<div id="app">
+-- NATURA VIDA V7.5.0 — Gestión regional de representantes
+-- Seguro para ejecutar más de una vez. No elimina datos.
+begin;
 
-  <header class="top">
-    <div class="brandrow">
-      <div class="brand" id="brandClickArea">
-        <div class="logo" id="bizLogo">🏪</div>
-        <div style="min-width:0;">
-          <div class="bizname" id="bizName">NATURA VIDA</div>
-          <div class="bizsub">Tocar para ir a Ajustes</div>
-        </div>
-      </div>
-      <div class="headerStatusGroup">
-        <div class="cloudBadge connecting" id="cloudStatusBadge" title="Estado de conexión"><span></span><b>Conectando</b></div>
-        <div class="stamp" id="dateStamp"></div>
-      </div>
-    </div>
-  </header>
+create table if not exists public.representative_regional_profiles (
+  id uuid primary key default gen_random_uuid(),
+  representative_user_id uuid not null unique references public.profiles(id) on delete cascade,
+  representative_name text not null default '',
+  region_name text not null default '',
+  city text not null default '',
+  operational_status text not null default 'active' check (operational_status in ('active','suspended','inactive')),
+  monthly_goal numeric(14,2) not null default 0 check (monthly_goal >= 0),
+  debt_limit numeric(14,2) not null default 0 check (debt_limit >= 0),
+  notes text not null default '',
+  updated_by uuid references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-  <main id="mainArea">
-    <div class="loading">Cargando datos…</div>
-  </main>
+create table if not exists public.regional_restock_requests (
+  id text primary key,
+  request_code text not null unique,
+  representative_user_id uuid not null references public.profiles(id) on delete cascade,
+  representative_name text not null default '',
+  items jsonb not null default '[]'::jsonb,
+  priority text not null default 'normal' check (priority in ('normal','high','urgent')),
+  note text not null default '',
+  status text not null default 'pending' check (status in ('pending','approved','rejected','fulfilled')),
+  created_by uuid references auth.users(id),
+  reviewed_by uuid references auth.users(id),
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-  <button class="fab hidden" id="fabAdd" aria-label="Agregar">+</button>
+create index if not exists idx_regional_profiles_region on public.representative_regional_profiles(region_name);
+create index if not exists idx_restock_rep_status on public.regional_restock_requests(representative_user_id,status);
 
-  <nav class="bottom" id="bottomNav"></nav>
+alter table public.representative_regional_profiles enable row level security;
+alter table public.regional_restock_requests enable row level security;
 
-</div>
+drop policy if exists nv750_regional_select on public.representative_regional_profiles;
+create policy nv750_regional_select on public.representative_regional_profiles for select to authenticated
+using (public.is_admin_v7() or representative_user_id = auth.uid());
+drop policy if exists nv750_regional_insert on public.representative_regional_profiles;
+create policy nv750_regional_insert on public.representative_regional_profiles for insert to authenticated
+with check (public.is_admin_v7());
+drop policy if exists nv750_regional_update on public.representative_regional_profiles;
+create policy nv750_regional_update on public.representative_regional_profiles for update to authenticated
+using (public.is_admin_v7()) with check (public.is_admin_v7());
 
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const d = new Date();
-    document.getElementById('dateStamp').textContent = d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  });
-</script>
-<script src="js/db.js?v=7.5.0"></script>
-<script src="js/ui-helpers.js?v=7.5.0"></script>
-<script src="js/state.js?v=7.5.0"></script>
-<script src="js/products.js?v=7.5.0"></script>
-<script src="js/pricegroups.js?v=7.5.0"></script>
-<script src="js/clients.js?v=7.5.0"></script>
-<script src="js/sales.js?v=7.5.0"></script>
-<script src="js/quotes.js?v=7.5.0"></script>
-<script src="js/receipt.js?v=7.5.0"></script>
-<script src="js/settings.js?v=7.5.0"></script>
-<script src="js/supabase-config.js?v=7.5.0"></script>
-<script src="js/supabase-sync.js?v=7.5.0"></script>
-<script src="js/auth.js?v=7.5.0"></script>
-<script src="js/catalog-pdf.js?v=7.5.0"></script>
-<script src="js/orders.js?v=7.5.0"></script>
-<script src="js/inbox.js?v=7.5.0"></script>
-<script src="js/app-update.js?v=7.5.0"></script>
-<script src="js/app.js?v=7.5.0"></script>
-<script src="js/v7-supabase.js?v=7.5.0"></script>
-<script src="js/v7-documents.js?v=7.5.0"></script>
-<script src="js/v7-orders.js?v=7.5.0"></script>
-<script src="js/v7-inventory-sales.js?v=7.5.0"></script>
-<script src="js/v7-commercial-center.js?v=7.5.0"></script>
-<script src="js/v7-profile-users.js?v=7.5.0"></script>
-<script src="js/v7-stats.js?v=7.5.0"></script>
-<script src="js/v7-finance.js?v=7.5.0"></script>
-<script src="js/v7-production.js?v=7.5.0"></script>
-<script src="js/v7-regional.js?v=7.5.0"></script>
-<script src="js/v7-shell.js?v=7.5.0"></script>
-</body>
-</html>
+drop policy if exists nv750_restock_select on public.regional_restock_requests;
+create policy nv750_restock_select on public.regional_restock_requests for select to authenticated
+using (public.is_admin_v7() or representative_user_id = auth.uid());
+drop policy if exists nv750_restock_insert on public.regional_restock_requests;
+create policy nv750_restock_insert on public.regional_restock_requests for insert to authenticated
+with check (representative_user_id = auth.uid());
+drop policy if exists nv750_restock_update on public.regional_restock_requests;
+create policy nv750_restock_update on public.regional_restock_requests for update to authenticated
+using (public.is_admin_v7()) with check (public.is_admin_v7());
+
+grant select,insert,update on public.representative_regional_profiles to authenticated;
+grant select,insert,update on public.regional_restock_requests to authenticated;
+
+commit;

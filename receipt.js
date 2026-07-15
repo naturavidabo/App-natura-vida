@@ -1,200 +1,258 @@
-/* orders.js — Pedidos conectados directamente a Supabase. */
+/* inbox.js — Buzón conectado directamente a Supabase. */
 
-let _orderCart = {};
-let _orderNote = '';
-
-function orderCount() {
-  return Object.values(_orderCart).reduce((s, q) => s + q, 0);
-}
-
-function orderTotalBase() {
-  return Object.entries(_orderCart).reduce((sum, [id, qty]) => {
-    const p = AppState.products.find(x => x.id === id);
-    return sum + (p ? representativePrice(p) * qty : 0);
-  }, 0);
-}
-
-function renderOrderRequest() {
-  $('#fabAdd').classList.add('hidden');
-  if (!isReseller()) {
-    renderAdminOrdersInbox();
-    return;
-  }
-  const products = AppState.products.filter(p => p.status !== 'archived' && matchesSearch(p.name + ' ' + (p.category || ''), _saleSearch || ''));
-  $('#mainArea').innerHTML = `
-    <section class="dashboardPanel orderHero">
-      <div class="panelHeader"><div><span class="eyebrow">Pedido al administrador</span><h2>Solicitar reposición</h2></div></div>
-      <div class="banner">Arma tu pedido con los productos del catálogo y envíalo directamente al administrador mediante Supabase.</div>
-      <div class="miniStats">
-        <div><span>Ítems</span><strong>${orderCount()}</strong></div>
-        <div><span>Total base</span><strong>${fmtMoney(orderTotalBase())}</strong></div>
-        <div><span>Modo</span><strong>Supabase</strong></div>
-      </div>
-    </section>
-    <div class="field"><label>Nota para el administrador</label><textarea id="orderNote" placeholder="Ej.: Enviar a La Paz por flota / confirmar disponibilidad">${escapeHtml(_orderNote)}</textarea></div>
-    <div class="catalogGrid orderGrid">
-      ${products.map(p => {
-        const qty = _orderCart[p.id] || 0;
-        return `<div class="catalogCard orderProductCard">
-          <div class="catalogPhoto">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}</div>
-          <div class="catalogBody">
-            <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span></div>
-            <div class="catalogName">${escapeHtml(p.name)}</div>
-            <div class="catalogPrice">Base: ${fmtMoney(representativePrice(p))}</div>
-            <div class="catalogStock">Stock central ref.: ${Number(p.adminStock ?? p.stock ?? 0)}</div>
-            <div class="qtyStepper"><button class="orderMinus" data-id="${p.id}">−</button><span class="qtyVal">${qty}</span><button class="orderPlus" data-id="${p.id}">+</button></div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-    <div class="stickyActions orderStickyActions">
-      <button class="btn outline block" id="clearOrderBtn">Limpiar pedido</button>
-      <button class="btn block" id="sendOrderBtn">Enviar pedido</button>
-    </div>
-  `;
-  $('#orderNote').addEventListener('input', e => { _orderNote = e.target.value; });
-  $all('.orderPlus').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.id, 1)));
-  $all('.orderMinus').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.id, -1)));
-  $('#clearOrderBtn').addEventListener('click', () => { _orderCart = {}; renderOrderRequest(); });
-  $('#sendOrderBtn').addEventListener('click', submitOrderRequest);
-}
-
-
-async function renderAdminOrdersInbox() {
-  $('#fabAdd').classList.add('hidden');
-  if (isOnlineConfigured() && window.fetchCloudPurchaseOrders) {
-    const cloud = await fetchCloudPurchaseOrders().catch(err => ({ ok: false, message: err.message }));
-    if (cloud && cloud.ok && Array.isArray(cloud.orders)) {
-      await DB.clear('purchaseOrders').catch(() => {});
-      if (cloud.orders.length) await DB.bulkPut('purchaseOrders', cloud.orders, { silent: true }).catch(() => {});
-    }
-  }
-  const orders = (await DB.getAll('purchaseOrders').catch(() => []))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  $('#mainArea').innerHTML = `
-    <section class="dashboardPanel orderHero">
-      <div class="panelHeader"><div><span class="eyebrow">Pedidos de representantes</span><h2>Recepción de pedidos</h2></div><span class="livePill">Realtime activo</span></div>
-      <div class="banner">Los pedidos enviados por representantes aparecen automáticamente aquí y en el buzón.</div>
-      <div class="miniStats">
-        <div><span>Total pedidos</span><strong>${orders.length}</strong></div>
-        <div><span>Pendientes</span><strong>${orders.filter(o => o.status === 'pending').length}</strong></div>
-        <div><span>Total base</span><strong>${fmtMoney(orders.reduce((s,o)=>s+(Number(o.total)||0),0))}</strong></div>
-      </div>
-    </section>
-    ${orders.length ? orders.map(o => `
-      <div class="histitem orderAdminCard">
-        <div class="l">
-          <div class="pname">${escapeHtml(o.representativeName || o.representativeUsername || 'Representante')}</div>
-          <div class="meta">${(o.items || []).length} producto(s) · ${fmtDate(o.createdAt || Date.now())} · ${escapeHtml(o.status || 'pending')}</div>
-          ${o.note ? `<div class="catalogDesc">${escapeHtml(o.note)}</div>` : ''}
-          ${(o.items || []).slice(0,4).map(it => `<div class="meta">• ${escapeHtml(it.productName)} × ${it.qty}</div>`).join('')}
-        </div>
-        <div class="r"><strong>${fmtMoney(o.total || 0)}</strong>
-          ${o.status === 'pending' ? `<button class="btn sm approveOrder" data-id="${o.id}">Aprobar</button><button class="btn sm outline rejectOrder" data-id="${o.id}">Rechazar</button>` : ''}
-        </div>
-      </div>
-    `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin pedidos recibidos</h3><p>Cuando un representante envíe pedido, aparecerá aquí.</p></div>`}
-  `;
-  $all('.approveOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'approved')));
-  $all('.rejectOrder').forEach(b => b.addEventListener('click', () => setOrderStatus(b.dataset.id, 'rejected')));
-}
-
-async function setOrderStatus(orderId, status) {
-  const order = await DB.get('purchaseOrders', orderId).catch(() => null);
-  if (!order) return;
+let _lastUnreadV725 = 0;
+function playNotificationBeatV725() {
   try {
-    if (!navigator.onLine) throw new Error('Sin internet. No se modificó el pedido.');
-    if (!window.updateCloudPurchaseOrderStatus) throw new Error('Supabase no está disponible.');
-    const cloud = await updateCloudPurchaseOrderStatus(orderId, status);
-    if (!cloud || !cloud.ok) throw new Error((cloud && cloud.message) || 'No se pudo modificar el pedido.');
-    order.status = status;
-    order.updatedAt = Date.now();
-    await DB.put('purchaseOrders', order, { silent: true });
-    if (window.sendAdminMessage) {
-      await sendAdminMessage('order_status', `Pedido ${status === 'approved' ? 'aprobado' : 'rechazado'}`, `El administrador marcó un pedido como ${status}.`, { orderId, status }).catch(() => {});
-    }
-    showToast(status === 'approved' ? 'Pedido aprobado.' : 'Pedido rechazado.');
-    renderAdminOrdersInbox();
-  } catch (err) {
-    showToast(err.message || 'No se pudo modificar el pedido.', 'error');
-  }
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const start = ctx.currentTime;
+    [0, 0.16].forEach((offset, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = idx ? 2300 : 1950;
+      gain.gain.setValueAtTime(0.0001, start + offset);
+      gain.gain.exponentialRampToValueAtTime(0.42, start + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.135);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(start + offset); osc.stop(start + offset + 0.145);
+    });
+    setTimeout(()=>ctx.close && ctx.close(), 600);
+  } catch (_) {}
 }
 
-function changeOrderQty(productId, delta) {
-  const current = _orderCart[productId] || 0;
-  const next = Math.max(0, current + delta);
-  if (next === 0) delete _orderCart[productId];
-  else _orderCart[productId] = next;
-  renderOrderRequest();
-}
 
-function buildOrderPayload() {
-  const items = Object.entries(_orderCart).map(([id, qty]) => {
-    const p = AppState.products.find(x => x.id === id);
-    if (!p) return null;
-    const base = representativePrice(p);
-    return { productId: p.id, productName: p.name, category: p.category || 'General', qty, unitPrice: base, subtotal: base * qty };
-  }).filter(Boolean);
-  const total = items.reduce((s, i) => s + i.subtotal, 0);
+function normalizeMessage(m = {}) {
+  const now = Date.now();
   return {
-    id: uid('order'),
-    representativeId: AppState.session.userId,
-    representativeName: AppState.session.fullName || AppState.session.username,
-    representativeUsername: AppState.session.username,
-    note: _orderNote || '',
-    items,
-    total,
-    status: 'pending',
-    createdAt: Date.now(),
-    syncStatus: 'cloud'
+    id: m.id || uid('msg'),
+    type: m.type || 'general',
+    title: m.title || 'Mensaje',
+    body: m.body || '',
+    senderUserId: m.senderUserId || m.sender_user_id || null,
+    senderName: m.senderName || m.sender_name || '',
+    senderRole: m.senderRole || m.sender_role || '',
+    recipientRole: m.recipientRole || m.recipient_role || 'Administrador',
+    recipientUserId: m.recipientUserId || m.recipient_user_id || null,
+    status: m.status || 'unread',
+    payload: m.payload || {},
+    createdAt: Number(m.createdAt || (m.created_at ? new Date(m.created_at).getTime() : now)),
+    updatedAt: Number(m.updatedAt || (m.updated_at ? new Date(m.updated_at).getTime() : now))
   };
 }
 
-async function submitOrderRequest() {
-  if (window.canOperate && !canOperate()) {
-    showToast('Tu cuenta aún no fue aprobada. No puedes enviar pedidos.', 'error');
+function messageVisibleForCurrentUser(message) {
+  if (!requireAuth()) return false;
+  const m = normalizeMessage(message);
+  if (isAdmin && isAdmin()) return m.recipientRole === 'Administrador' || !m.recipientRole || m.recipientUserId === AppState.session.userId || m.recipientUserId === AppState.session.onlineUserId;
+  const uid = AppState.session.userId;
+  const onlineId = AppState.session.onlineUserId;
+  return m.recipientUserId === uid || m.recipientUserId === onlineId || m.senderUserId === uid || m.senderUserId === onlineId || m.recipientRole === AppState.session.roleName;
+}
+
+async function saveLocalMessage(message) {
+  const msg = normalizeMessage(message);
+  await DB.put('messages', msg);
+  AppState.messages = await DB.getAll('messages');
+  return msg;
+}
+
+async function sendAdminMessage(type, title, body, payload = {}) {
+  const msg = normalizeMessage({
+    type,
+    title,
+    body,
+    senderUserId: AppState.session ? (AppState.session.onlineUserId || AppState.session.userId) : null,
+    senderName: AppState.session ? (AppState.session.fullName || AppState.session.username) : '',
+    senderRole: AppState.session ? AppState.session.roleName : '',
+    recipientRole: 'Administrador',
+    status: 'unread',
+    payload
+  });
+  // El envío inmediato hacia Supabase ahora ocurre dentro de saveLocalMessage
+  // conexión en este momento.
+  await saveLocalMessage(msg);
+  await refreshInboxBadge({ silent: true }).catch(() => {});
+  return msg;
+}
+
+async function syncInboxFromCloud() {
+  if (!isOnlineConfigured() || !window.fetchCloudInboxMessages) return { ok: true, count: 0, localOnly: true };
+  const res = await fetchCloudInboxMessages().catch(err => ({ ok: false, message: err.message }));
+  if (!res.ok) return res;
+  const rows = (res.messages || []).map(normalizeMessage);
+  await DB.clear('messages').catch(() => {});
+  if (rows.length) await DB.bulkPut('messages', rows, { silent: true }).catch(() => {});
+  AppState.messages = await DB.getAll('messages').catch(() => []);
+  return { ok: true, count: rows.length };
+}
+
+async function refreshInboxBadge(options = {}) {
+  // Para evitar congelamientos, el buzón no consulta Supabase en cada render.
+  // Sólo actualiza online si se solicita explícitamente con forceCloud.
+  if (options.forceCloud && requireAuth()) await syncInboxFromCloud().catch(() => {});
+  const messages = (await DB.getAll('messages').catch(() => [])).map(normalizeMessage);
+  AppState.messages = messages;
+  const unread = messages.filter(m => messageVisibleForCurrentUser(m) && m.status !== 'read').length;
+  const btn = document.getElementById('inboxFloatBtn');
+  const dot = document.getElementById('inboxDot');
+  const count = document.getElementById('inboxCount');
+  if (btn) btn.classList.toggle('hidden', !requireAuth());
+  if (dot) dot.classList.toggle('hidden', unread === 0);
+  if (count) count.textContent = unread ? String(unread) : '';
+  if (!options.silent && unread > _lastUnreadV725) playNotificationBeatV725();
+  _lastUnreadV725 = unread;
+  return unread;
+}
+
+function installInboxButton() {
+  const stamp = document.getElementById('dateStamp');
+  if (!stamp || document.getElementById('inboxFloatBtn')) return;
+  const btn = document.createElement('button');
+  btn.id = 'inboxFloatBtn';
+  btn.className = 'inboxFloatBtn hidden';
+  btn.type = 'button';
+  btn.innerHTML = `<span class="mailIcon">✉</span><span id="inboxDot" class="inboxDot hidden"></span><span id="inboxCount" class="inboxCount"></span>`;
+  btn.title = 'Buzón de mensajes y pedidos';
+  stamp.insertAdjacentElement('afterend', btn);
+  btn.addEventListener('click', () => openInboxPanel(true));
+}
+
+async function markLocalMessageRead(id) {
+  const msg = await DB.get('messages', id).catch(() => null);
+  if (!msg) return;
+  msg.status = 'read';
+  msg.updatedAt = Date.now();
+  await DB.put('messages', msg, { silent: true });
+  if (window.markCloudMessageRead && isOnlineConfigured()) await markCloudMessageRead(id).catch(() => {});
+}
+
+async function openMessageComposer(options = {}) {
+  if (!requireAuth()) return;
+  const adminMode = isAdmin && isAdmin();
+  const replyTo = options.replyTo || null;
+  const recipientUserId = options.recipientUserId || (replyTo ? replyTo.senderUserId : null);
+  const recipientName = options.recipientName || (replyTo ? replyTo.senderName : 'Administrador');
+  if (adminMode && !recipientUserId) {
+    showToast('Abre un mensaje de un representante para responderle.', 'error');
     return;
   }
-  if (orderCount() === 0) { showToast('Selecciona productos para el pedido.', 'error'); return; }
-  if (!navigator.onLine) { showToast('Sin internet. El pedido no fue enviado.', 'error'); return; }
-
-  const btn = $('#sendOrderBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Enviando a Supabase…'; }
-  const order = Object.assign(buildOrderPayload(), { syncStatus: 'cloud' });
-  try {
-    await DB.put('purchaseOrders', order);
-    if (window.sendAdminMessage) {
-      await sendAdminMessage(
-        'purchase_order',
-        'Nuevo pedido de representante',
-        `${order.representativeName || 'Representante'} envió un pedido por ${fmtMoney(order.total)} con ${order.items.length} producto(s).`,
-        { orderId: order.id, total: order.total, items: order.items, note: order.note, online: true }
-      ).catch(() => {});
-    }
-    _orderCart = {};
-    _orderNote = '';
-    showToast('Pedido enviado a Supabase.');
-    renderOrderRequest();
-  } catch (err) {
-    showToast(err.message || 'No se pudo enviar el pedido.', 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Enviar pedido'; }
-  }
+  const suggestedTitle = replyTo ? `Respuesta: ${String(replyTo.title || 'Mensaje').replace(/^Respuesta:\s*/i, '')}` : 'Consulta al administrador';
+  openSheet(`
+    <h2>${replyTo ? 'Responder mensaje' : 'Escribir al administrador'} <span class="x" id="closeSheet">✕</span></h2>
+    <div class="v7CashNotice">Destino: <strong>${escapeHtml(recipientName || (adminMode ? 'Representante' : 'Administrador'))}</strong>. Este buzón es para pedidos, consultas breves y coordinación comercial.</div>
+    <div class="field"><label>Tipo de mensaje</label><select id="messageType"><option value="general">Consulta general</option><option value="pedido">Pedido o producto</option><option value="soporte">Problema con la aplicación</option><option value="pago">Pago o comprobante</option></select></div>
+    <div class="field"><label>Asunto</label><input id="messageTitle" maxlength="100" value="${escapeHtml(suggestedTitle)}" placeholder="Resume el motivo"></div>
+    <div class="field"><label>Mensaje</label><textarea id="messageBody" rows="6" maxlength="1200" placeholder="Escribe aquí el detalle necesario…"></textarea></div>
+    <div class="nvSheetActions"><button class="btn block" id="sendDirectMessage">Enviar mensaje</button></div>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const body = $('#messageBody', overlay);
+    setTimeout(() => body && body.focus(), 120);
+    $('#sendDirectMessage', overlay).addEventListener('click', async () => {
+      if (!navigator.onLine) return showToast('Necesitas internet para enviar el mensaje.', 'error');
+      const title = $('#messageTitle', overlay).value.trim();
+      const text = body.value.trim();
+      if (title.length < 3) return showToast('Escribe un asunto breve.', 'error');
+      if (text.length < 3) return showToast('Escribe el mensaje.', 'error');
+      const btn = $('#sendDirectMessage', overlay);
+      btn.disabled = true;
+      btn.textContent = 'Enviando…';
+      try {
+        await saveLocalMessage({
+          id: uid('msg'),
+          type: $('#messageType', overlay).value,
+          title,
+          body: text,
+          senderUserId: AppState.session.onlineUserId || AppState.session.userId,
+          senderName: AppState.session.fullName || AppState.session.email || '',
+          senderRole: AppState.session.roleName || '',
+          recipientRole: adminMode ? 'Representante' : 'Administrador',
+          recipientUserId: adminMode ? recipientUserId : null,
+          status: 'unread',
+          payload: replyTo ? { replyToMessageId: replyTo.id } : {}
+        });
+        await syncInboxFromCloud().catch(() => {});
+        await refreshInboxBadge({ silent: true }).catch(() => {});
+        close();
+        showToast('Mensaje enviado correctamente.');
+        setTimeout(() => openInboxPanel(), 80);
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = 'Reintentar envío';
+        showToast((window.messageFromError ? messageFromError(error) : error.message) || 'No se pudo enviar el mensaje.', 'error');
+      }
+    });
+  });
 }
 
-
-window.renderOrderRequest = renderOrderRequest;
-window.renderAdminOrdersInbox = renderAdminOrdersInbox;
-window.submitOrderRequest = submitOrderRequest;
-window.setOrderStatus = setOrderStatus;
-
-async function fetchAndCachePurchaseOrders() {
-  if (!isOnlineConfigured() || !window.fetchCloudPurchaseOrders) return { ok: true, count: 0 };
-  const cloud = await fetchCloudPurchaseOrders().catch(err => ({ ok: false, message: err.message }));
-  if (cloud && cloud.ok && Array.isArray(cloud.orders)) {
-    await DB.clear('purchaseOrders').catch(() => {});
-    if (cloud.orders.length) await DB.bulkPut('purchaseOrders', cloud.orders, { silent: true }).catch(() => {});
-    return { ok: true, count: cloud.orders.length };
+async function openInboxPanel() {
+  if (navigator.onLine && requireAuth() && window.syncInboxFromCloud) {
+    await syncInboxFromCloud().catch(() => {});
   }
-  return cloud || { ok: true, count: 0 };
+  const messages = (await DB.getAll('messages').catch(() => [])).map(normalizeMessage)
+    .filter(messageVisibleForCurrentUser)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 80);
+  const unread = messages.filter(m => m.status !== 'read').length;
+  openSheet(`
+    <h2>Buzón <span class="x" id="closeSheet">✕</span></h2>
+    <div class="inboxHero">
+      <div class="mailBig">✉</div>
+      <div>
+        <div class="eyebrow">Mensajes, pedidos y avisos</div>
+        <h3>${unread} pendiente(s)</h3>
+        <p>${isAdmin() ? 'Aquí verás pedidos de representantes, avisos de actualización y mensajes del servidor.' : 'Aquí verás respuestas, avisos o confirmaciones del administrador.'}</p>
+      </div>
+    </div>
+    <div class="livePill inboxLivePill">Mensajes en tiempo real</div>
+    ${!isAdmin() ? '<button class="btn block inboxComposeBtn" id="composeAdminMessage">Escribir al administrador</button>' : ''}
+    ${messages.length ? messages.map(m => `
+      <div class="messageCard ${m.status !== 'read' ? 'unread' : ''}">
+        <div class="messageTop">
+          <strong>${escapeHtml(m.title)}</strong>
+          <span>${fmtDate(m.createdAt)}</span>
+        </div>
+        <p>${escapeHtml(m.body)}</p>
+        <div class="messageMeta">${escapeHtml(m.senderName || 'Sistema')} · ${escapeHtml(m.senderRole || '')} · ${escapeHtml(m.type)}</div>
+        <div class="messageActions">
+          ${m.status !== 'read' ? `<button class="btn sm outline markReadBtn" data-id="${m.id}">Marcar leído</button>` : `<span class="tinytag">Leído</span>`}
+          ${m.type === 'purchase_order' && isAdmin() ? `<button class="btn sm openOrdersBtn">Ver pedidos</button>` : ''}
+          ${isAdmin() && m.senderUserId && m.senderUserId !== (AppState.session.onlineUserId || AppState.session.userId) ? `<button class="btn sm replyMessageBtn" data-id="${m.id}">Responder</button>` : ''}
+        </div>
+      </div>
+    `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin mensajes</h3><p>Cuando llegue un pedido o aviso aparecerá aquí.</p></div>`}
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const composeBtn = $('#composeAdminMessage', overlay);
+    if (composeBtn) composeBtn.addEventListener('click', () => { close(); setTimeout(() => openMessageComposer(), 80); });
+    $all('.replyMessageBtn', overlay).forEach(b => b.addEventListener('click', () => {
+      const message = messages.find(m => m.id === b.dataset.id);
+      if (!message) return;
+      close();
+      setTimeout(() => openMessageComposer({ replyTo: message, recipientUserId: message.senderUserId, recipientName: message.senderName }), 80);
+    }));
+    $all('.markReadBtn', overlay).forEach(b => b.addEventListener('click', async () => {
+      await markLocalMessageRead(b.dataset.id);
+      await refreshInboxBadge({ silent: true });
+      close();
+      await openInboxPanel();
+    }));
+    $all('.openOrdersBtn', overlay).forEach(b => b.addEventListener('click', () => { close(); navigateTo(isAdmin() ? 'pedidos' : 'compra'); }));
+  });
+  await refreshInboxBadge({ silent: true }).catch(() => {});
 }
-window.fetchAndCachePurchaseOrders = fetchAndCachePurchaseOrders;
+
+window.normalizeMessage = normalizeMessage;
+window.messageVisibleForCurrentUser = messageVisibleForCurrentUser;
+window.saveLocalMessage = saveLocalMessage;
+window.sendAdminMessage = sendAdminMessage;
+window.syncInboxFromCloud = syncInboxFromCloud;
+window.refreshInboxBadge = refreshInboxBadge;
+window.installInboxButton = installInboxButton;
+window.openInboxPanel = openInboxPanel;
+window.markLocalMessageRead = markLocalMessageRead;
+window.openMessageComposer = openMessageComposer;
+
+window.fetchAndCacheInboxMessages = syncInboxFromCloud;

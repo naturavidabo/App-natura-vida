@@ -1,359 +1,1071 @@
-/* ui-helpers.js — Utilidades de interfaz reutilizadas por todos los módulos. */
+/* Natura Vida V7 — Supabase único + Realtime.
+   - Supabase Auth/PostgreSQL/Storage son la única fuente persistente.
+   - No lee URL/key desde el teléfono.
+   - No existe cola offline ni sincronización manual.
+   - La memoria del navegador se repuebla desde Supabase al iniciar sesión
+     y ante cada evento Realtime permitido por RLS. */
 
-function $(sel, ctx) { return (ctx || document).querySelector(sel); }
-function $all(sel, ctx) { return Array.from((ctx || document).querySelectorAll(sel)); }
+let _supabaseClient = null;
+let _realtimeChannel = null;
+let _realtimeRestartTimer = null;
+let _backgroundStarted = false;
+let _refreshInFlight = null;
+let _deferredRenderPending = false;
 
-function escapeHtml(s) {
-  return (s || '').toString().replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
+const CloudConnection = {
+  state: navigator.onLine ? 'connecting' : 'offline',
+  detail: '',
+  updatedAt: Date.now()
+};
+
+
+function shouldDeferCloudRender() {
+  if (window.V7_FORM_DIRTY) return true;
+  const active = document.activeElement;
+  if (!active) return false;
+  const tag = String(active.tagName || '').toUpperCase();
+  return ['INPUT','TEXTAREA','SELECT'].includes(tag) && !active.readOnly && !active.disabled;
 }
 
-function showToast(msg, kind) {
-  const t = document.createElement('div');
-  t.className = 'toast' + (kind === 'error' ? ' toast-error' : '');
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2600);
-}
-
-function openSheet(innerHtml, onMount) {
-  const overlay = document.createElement('div');
-  overlay.className = 'overlay';
-  overlay.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${innerHtml}</div>`;
-  const sheet = overlay.firstElementChild;
-  document.body.appendChild(overlay);
-  document.body.classList.add('nv-sheet-open');
-
-  const viewport = window.visualViewport;
-  let closed = false;
-  const syncViewport = () => {
-    const height = Math.max(320, Math.round(viewport ? viewport.height : window.innerHeight));
-    const top = Math.max(0, Math.round(viewport ? viewport.offsetTop : 0));
-    overlay.style.setProperty('--nv-visual-height', `${height}px`);
-    overlay.style.transform = `translateY(${top}px)`;
-    sheet.classList.toggle('keyboard-open', height < window.innerHeight * 0.82);
-  };
-  const keepFocusedVisible = event => {
-    const target = event.target;
-    if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-    setTimeout(() => {
-      try { target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); }
-      catch (_) { target.scrollIntoView(false); }
-    }, 220);
-  };
-  const cleanup = () => {
-    if (viewport) {
-      viewport.removeEventListener('resize', syncViewport);
-      viewport.removeEventListener('scroll', syncViewport);
-    }
-    overlay.removeEventListener('focusin', keepFocusedVisible);
-    if (!document.querySelector('.overlay')) document.body.classList.remove('nv-sheet-open');
-  };
-  function close() {
-    if (closed) return;
-    closed = true;
-    overlay.remove();
-    cleanup();
+function renderAfterCloudRefresh() {
+  if (!window.render) return;
+  if (shouldDeferCloudRender()) {
+    _deferredRenderPending = true;
+    return;
   }
+  _deferredRenderPending = false;
+  render();
+}
 
-  syncViewport();
-  if (viewport) {
-    viewport.addEventListener('resize', syncViewport);
-    viewport.addEventListener('scroll', syncViewport);
+function flushDeferredCloudRender() {
+  if (!_deferredRenderPending || shouldDeferCloudRender()) return;
+  _deferredRenderPending = false;
+  if (window.render) render();
+}
+
+document.addEventListener('focusout', () => setTimeout(flushDeferredCloudRender, 180));
+window.addEventListener('nv:form-saved', flushDeferredCloudRender);
+
+function effectiveOnlineConfig() {
+  return window.NATURA_ONLINE_CONFIG || {};
+}
+
+function getSavedOnlineConfig() { return null; }
+function saveOnlineConfig() { return effectiveOnlineConfig(); }
+
+function getOnlineConfigValue(key) {
+  const value = effectiveOnlineConfig()[key] || '';
+  return String(value).includes('PEGAR_AQUI') ? '' : value;
+}
+
+function isOnlineConfigured() {
+  const cfg = effectiveOnlineConfig();
+  return Boolean(
+    cfg.enabled !== false &&
+    cfg.supabaseUrl &&
+    cfg.supabaseAnonKey &&
+    !String(cfg.supabaseUrl).includes('PEGAR_AQUI') &&
+    !String(cfg.supabaseAnonKey).includes('PEGAR_AQUI')
+  );
+}
+
+function setCloudConnectionState(state, detail = '') {
+  CloudConnection.state = state;
+  CloudConnection.detail = detail || '';
+  CloudConnection.updatedAt = Date.now();
+  window.dispatchEvent(new CustomEvent('nv:connection', {
+    detail: Object.assign({}, CloudConnection)
+  }));
+}
+
+function getSupabaseClient() {
+  if (!isOnlineConfigured()) return null;
+  if (_supabaseClient) return _supabaseClient;
+  if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+    setCloudConnectionState('error', 'No cargó la librería de Supabase');
+    return null;
   }
-  overlay.addEventListener('focusin', keepFocusedVisible);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-  if (onMount) onMount(overlay, close);
-  return { overlay, close, sheet };
-}
-
-function confirmDialog(message) {
-  return window.confirm(message);
-}
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function fmtDate(isoOrTimestamp) {
-  const d = typeof isoOrTimestamp === 'number' ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp);
-  return d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-function fmtDateTime(timestamp) {
-  const d = new Date(timestamp);
-  return d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
-    ' ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
-}
-
-/* Lee un archivo de imagen (input file) y devuelve un dataURL, con manejo de errores.
-   V7.1.2: también puede optimizar imágenes grandes sin destruir calidad.
-   Para productos se usa alta calidad porque se reutilizan en catálogo PDF. */
-function imageFromDataUrl(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('No se pudo abrir la imagen'));
-    img.src = dataUrl;
+  const cfg = effectiveOnlineConfig();
+  _supabaseClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: 'nv7-auth'
+    },
+    realtime: { params: { eventsPerSecond: 10 } }
   });
+  return _supabaseClient;
 }
 
-function canvasToDataUrl(canvas, mimeType = 'image/jpeg', quality = 0.9) {
-  try { return canvas.toDataURL(mimeType, quality); }
-  catch (_) { return canvas.toDataURL('image/jpeg', quality); }
+function appRedirectUrl() {
+  const path = window.location.pathname.replace(/index\.html$/i, '');
+  return `${window.location.origin}${path}`;
 }
 
-async function optimizeImageDataUrl(dataUrl, options = {}) {
-  const maxEdge = Number(options.maxEdge || 1800);
-  const quality = Number(options.quality || 0.9);
-  const mimeType = options.mimeType || 'image/jpeg';
-  const img = await imageFromDataUrl(dataUrl);
-  const width = img.naturalWidth || img.width || 1;
-  const height = img.naturalHeight || img.height || 1;
-  const largest = Math.max(width, height);
-  if (!options.force && largest <= maxEdge && String(dataUrl).length < 950000) {
-    return { dataUrl, width, height, optimized: false };
+function messageFromError(error, fallback = 'No se pudo completar la operación.') {
+  const raw = String((error && error.message) || error || fallback);
+  if (/audit_log.*user_id|column ["']?user_id["']? of relation ["']?audit_log/i.test(raw)) {
+    return 'La base de datos de ventas necesita la migración V7.2. La venta no fue registrada ni debe repetirse hasta aplicar el archivo SQL incluido.';
   }
-  const ratio = Math.min(1, maxEdge / largest);
-  const targetW = Math.max(1, Math.round(width * ratio));
-  const targetH = Math.max(1, Math.round(height * ratio));
-  const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, targetW, targetH);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, targetW, targetH);
-  return { dataUrl: canvasToDataUrl(canvas, mimeType, quality), width: targetW, height: targetH, optimized: true };
+  if (/invalid api key/i.test(raw)) return 'La Publishable key de Supabase no es válida o no pertenece a este proyecto.';
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) return 'Se perdió la conexión con Supabase. Se verificará si la operación alcanzó a guardarse antes de permitir reintentar.';
+  if (/email not confirmed/i.test(raw)) return 'Confirma primero el mensaje enviado a tu Gmail.';
+  if (/invalid login credentials/i.test(raw)) return 'Correo o contraseña incorrectos.';
+  if (/row-level security|violates row level security|permission denied/i.test(raw)) return 'Supabase rechazó la operación por permisos. Revisa las políticas RLS de la migración V7.2.';
+  if (/duplicate key|already exists/i.test(raw)) return 'La operación ya existe y no se volverá a registrar.';
+  return raw.length > 220 ? fallback : raw;
 }
 
-function readImageFile(file, options = {}) {
-  return new Promise((resolve, reject) => {
-    if (!file) return reject(new Error('Sin archivo'));
-    if (!file.type.startsWith('image/')) return reject(new Error('No es una imagen'));
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const raw = e.target.result;
-        if (options && options.optimize) {
-          const optimized = await optimizeImageDataUrl(raw, options);
-          return resolve(optimized.dataUrl);
+async function requireClient() {
+  if (!navigator.onLine) throw new Error('Sin internet. Natura Vida trabaja directamente con Supabase.');
+  const sb = getSupabaseClient();
+  if (!sb) throw new Error('Supabase no está configurado correctamente.');
+  return sb;
+}
+
+// ---------------------------------------------------------------------------
+// AUTH Y PERFILES
+// ---------------------------------------------------------------------------
+async function fetchCurrentProfile(userId) {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  if (error) throw new Error(messageFromError(error));
+  return data || null;
+}
+
+async function ensureSignedInProfile() {
+  const sb = await requireClient();
+  const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+  if (sessionError) throw new Error(messageFromError(sessionError));
+  const user = sessionData && sessionData.session && sessionData.session.user;
+  if (!user) return null;
+  const { error: ensureError } = await sb.rpc('ensure_my_profile');
+  if (ensureError) throw new Error(messageFromError(ensureError));
+  const profile = await fetchCurrentProfile(user.id);
+  return profile ? { user, profile } : null;
+}
+
+async function onlineSignIn(email, password) {
+  try {
+    const sb = await requireClient();
+    setCloudConnectionState('connecting', 'Verificando acceso');
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, message: messageFromError(error) };
+    const { error: ensureError } = await sb.rpc('ensure_my_profile');
+    if (ensureError) return { ok: false, message: messageFromError(ensureError) };
+    const profile = await fetchCurrentProfile(data.user.id);
+    if (!profile) return { ok: false, message: 'La cuenta existe, pero su perfil no fue creado. Ejecuta la migración SQL de Natura Vida V7.' };
+    if (String(profile.status).toLowerCase() === 'bloqueado') {
+      await sb.auth.signOut();
+      return { ok: false, message: 'Esta cuenta está bloqueada. Contacta al administrador.' };
+    }
+    setCloudConnectionState('online', 'Sesión autenticada');
+    return { ok: true, user: data.user, profile };
+  } catch (error) {
+    setCloudConnectionState('error', messageFromError(error));
+    return { ok: false, message: messageFromError(error) };
+  }
+}
+
+async function onlineSignOut() {
+  stopRealtimeSubscriptions();
+  const sb = getSupabaseClient();
+  if (sb) await sb.auth.signOut().catch(() => {});
+  setCloudConnectionState(navigator.onLine ? 'connecting' : 'offline', 'Sesión cerrada');
+}
+
+async function getOnlineSessionProfile() {
+  try { return await ensureSignedInProfile(); }
+  catch (error) {
+    console.warn('No se pudo restaurar sesión:', messageFromError(error));
+    return null;
+  }
+}
+
+async function upsertCloudProfileForUser(userId, _username, profile = {}) {
+  const sb = await requireClient();
+  const current = await sb.auth.getUser();
+  if (!current.data || !current.data.user || current.data.user.id !== userId) {
+    return { ok: false, message: 'Solo puedes actualizar tu propio perfil.' };
+  }
+  const { data, error } = await sb.rpc('update_my_profile', {
+    p_full_name: profile.fullName || profile.full_name || '',
+    p_phone: profile.phone || '',
+    p_city: profile.city || ''
+  });
+  return error ? { ok: false, message: messageFromError(error) } : { ok: true, profile: data };
+}
+
+async function signUpEmailAccount(email, password, fullName, extra = {}) {
+  try {
+    const sb = await requireClient();
+    setCloudConnectionState('connecting', 'Creando cuenta');
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: appRedirectUrl(),
+        data: {
+          full_name: fullName || '',
+          phone: extra.phone || '',
+          city: extra.city || ''
         }
-        resolve(raw);
-      } catch (error) { reject(error); }
-    };
-    reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function readProductImageFile(file) {
-  if (!file) throw new Error('Sin archivo');
-  if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
-  if (file.size > 15 * 1024 * 1024) throw new Error('La imagen supera 15 MB. Usa una foto más liviana.');
-  return readImageFile(file, { optimize: true, maxEdge: 1400, quality: 0.84, mimeType: 'image/jpeg' });
-}
-
-async function readLogoImageFile(file) {
-  if (!file) throw new Error('Sin archivo');
-  if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
-  return readImageFile(file, { optimize: true, maxEdge: 1200, quality: 0.92, mimeType: 'image/jpeg' });
-}
-
-
-/* Editor de encuadre reutilizable. Produce una imagen cuadrada optimizada
-   para tarjetas, catálogo y PDF sin guardar capturas gigantes. */
-function loadEditableImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    if (!String(src || '').startsWith('data:')) img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('No se pudo abrir la imagen para encuadrarla.'));
-    img.src = src;
-  });
-}
-
-function drawCoverImage(canvas, image, zoom = 1, offsetX = 0, offsetY = 0, guide = true) {
-  const ctx = canvas.getContext('2d', { alpha: false });
-  const width = canvas.width, height = canvas.height;
-  ctx.fillStyle = '#f4faf6';
-  ctx.fillRect(0, 0, width, height);
-  const baseScale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-  const scale = baseScale * zoom;
-  const drawW = image.naturalWidth * scale;
-  const drawH = image.naturalHeight * scale;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(image, (width - drawW) / 2 + offsetX, (height - drawH) / 2 + offsetY, drawW, drawH);
-  if (guide) {
-    ctx.strokeStyle = 'rgba(16,169,99,.95)';
-    ctx.lineWidth = Math.max(3, width / 180);
-    ctx.setLineDash([14, 10]);
-    ctx.strokeRect(7, 7, width - 14, height - 14);
-    ctx.setLineDash([]);
-  }
-}
-
-async function openImageCropper(options = {}) {
-  const src = options.src || '';
-  if (!src) throw new Error('No hay una imagen para encuadrar.');
-  const image = await loadEditableImage(src);
-  const outputWidth = Math.max(480, Number(options.outputWidth || 1400));
-  const outputHeight = Math.max(480, Number(options.outputHeight || 1400));
-  const previewWidth = 720;
-  const previewHeight = Math.round(previewWidth * outputHeight / outputWidth);
-  let zoom = 1;
-  let offsetX = 0;
-  let offsetY = 0;
-
-  return new Promise(resolve => {
-    openSheet(`
-      <h2>${escapeHtml(options.title || 'Encuadrar fotografía')} <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7CropHelp">Arrastra la fotografía para centrar el producto. El cuadro quedará completamente lleno; solo se recortarán los bordes necesarios.</div>
-      <canvas class="v7ImageCropCanvas" id="imageCropCanvas" width="${previewWidth}" height="${previewHeight}"></canvas>
-      <div class="field"><label>Acercar / alejar</label><input id="imageCropZoom" type="range" min="1" max="3.5" step="0.02" value="1"></div>
-      <button class="btn ghost block" id="resetImageCrop">Centrar nuevamente</button>
-      <button class="btn block" id="confirmImageCrop">Usar este encuadre</button>
-    `, (overlay, close) => {
-      const canvas = $('#imageCropCanvas', overlay);
-      let dragging = false, lastX = 0, lastY = 0;
-      const redraw = () => drawCoverImage(canvas, image, zoom, offsetX, offsetY, true);
-      redraw();
-      canvas.style.touchAction = 'none';
-      canvas.addEventListener('pointerdown', event => {
-        dragging = true; lastX = event.clientX; lastY = event.clientY;
-        try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
-      });
-      canvas.addEventListener('pointermove', event => {
-        if (!dragging) return;
-        const rect = canvas.getBoundingClientRect();
-        const scale = canvas.width / Math.max(1, rect.width);
-        offsetX += (event.clientX - lastX) * scale;
-        offsetY += (event.clientY - lastY) * scale;
-        lastX = event.clientX; lastY = event.clientY;
-        redraw();
-      });
-      const stop = () => { dragging = false; };
-      canvas.addEventListener('pointerup', stop);
-      canvas.addEventListener('pointercancel', stop);
-      $('#imageCropZoom', overlay).addEventListener('input', event => {
-        zoom = Number(event.target.value || 1); redraw();
-      });
-      $('#resetImageCrop', overlay).addEventListener('click', () => {
-        zoom = 1; offsetX = 0; offsetY = 0;
-        $('#imageCropZoom', overlay).value = '1'; redraw();
-      });
-      $('#closeSheet', overlay).addEventListener('click', () => { close(); resolve(null); });
-      $('#confirmImageCrop', overlay).addEventListener('click', () => {
-        const output = document.createElement('canvas');
-        output.width = outputWidth; output.height = outputHeight;
-        const factorX = outputWidth / previewWidth;
-        const factorY = outputHeight / previewHeight;
-        drawCoverImage(output, image, zoom, offsetX * factorX, offsetY * factorY, false);
-        const dataUrl = canvasToDataUrl(output, 'image/jpeg', Number(options.quality || 0.84));
-        close();
-        resolve(dataUrl);
-      });
+      }
     });
-  });
-}
-
-/* Búsqueda predictiva simple: filtra por substring, sin distinción de mayúsculas/acentos básicos. */
-function normalizeSearch(s) {
-  return (s || '').toString().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
-function matchesSearch(haystack, needle) {
-  if (!needle) return true;
-  return normalizeSearch(haystack).includes(normalizeSearch(needle));
-}
-
-
-/* Filtra tarjetas ya dibujadas sin reconstruir la pantalla.
-   Evita que el teclado del celular se cierre mientras el usuario escribe. */
-function bindStableSearch(inputOrSelector, cardSelector, onValue) {
-  const input = typeof inputOrSelector === 'string' ? document.querySelector(inputOrSelector) : inputOrSelector;
-  if (!input) return;
-  const apply = () => {
-    const value = String(input.value || '');
-    if (typeof onValue === 'function') onValue(value);
-    const query = normalizeSearch(value);
-    document.querySelectorAll(cardSelector).forEach(card => {
-      const searchable = normalizeSearch(card.getAttribute('data-search') || card.textContent || '');
-      card.classList.toggle('searchHidden', Boolean(query) && !searchable.includes(query));
-    });
-  };
-  input.addEventListener('input', apply);
-  apply();
-}
-
-window.$ = $;
-window.$all = $all;
-window.escapeHtml = escapeHtml;
-window.showToast = showToast;
-window.openSheet = openSheet;
-window.confirmDialog = confirmDialog;
-window.todayISO = todayISO;
-window.fmtDate = fmtDate;
-window.fmtDateTime = fmtDateTime;
-window.readImageFile = readImageFile;
-window.readProductImageFile = readProductImageFile;
-window.readLogoImageFile = readLogoImageFile;
-window.optimizeImageDataUrl = optimizeImageDataUrl;
-window.openImageCropper = openImageCropper;
-window.drawCoverImage = drawCoverImage;
-window.matchesSearch = matchesSearch;
-window.normalizeSearch = normalizeSearch;
-window.bindStableSearch = bindStableSearch;
-
-/* Comparte un archivo mediante el menú nativo del dispositivo.
-   Si no está disponible, descarga el archivo sin forzar ninguna aplicación. */
-async function shareBlobFile(blob, filename, mimeType, title, text) {
-  const safeTitle = title || 'Archivo Natura Vida';
-  const safeText = text || 'Archivo generado desde Natura Vida.';
-  const file = new File([blob], filename, { type: mimeType || blob.type || 'application/octet-stream' });
-
-  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-    try {
-      await navigator.share({ files: [file], title: safeTitle, text: safeText });
-      return { ok: true, method: 'native-share' };
-    } catch (err) {
-      if (err && err.name === 'AbortError') return { ok: false, cancelled: true, method: 'native-share' };
+    if (error) return { ok: false, message: messageFromError(error) };
+    if (!data || !data.user) return { ok: false, message: 'Supabase no devolvió el usuario creado.' };
+    if (!data.session) {
+      return {
+        ok: true,
+        user: data.user,
+        needsEmailConfirmation: true,
+        message: 'Cuenta creada. Revisa tu Gmail y confirma el correo antes de iniciar sesión.'
+      };
     }
+    const { error: ensureError } = await sb.rpc('ensure_my_profile');
+    if (ensureError) return { ok: false, message: messageFromError(ensureError) };
+    const profile = await fetchCurrentProfile(data.user.id);
+    setCloudConnectionState('online', 'Cuenta creada');
+    return { ok: true, user: data.user, profile };
+  } catch (error) {
+    setCloudConnectionState('error', messageFromError(error));
+    return { ok: false, message: messageFromError(error) };
   }
+}
 
-  downloadGenericBlob(blob, filename);
-  openSheet(`
-    <h2>Archivo descargado <span class="x" id="closeSheet">✕</span></h2>
-    <div class="catalogReadyHero">
-      <div class="readyMark">✓</div>
-      <div>
-        <div class="eyebrow">Compartir libremente</div>
-        <h3>${escapeHtml(filename)}</h3>
-        <p>El navegador no permitió abrir el menú nativo. El archivo fue descargado y puedes adjuntarlo desde WhatsApp, Gmail, Telegram, Drive o cualquier aplicación compatible.</p>
-      </div>
-    </div>
-    <button class="btn block" id="closeManualShare">Entendido</button>
-  `, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#closeManualShare', overlay).addEventListener('click', close);
+async function sendPasswordRecoveryEmail(email) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: appRedirectUrl() });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function waitForPasswordRecoverySession(timeoutMs = 7000) {
+  const sb = getSupabaseClient();
+  if (!sb) return false;
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const { data } = await sb.auth.getSession();
+    if (data && data.session) return true;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
+async function updateCurrentUserPassword(newPassword) {
+  try {
+    if (!newPassword || newPassword.length < 6) return { ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
+    const sb = await requireClient();
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, message: 'Contraseña actualizada correctamente.' };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function touchLastLogin() {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.rpc('touch_last_login');
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function setProfileStatus(userId, statusCanonical) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.rpc('admin_set_profile_status', {
+      p_user_id: userId,
+      p_status: statusCanonical
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, profile: data };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchAllProfilesForAdmin() {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, profiles: data || [] };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+const fetchCloudProfiles = fetchAllProfilesForAdmin;
+const updateCloudProfileStatus = setProfileStatus;
+
+// ---------------------------------------------------------------------------
+// FOTOS Y PRODUCTOS
+// ---------------------------------------------------------------------------
+function isDataUrlImage(value) {
+  return typeof value === 'string' && value.startsWith('data:image/');
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [meta = '', encoded = ''] = String(dataUrl || '').split(',');
+  const mime = (meta.match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function uploadProductPhotoIfNeeded(product) {
+  if (!product || !isDataUrlImage(product.photo)) return product && product.photo ? product.photo : null;
+  const sb = await requireClient();
+  const bucket = effectiveOnlineConfig().productImagesBucket || 'product-images';
+  const safeId = String(product.id || uid('prod')).replace(/[^a-z0-9_-]/gi, '_');
+  const path = `${safeId}/main.jpg`;
+  const blob = dataUrlToBlob(product.photo);
+  const { error } = await sb.storage.from(bucket).upload(path, blob, {
+    upsert: true,
+    contentType: 'image/jpeg',
+    cacheControl: '86400'
   });
-  return { ok: false, method: 'download-fallback' };
+  if (error) throw new Error(`No se pudo subir la imagen: ${messageFromError(error)}`);
+  const { data } = sb.storage.from(bucket).getPublicUrl(path);
+  if (!data || !data.publicUrl) throw new Error('Supabase Storage no devolvió la URL de la imagen.');
+  return `${data.publicUrl}?v=${Date.now()}`;
 }
 
-function downloadGenericBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2500);
+function stripEmbeddedImages(value) {
+  if (!value || typeof value !== 'object') return value;
+  const result = JSON.parse(JSON.stringify(value));
+  if (isDataUrlImage(result.photo)) result.photo = null;
+  if (result.payload && typeof result.payload === 'object') result.payload = stripEmbeddedImages(result.payload);
+  return result;
 }
 
-window.shareBlobFile = shareBlobFile;
-window.downloadGenericBlob = downloadGenericBlob;
+async function mapProductToCloud(product) {
+  const p = normalizeLegacyProduct(product);
+  const photoUrl = await uploadProductPhotoIfNeeded(p);
+  const payload = stripEmbeddedImages(Object.assign({}, p, { photo: photoUrl }));
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category || 'General',
+    sku: p.sku || '',
+    description: p.description || '',
+    cost: Number(p.cost || 0),
+    market_price: Number(p.marketPrice ?? p.wholesaleMarketPrice ?? p.marketPriceFixed ?? 0),
+    reseller_price: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0),
+    public_price: Number(p.publicPrice ?? p.unitPriceFixed ?? 0),
+    stock: Number(p.stock || 0),
+    photo_url: photoUrl,
+    status: p.status || 'active',
+    payload
+  };
+}
+
+function mapProductFromCloud(row, repStockMap = null, repPrefsMap = null) {
+  const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+  const centralStock = Number(row.stock || 0);
+  const stockEntry = repStockMap && repStockMap.has(row.id) ? repStockMap.get(row.id) : null;
+  const ownStock = stockEntry && typeof stockEntry === 'object' ? Number(stockEntry.stock || 0) : Number(stockEntry || 0);
+  const acquisitionCost = stockEntry && typeof stockEntry === 'object' ? Number(stockEntry.acquisitionCost || 0) : 0;
+  const prefs = repPrefsMap && repPrefsMap.has(row.id) ? repPrefsMap.get(row.id) : {};
+  return normalizeLegacyProduct(Object.assign({}, payload, prefs, {
+    id: row.id,
+    name: row.name,
+    category: row.category || 'General',
+    sku: row.sku || '',
+    description: row.description || '',
+    cost: Number(row.cost || 0),
+    marketPrice: Number(row.market_price || 0),
+    wholesaleMarketPrice: Number(row.market_price || 0),
+    resellerPrice: Number(row.reseller_price || 0),
+    publicPrice: Number(row.public_price || 0),
+    marketPriceFixed: Number(row.market_price || 0),
+    wholesalePriceFixed: Number(row.reseller_price || 0),
+    unitPriceFixed: Number(row.public_price || 0),
+    stock: window.isReseller && isReseller() ? ownStock : centralStock,
+    adminStock: centralStock,
+    resellerAcquisitionCost: acquisitionCost || Number(row.reseller_price || 0),
+    photo: row.photo_url || null,
+    status: row.status || 'active',
+    syncStatus: 'cloud',
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+  }));
+}
+
+async function fetchRepresentativeStockMap() {
+  if (!AppState.session || !AppState.session.onlineUserId) return new Map();
+  const sb = await requireClient();
+  const { data, error } = await sb.from('representative_stock')
+    .select('product_id,stock,acquisition_cost')
+    .eq('representative_user_id', AppState.session.onlineUserId);
+  if (error) throw new Error(messageFromError(error));
+  return new Map((data || []).map(row => [row.product_id, {
+    stock: Number(row.stock || 0),
+    acquisitionCost: Number(row.acquisition_cost || 0)
+  }]));
+}
+
+async function syncCloudProductsToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('products').select('*').eq('status', 'active').order('updated_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  let repStockMap = null;
+  let repPrefsMap = null;
+  if (window.isReseller && isReseller()) {
+    repStockMap = await fetchRepresentativeStockMap();
+    const { data: prefRows, error: prefError } = await sb.from('representative_product_preferences')
+      .select('*').eq('representative_user_id', AppState.session.onlineUserId);
+    if (prefError) return { ok: false, message: messageFromError(prefError) };
+    repPrefsMap = new Map((prefRows || []).map(row => [row.product_id, {
+      resellerAdditionalCost: Number(row.additional_cost || 0),
+      resellerLocalUnitPrice: Number(row.unit_price || 0),
+      resellerLocalWholesalePrice: Number(row.wholesale_price || 0),
+      resellerLocalNote: row.note || '',
+      resellerLocalUpdatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+    }]));
+  }
+  const products = (data || []).map(row => mapProductFromCloud(row, repStockMap, repPrefsMap));
+  await DB.clear('products');
+  if (products.length) await DB.bulkPut('products', products, { silent: true });
+  AppState.products = products;
+  return { ok: true, count: products.length };
+}
+
+async function upsertCloudProduct(product) {
+  try {
+    if (!isAdmin()) return { ok: false, message: 'Solo el administrador puede modificar productos.' };
+    const sb = await requireClient();
+    const row = await mapProductToCloud(product);
+    const { data, error } = await sb.from('products').upsert(row, { onConflict: 'id' }).select().single();
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, row: data };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function deleteCloudProduct(productId) {
+  try {
+    if (!isAdmin()) return { ok: false, message: 'Solo el administrador puede eliminar productos.' };
+    const sb = await requireClient();
+    const { error } = await sb.from('products').update({ status: 'archived' }).eq('id', productId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function pushLocalProductsToCloud() {
+  return { ok: false, message: 'La publicación manual fue eliminada. Cada producto se guarda directamente en Supabase.' };
+}
+
+function generateMovementId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `mov_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+async function adjustRepresentativeStockRemote(productId, delta, movementId = generateMovementId()) {
+  try {
+    const sb = await requireClient();
+    const cleanDelta = Number(delta || 0);
+    if (!Number.isFinite(cleanDelta) || cleanDelta === 0) return { ok: true, stock: null };
+    const { data, error } = await sb.rpc('adjust_representative_stock', {
+      p_movement_id: movementId,
+      p_product_id: productId,
+      p_delta: cleanDelta
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, stock: Number(data || 0), movementId };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function queueRepresentativeStockDelta(productId, delta) {
+  // Nombre conservado para compatibilidad. Ya no existe cola: la operación
+  // se confirma ahora mismo en Supabase o falla sin alterar la memoria.
+  return adjustRepresentativeStockRemote(productId, delta, generateMovementId());
+}
+
+async function updateRepresentativeInventoryRemote(productId, delta, preferences = {}, movementId = generateMovementId()) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.rpc('update_representative_inventory', {
+      p_movement_id: movementId,
+      p_product_id: productId,
+      p_delta: Number(delta || 0),
+      p_additional_cost: Number(preferences.additionalCost || 0),
+      p_unit_price: Number(preferences.unitPrice || 0),
+      p_wholesale_price: Number(preferences.wholesalePrice || 0),
+      p_note: String(preferences.note || '')
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, stock: Number(data || 0), movementId };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+// ---------------------------------------------------------------------------
+// CLIENTES, VENTAS Y REGISTROS MODULARES
+// ---------------------------------------------------------------------------
+function mapClientToCloud(client) {
+  return {
+    id: client.id,
+    owner_user_id: client.ownerUserId || AppState.session.onlineUserId,
+    name: client.name || '',
+    phone: client.phone || '',
+    price_group_id: client.priceGroupId || '',
+    payload: client
+  };
+}
+
+function mapClientFromCloud(row) {
+  const payload = row.payload || {};
+  return Object.assign({}, payload, {
+    id: row.id,
+    name: row.name || '',
+    phone: row.phone || '',
+    priceGroupId: row.price_group_id || '',
+    ownerUserId: row.owner_user_id,
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    syncStatus: 'cloud'
+  });
+}
+
+async function upsertCloudClient(client) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('clients').upsert(mapClientToCloud(client), { onConflict: 'id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function deleteCloudClient(clientId) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('clients').delete().eq('id', clientId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function syncCloudClientsToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('clients').select('*').order('updated_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  const rows = (data || []).map(mapClientFromCloud);
+  await DB.clear('clients');
+  if (rows.length) await DB.bulkPut('clients', rows, { silent: true });
+  AppState.clients = rows;
+  return { ok: true, count: rows.length };
+}
+
+function mapSaleFromCloud(row) {
+  const payload = row.payload || {};
+  return Object.assign({}, payload, {
+    id: row.id,
+    sellerId: row.seller_user_id,
+    sellerName: row.seller_name || '',
+    clientName: row.client_name || '',
+    clientPhone: row.client_phone || '',
+    type: row.sale_type || 'unit',
+    total: Number(row.total || 0),
+    sellerProfit: Number(row.seller_profit || 0),
+    date: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    syncStatus: 'cloud'
+  });
+}
+
+async function syncCloudSalesToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('sales').select('*').order('created_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  const rows = (data || []).map(mapSaleFromCloud);
+  await DB.clear('sales');
+  if (rows.length) await DB.bulkPut('sales', rows, { silent: true });
+  AppState.sales = rows;
+  return { ok: true, count: rows.length };
+}
+
+async function findCloudSaleById(saleId) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('sales').select('*').eq('id', String(saleId)).maybeSingle();
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, sale: data || null };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function insertCloudSale(sale) {
+  try {
+    const sb = await requireClient();
+    const items = (sale.items || []).map(item => ({
+      product_id: item.productId,
+      qty: Number(item.qty || 0)
+    }));
+    const { data, error } = await sb.rpc('register_sale_atomic', {
+      p_sale: sale,
+      p_items: items
+    });
+    if (!error) return { ok: true, sale: data };
+
+    // Una respuesta puede perderse después de que PostgreSQL confirmó la venta.
+    // Antes de permitir un reintento se consulta el mismo ID, evitando duplicados.
+    const uncertain = /failed to fetch|networkerror|load failed|fetch failed|timeout|duplicate key|already exists/i.test(String(error.message || error));
+    if (uncertain && sale && sale.id && navigator.onLine) {
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const check = await findCloudSaleById(sale.id);
+      if (check.ok && check.sale) return { ok: true, sale: check.sale, recovered: true };
+    }
+    return { ok: false, message: messageFromError(error) };
+  } catch (error) {
+    if (sale && sale.id && navigator.onLine) {
+      const check = await findCloudSaleById(sale.id);
+      if (check.ok && check.sale) return { ok: true, sale: check.sale, recovered: true };
+    }
+    return { ok: false, message: messageFromError(error) };
+  }
+}
+
+const CLOUD_GENERIC_STORES = [
+  'priceGroups', 'quotes', 'settings', 'inventoryMovements',
+  'commissions', 'commissionRules', 'representatives', 'dispatches',
+  'representativeReports', 'expenses', 'receivablePayments'
+];
+const CLOUD_SHARED_STORES = new Set(['priceGroups', 'settings', 'commissionRules']);
+
+function recordIdForStore(storeName, record) {
+  return String(storeName === 'settings' ? (record.key || 'main') : (record.id || ''));
+}
+
+async function upsertGenericCloudRecord(storeName, record) {
+  try {
+    const sb = await requireClient();
+    const ownerUserId = AppState.session && AppState.session.onlineUserId;
+    const recordId = recordIdForStore(storeName, record);
+    if (!ownerUserId || !recordId) return { ok: false, message: 'Registro sin usuario o identificador.' };
+    const visibility = CLOUD_SHARED_STORES.has(storeName) && isAdmin() ? 'shared' : 'private';
+    const { error } = await sb.from('app_records').upsert({
+      store_name: storeName,
+      record_id: recordId,
+      owner_user_id: ownerUserId,
+      visibility,
+      payload: record
+    }, { onConflict: 'store_name,record_id,owner_user_id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function deleteGenericCloudRecord(storeName, recordId) {
+  try {
+    const sb = await requireClient();
+    const ownerUserId = AppState.session && AppState.session.onlineUserId;
+    const { error } = await sb.from('app_records').delete()
+      .eq('store_name', storeName)
+      .eq('record_id', String(recordId))
+      .eq('owner_user_id', ownerUserId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function syncGenericCloudRecordsToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('app_records').select('*')
+    .in('store_name', CLOUD_GENERIC_STORES)
+    .order('updated_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  const grouped = new Map(CLOUD_GENERIC_STORES.map(name => [name, []]));
+  (data || []).forEach(row => {
+    if (grouped.has(row.store_name) && row.payload) grouped.get(row.store_name).push(row.payload);
+  });
+  for (const [name, rows] of grouped) {
+    await DB.clear(name);
+    if (rows.length) await DB.bulkPut(name, rows, { silent: true });
+  }
+  return { ok: true, count: (data || []).length };
+}
+
+// ---------------------------------------------------------------------------
+// PEDIDOS Y MENSAJES
+// ---------------------------------------------------------------------------
+function mapPurchaseOrderToCloud(order) {
+  return {
+    id: order.id,
+    representative_user_id: AppState.session.onlineUserId,
+    representative_name: order.representativeName || AppState.session.fullName || '',
+    status: order.status || 'pending',
+    total: Number(order.total || 0),
+    note: order.note || '',
+    payload: order
+  };
+}
+
+async function insertCloudPurchaseOrder(order) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('purchase_orders').upsert(mapPurchaseOrderToCloud(order), { onConflict: 'id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchCloudPurchaseOrders() {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(200);
+    if (error) return { ok: false, message: messageFromError(error) };
+    const orders = (data || []).map(row => Object.assign({}, row.payload || {}, {
+      id: row.id,
+      representativeId: row.representative_user_id,
+      representativeName: row.representative_name,
+      status: row.status,
+      total: Number(row.total || 0),
+      note: row.note || '',
+      createdAt: new Date(row.created_at).getTime(),
+      updatedAt: new Date(row.updated_at).getTime(),
+      syncStatus: 'cloud'
+    }));
+    return { ok: true, orders };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function updateCloudPurchaseOrderStatus(orderId, status) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.rpc('admin_set_order_status', {
+      p_order_id: orderId,
+      p_status: status
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, order: data };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+function mapMessageToCloud(message) {
+  const m = window.normalizeMessage ? normalizeMessage(message) : message;
+  return {
+    id: m.id,
+    type: m.type || 'general',
+    title: m.title || 'Mensaje',
+    body: m.body || '',
+    sender_user_id: AppState.session.onlineUserId,
+    sender_name: m.senderName || AppState.session.fullName || '',
+    sender_role: m.senderRole || AppState.session.roleName || '',
+    recipient_role: m.recipientRole || 'Administrador',
+    recipient_user_id: m.recipientUserId || null,
+    status: m.status || 'unread',
+    payload: m.payload || {}
+  };
+}
+
+function mapMessageFromCloud(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    senderUserId: row.sender_user_id,
+    senderName: row.sender_name,
+    senderRole: row.sender_role,
+    recipientRole: row.recipient_role,
+    recipientUserId: row.recipient_user_id,
+    status: row.status,
+    payload: row.payload || {},
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime()
+  };
+}
+
+async function insertCloudMessage(message) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('messages').upsert(mapMessageToCloud(message), { onConflict: 'id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchCloudInboxMessages() {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: false }).limit(100);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, messages: (data || []).map(mapMessageFromCloud) };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function markCloudMessageRead(messageId) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('messages').update({ status: 'read' }).eq('id', messageId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+
+
+async function fetchRepresentativeStockForAdminV725(userId) {
+  try {
+    const sb = await requireClient();
+    const { data: stockRows, error } = await sb.from('representative_stock')
+      .select('product_id,stock,acquisition_cost,updated_at')
+      .eq('representative_user_id', userId);
+    if (error) return { ok: false, message: messageFromError(error) };
+    const productIds = (stockRows || []).map(r => r.product_id).filter(Boolean);
+    let productMap = new Map();
+    if (productIds.length) {
+      const { data: products } = await sb.from('products').select('id,name,category,reseller_price,public_price,market_price,photo_url').in('id', productIds);
+      productMap = new Map((products || []).map(p => [p.id, p]));
+    }
+    const rows = (stockRows || []).map(r => {
+      const p = productMap.get(r.product_id) || {};
+      return { productId: r.product_id, productName: p.name || r.product_id, category: p.category || 'General', stock: Number(r.stock || 0), acquisitionCost: Number(r.acquisition_cost || p.reseller_price || 0), updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(), photo: p.photo_url || '' };
+    });
+    return { ok: true, rows };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchRepresentativeOrdersForAdminV725(userId) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('purchase_orders').select('*').eq('representative_user_id', userId).order('created_at', { ascending: false }).limit(50);
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, orders: (data || []).map(row => Object.assign({}, row.payload || {}, { id: row.id, status: row.status, total: Number(row.total || 0), createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now() })) };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+// ---------------------------------------------------------------------------
+// ESCRITURA ÚNICA PARA EL ADAPTADOR DE MEMORIA
+// ---------------------------------------------------------------------------
+async function cloudAfterPut(storeName, record) {
+  if (!navigator.onLine) throw new Error('Sin internet. El registro no fue guardado.');
+  if (!AppState.session || AppState.session.pendingApproval || !canOperate()) throw new Error('La cuenta no está habilitada para operar.');
+  let result;
+  if (storeName === 'products') result = await upsertCloudProduct(record);
+  else if (storeName === 'clients') result = await upsertCloudClient(record);
+  else if (storeName === 'sales') result = await insertCloudSale(record);
+  else if (storeName === 'purchaseOrders') result = await insertCloudPurchaseOrder(record);
+  else if (storeName === 'messages') result = await insertCloudMessage(record);
+  else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await upsertGenericCloudRecord(storeName, record);
+  else result = { ok: true, skipped: true };
+  if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó el registro.');
+  setCloudConnectionState('online', `Guardado en Supabase: ${storeName}`);
+  return result;
+}
+
+async function cloudAfterDelete(storeName, id) {
+  if (!navigator.onLine) throw new Error('Sin internet. No se eliminó el registro.');
+  if (!AppState.session || AppState.session.pendingApproval || !canOperate()) throw new Error('La cuenta no está habilitada para operar.');
+  let result;
+  if (storeName === 'products') result = await deleteCloudProduct(id);
+  else if (storeName === 'clients') result = await deleteCloudClient(id);
+  else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await deleteGenericCloudRecord(storeName, id);
+  else result = { ok: true, skipped: true };
+  if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó la eliminación.');
+  setCloudConnectionState('online', `Eliminado en Supabase: ${storeName}`);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// CARGA INICIAL + REALTIME
+// ---------------------------------------------------------------------------
+async function runBackgroundSyncOnce(reason = 'automatic') {
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = (async () => {
+    if (!navigator.onLine) return { ok: false, message: 'Sin internet.' };
+    if (!requireAuth()) return { ok: false, message: 'No hay sesión activa.' };
+    if (AppState.session.pendingApproval) return { ok: true, restricted: true };
+    setCloudConnectionState('connecting', reason);
+    const tasks = [
+      syncCloudProductsToLocal(),
+      syncCloudClientsToLocal(),
+      syncCloudSalesToLocal(),
+      syncGenericCloudRecordsToLocal(),
+      window.fetchAndCachePurchaseOrders ? fetchAndCachePurchaseOrders() : Promise.resolve({ ok: true }),
+      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true }),
+      window.syncProductionCloudToLocalV740 ? syncProductionCloudToLocalV740() : Promise.resolve({ ok: true })
+    ];
+    const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
+    await loadAllState();
+    renderAfterCloudRefresh();
+    if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
+    const failed = results.filter(result => result && result.ok === false);
+    if (failed.length) {
+      const detail = failed.map(item => item.message).filter(Boolean).join(' | ');
+      setCloudConnectionState('error', detail);
+      return { ok: false, message: detail, results };
+    }
+    setCloudConnectionState('online', 'Datos actualizados desde Supabase');
+    return { ok: true, results };
+  })();
+  try { return await _refreshInFlight; }
+  finally { _refreshInFlight = null; }
+}
+
+async function refreshAfterEvent(table) {
+  try {
+    if (table === 'products' || table === 'representative_stock' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
+    else if (table === 'clients') await syncCloudClientsToLocal();
+    else if (table === 'sales') await syncCloudSalesToLocal();
+    else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
+    else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
+    else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
+    else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
+    else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
+    await loadAllState();
+    renderAfterCloudRefresh();
+    if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
+    setCloudConnectionState('online', `Realtime: ${table}`);
+  } catch (error) {
+    console.warn(`Realtime ${table}:`, error);
+    setCloudConnectionState('error', messageFromError(error));
+  }
+}
+
+function scheduleRealtimeRestart(detail = 'Reconectando Realtime') {
+  clearTimeout(_realtimeRestartTimer);
+  if (!navigator.onLine || !requireAuth()) return;
+  setCloudConnectionState('connecting', detail);
+  _realtimeRestartTimer = setTimeout(() => {
+    startRealtimeSubscriptions();
+    if (!AppState.session.pendingApproval) runBackgroundSyncOnce('reconexión').catch(() => {});
+  }, 2500);
+}
+
+function stopRealtimeSubscriptions() {
+  clearTimeout(_realtimeRestartTimer);
+  const sb = getSupabaseClient();
+  if (sb && _realtimeChannel) sb.removeChannel(_realtimeChannel).catch(() => {});
+  _realtimeChannel = null;
+}
+
+function startRealtimeSubscriptions() {
+  const sb = getSupabaseClient();
+  if (!sb || !requireAuth()) return;
+  stopRealtimeSubscriptions();
+  setCloudConnectionState('connecting', 'Abriendo Realtime');
+
+  let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches'].forEach(table => {
+    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => refreshAfterEvent(table));
+  });
+  channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
+    try {
+      const row = payload.new || payload.old || {};
+      if (row.id === AppState.session.onlineUserId && payload.new) {
+        const wasPending = AppState.session.pendingApproval;
+        const current = await getOnlineSessionProfile();
+        if (current && current.user && current.profile) {
+          applyOnlineSession(current.user, current.profile);
+          if (wasPending && !AppState.session.pendingApproval && window.afterLoginSuccess) {
+            showToast('Tu cuenta fue aprobada. Acceso habilitado.');
+            await afterLoginSuccess({ ok: true, user: current.user });
+            return;
+          }
+          if (AppState.session.statusCanonical === 'bloqueado') {
+            showToast('La cuenta fue bloqueada por el administrador.', 'error');
+            await logoutSession();
+            return;
+          }
+        }
+      }
+      if (isAdmin() && AppState.currentTab === 'usuarios' && window.renderUsersFoundation && !shouldDeferCloudRender()) await renderUsersFoundation();
+      else renderAfterCloudRefresh();
+    } catch (error) { console.warn('Realtime profiles:', error); }
+  });
+
+  _realtimeChannel = channel.subscribe((status, error) => {
+    if (status === 'SUBSCRIBED') setCloudConnectionState('online', 'Realtime conectado');
+    else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+      setCloudConnectionState('error', messageFromError(error || status));
+      scheduleRealtimeRestart(status);
+    }
+  });
+}
+
+function startBackgroundSync() {
+  if (_backgroundStarted) return;
+  _backgroundStarted = true;
+  startRealtimeSubscriptions();
+  window.addEventListener('online', () => {
+    setCloudConnectionState('connecting', 'Internet recuperado');
+    startRealtimeSubscriptions();
+    if (requireAuth() && !AppState.session.pendingApproval) runBackgroundSyncOnce('internet recuperado').catch(() => {});
+  });
+  window.addEventListener('offline', () => setCloudConnectionState('offline', 'Sin internet'));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && navigator.onLine && requireAuth()) {
+      startRealtimeSubscriptions();
+      if (!AppState.session.pendingApproval) runBackgroundSyncOnce('aplicación visible').catch(() => {});
+    }
+  });
+}
+
+async function syncAfterLogin() {
+  startBackgroundSync();
+  startRealtimeSubscriptions();
+  if (AppState.session && AppState.session.pendingApproval) return { ok: true, mode: 'restricted-realtime' };
+  return runBackgroundSyncOnce('inicio de sesión');
+}
+
+async function runFullAdminSync() {
+  return runBackgroundSyncOnce('lectura automática');
+}
+
+async function flushPendingSyncQueue() {
+  return { ok: true, sent: 0, failed: 0, pending: 0, mode: 'disabled' };
+}
+
+async function testOnlineConnection() {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('app_config').select('key').limit(1);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, message: 'Supabase responde correctamente.' };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+// Compatibilidad deliberada: las funciones antiguas ya no hacen respaldo,
+// publicación masiva ni mezcla con datos locales.
+async function createPreSyncLocalSnapshot() { return null; }
+async function openSafeCloudSyncSheet() { showToast('La actualización es automática mediante Realtime.'); }
+
+Object.assign(window, {
+  CloudConnection,
+  shouldDeferCloudRender,
+  renderAfterCloudRefresh,
+  flushDeferredCloudRender,
+  effectiveOnlineConfig,
+  getSavedOnlineConfig,
+  getOnlineConfigValue,
+  saveOnlineConfig,
+  isOnlineConfigured,
+  getSupabaseClient,
+  setCloudConnectionState,
+  onlineSignIn,
+  onlineSignOut,
+  getOnlineSessionProfile,
+  upsertCloudProfileForUser,
+  signUpEmailAccount,
+  sendPasswordRecoveryEmail,
+  waitForPasswordRecoverySession,
+  updateCurrentUserPassword,
+  touchLastLogin,
+  setProfileStatus,
+  fetchAllProfilesForAdmin,
+  fetchCloudProfiles,
+  updateCloudProfileStatus,
+  uploadProductPhotoIfNeeded,
+  syncCloudProductsToLocal,
+  pushLocalProductsToCloud,
+  adjustRepresentativeStockRemote,
+  queueRepresentativeStockDelta,
+  updateRepresentativeInventoryRemote,
+  fetchRepresentativeStockForAdminV725,
+  fetchRepresentativeOrdersForAdminV725,
+  fetchRepresentativeStockMap,
+  upsertCloudClient,
+  deleteCloudClient,
+  syncCloudClientsToLocal,
+  syncCloudSalesToLocal,
+  syncGenericCloudRecordsToLocal,
+  insertCloudMessage,
+  fetchCloudInboxMessages,
+  markCloudMessageRead,
+  insertCloudPurchaseOrder,
+  fetchCloudPurchaseOrders,
+  updateCloudPurchaseOrderStatus,
+  cloudAfterPut,
+  cloudAfterDelete,
+  runBackgroundSyncOnce,
+  startRealtimeSubscriptions,
+  stopRealtimeSubscriptions,
+  startBackgroundSync,
+  syncAfterLogin,
+  runFullAdminSync,
+  flushPendingSyncQueue,
+  testOnlineConnection,
+  createPreSyncLocalSnapshot,
+  openSafeCloudSyncSheet
+});

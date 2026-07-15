@@ -1,38 +1,25 @@
-INFORME DE CONVERSIÓN — MI NEGOCIO → NATURA VIDA
+-- Verificación de la importación Mi Negocio
+select
+  case when count(*) = 69 then 'OK' else 'REVISAR' end as estado_ventas,
+  count(*) as ventas,
+  coalesce(sum(total),0) as total
+from public.sales
+where id like 'sale_mn_%';
 
-Archivo analizado:
-backup_2026-07-09 22_28.mn
+select
+  case when count(*) = 39 then 'OK' else 'REVISAR' end as estado_clientes,
+  count(*) as clientes
+from public.clients
+where id like 'cli_mn_%';
 
-Formato real encontrado:
-- Archivo .mn = paquete ZIP.
-- Base interna = SQLite (BD_MiNegocio).
-- También contiene 3 imágenes de productos.
+select
+  count(*) filter (where coalesce(payload->>'historicalImport','false')::boolean) as historicas,
+  count(*) filter (where coalesce(payload->>'affectsStock','true')::boolean = false) as sin_impacto_stock
+from public.sales
+where id like 'sale_mn_%';
 
-Datos recuperados:
-- Clientes normalizados: 39
-- Ventas históricas: 69
-- Líneas de productos vendidas: 136
-- Total histórico: Bs 72,750.50
-- Primera venta: 06/06/2025
-- Última venta: 29/06/2026
-- Números de celular encontrados: 0
-
-IMPORTANTE SOBRE LOS TELÉFONOS
-La tabla de clientes sí tiene un campo telefono1, pero todos los registros del respaldo recibido están vacíos.
-No se inventó ningún número. Los clientes se importarán con el nombre y el teléfono vacío.
-
-CRITERIOS DE MIGRACIÓN
-- Las ventas se marcan como históricas.
-- Las ventas importadas NO modifican el stock actual.
-- Se conservan fechas, horas, productos, cantidades, precios de compra, precios de venta, subtotales, total, forma de pago antigua y observaciones.
-- Los folios originales se conservan como MN-000007, MN-000008, etc.
-- La importación es repetible sin duplicar datos.
-- Se normalizaron espacios, acentos y puntuación para evitar algunos duplicados evidentes.
-- No se fusionaron nombres ambiguos como GUISELA, SRA GUISELA y GUISELA TABORGA.
-
-RESULTADO ESPERADO
-Después de ejecutar el SQL en Supabase y actualizar la aplicación:
-- Los clientes aparecerán en Clientes.
-- Las 69 ventas aparecerán en Ventas y recibos.
-- Podrás abrir nuevamente los recibos históricos.
-- El inventario actual permanecerá intacto.
+select id, client_name, total, sale_type, created_at
+from public.sales
+where id like 'sale_mn_%'
+order by created_at desc
+limit 10;

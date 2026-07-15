@@ -1,345 +1,324 @@
-/* NATURA VIDA V7 — perfil comercial, QR y gestión de representantes. */
+/* NATURA VIDA V7 — compra online, pedidos y venta directa a representantes. */
 
 (() => {
-  let qrImage = null;
-  let qrZoom = 1;
-  let qrOffsetX = 0;
-  let qrOffsetY = 0;
-  let qrDataUrl = '';
-  let removeQrRequested = false;
+  let orderCart = {};
+  let orderSearch = '';
+  let orderNote = '';
+  let editingOrderId = null;
 
-  function pendingOwnChange(field) {
-    return (AppState.profileChangeRequests || []).find(r => r.userId === AppState.session.userId && r.fieldName === field && r.status === 'pending');
+  const STATUS = {
+    submitted: ['Enviado', 'info'],
+    modified: ['Modificado', 'warning'],
+    approved_pending_payment: ['Aprobado · pendiente de pago', 'warning'],
+    paid: ['Pagado · stock transferido', 'success'],
+    cancelled: ['Cancelado', 'muted'],
+    rejected: ['Rechazado', 'danger']
+  };
+
+  function statusMeta(status) { return STATUS[status] || [status || 'Enviado', 'info']; }
+  function centralStock(p) { return Math.max(0, Number(p.adminStock != null ? p.adminStock : p.stock) || 0); }
+  function representativeOrderPrice(p) {
+    const base = representativePrice(p);
+    const groupId = AppState.session.priceGroupId || '';
+    const grouped = groupId && window.applyPercentGroupV7 ? applyPercentGroupV7(base, groupId) : base;
+    const discount = Math.min(100, Math.max(0, Number(AppState.session.discountPercent || 0)));
+    return roundBs(grouped * (1 - discount / 100));
+  }
+  function cartUnits() { return Object.values(orderCart).reduce((s, q) => s + Number(q || 0), 0); }
+  function cartItems() {
+    return Object.entries(orderCart).map(([id, qty]) => {
+      const p = AppState.products.find(x => x.id === id);
+      if (!p) return null;
+      const unitPrice = representativeOrderPrice(p);
+      return { productId: p.id, productName: p.name, category: p.category || 'General', qty: Number(qty), unitPrice, subtotal: roundBs(unitPrice * Number(qty)) };
+    }).filter(Boolean);
+  }
+  function cartTotal() { return cartItems().reduce((s, i) => s + i.subtotal, 0); }
+
+  async function currentOrders() {
+    const rows = await DB.getAll('purchaseOrders').catch(() => []);
+    AppState.purchaseOrders = rows;
+    return rows;
   }
 
-  function renderProfileV7() {
-    // Cada entrada al módulo comienza con el estado confirmado en Supabase.
-    // Así un recorte o eliminación no guardados no reaparecen al volver más tarde.
-    qrDataUrl = '';
-    removeQrRequested = false;
-    $('#fabAdd').classList.add('hidden');
-    const cp = myCommercialProfile();
-    const phoneReq = pendingOwnChange('phone');
-    const cityReq = pendingOwnChange('city');
-    window.V7_FORM_DIRTY = false;
-    $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Puedes actualizar tus datos de perfil y presentación comercial. El correo, rol y estado permanecen protegidos.'}</p></section>
-      <section class="v7ProfileCardMain">
-        <div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
-        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</small></div>
-      </section>
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Datos de perfil</span><h2>Identificación</h2></div><span class="v7Lock">Correo protegido</span></div>
-        <div class="v7ReadonlyGrid">
-          <label>Nombre completo<input id="v7FullName" value="${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}" placeholder="Nombre y apellidos"></label>
-          <label>Correo Gmail<input value="${escapeHtml(AppState.session.email || '')}" readonly></label>
-          <label>WhatsApp<input id="v7OfficialPhone" inputmode="tel" value="${escapeHtml(AppState.session.phone || '')}" placeholder="Ej.: 70700000"></label>
-          <label>Ciudad<input id="v7OfficialCity" value="${escapeHtml(AppState.session.city || '')}" placeholder="Ej.: Santa Cruz"></label>
-        </div>
-        <div class="v7CashNotice">Puedes editar tu nombre, WhatsApp y ciudad. El correo, rol y estado no se modifican desde la app.</div>
-        <button class="btn outline block" id="saveOfficialProfileV7">Guardar datos de perfil</button>
-      </section>
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Presentación en recibos</span><h2>Mi negocio</h2></div></div>
-        <div class="field"><label>Nombre comercial opcional</label><input id="v7BusinessName" value="${escapeHtml(cp.businessName || '')}" placeholder="Ej.: Natura Vida La Paz"></div>
-        <div class="field"><label>Dirección comercial opcional</label><input id="v7Address" value="${escapeHtml(cp.address || '')}" placeholder="Dirección o zona de atención"></div>
-        <div class="field"><label>Ubicación / referencia</label><input id="v7LocationLabel" value="${escapeHtml(cp.locationLabel || '')}" placeholder="Ej.: Barrio Equipetrol, frente a..."></div>
-        <div class="field-row"><div class="field"><label>Latitud</label><input id="v7Lat" type="number" step="any" value="${cp.latitude == null ? '' : cp.latitude}"></div><div class="field"><label>Longitud</label><input id="v7Lng" type="number" step="any" value="${cp.longitude == null ? '' : cp.longitude}"></div></div>
-        <button class="btn ghost block" id="useLocationV7">Usar mi ubicación actual</button>
-        <div class="field"><label>Mensaje para recibos</label><textarea id="v7ReceiptMessage" rows="3" placeholder="Ej.: Gracias por confiar en productos naturales Natura Vida.">${escapeHtml(cp.receiptMessage || '')}</textarea></div>
-      </section>
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Cobro al contado</span><h2>Mi QR</h2></div></div>
-        <div class="v7QrWarning"><strong>Importante:</strong> sube solamente el QR limpio. No uses capturas completas del banco, marcos, saldos, logotipos decorativos ni información adicional.</div>
-        <div class="v7QrCurrent">${cp.qrUrl ? `<img src="${escapeHtml(cp.qrUrl)}" alt="QR actual" loading="lazy" decoding="async"><span>QR actual guardado</span>` : '<div>QR</div><span>Aún no configurado</span>'}</div>
-        <button class="btn outline block" id="openQrCropV7">Cargar y recortar QR</button>
-        <button class="btn ghost block ${cp.qrUrl ? '' : 'hidden'}" id="removeQrV7">Eliminar QR guardado</button>
-      </section>
-      <button class="btn block v7SaveProfile" id="saveCommercialProfileV7">Guardar perfil comercial</button>
-    `;
-
-    $all('#mainArea input:not([readonly]), #mainArea textarea').forEach(el => el.addEventListener('input', () => { window.V7_FORM_DIRTY = true; }));
-    $('#saveOfficialProfileV7').addEventListener('click', async () => {
-      const btn = $('#saveOfficialProfileV7');
-      const fullName = $('#v7FullName').value.trim();
-      const phone = $('#v7OfficialPhone').value.trim();
-      const city = $('#v7OfficialCity').value.trim();
-      if (!fullName || fullName.length < 3) return showToast('Ingresa un nombre completo válido.', 'error');
-      btn.disabled = true; btn.textContent = 'Guardando perfil…';
-      const res = await upsertCloudProfileForUser(AppState.session.userId, AppState.session.email, { fullName, phone, city });
-      btn.disabled = false; btn.textContent = 'Guardar datos de perfil';
-      if (!res.ok) return showToast(res.message || 'No se pudo guardar el perfil.', 'error');
-      AppState.session.fullName = res.profile.full_name || fullName;
-      AppState.session.phone = res.profile.phone || phone;
-      AppState.session.city = res.profile.city || city;
-      window.V7_FORM_DIRTY = false;
-      showToast('Perfil actualizado correctamente.');
-      renderProfileV7();
-    });
-    $('#openQrCropV7').addEventListener('click', () => openQrCropper(qrDataUrl || cp.qrUrl || ''));
-    const currentQrImg = $('.v7QrCurrent img');
-    if (currentQrImg) currentQrImg.addEventListener('error', () => {
-      const box = $('.v7QrCurrent');
-      if (box) box.innerHTML = '<div>!</div><span>No se pudo cargar el QR guardado</span>';
-    }, { once: true });
-    $('#removeQrV7').addEventListener('click', async () => {
-      if (!confirm('¿Eliminar el QR de cobro de tu perfil y de los próximos recibos?')) return;
-      qrDataUrl = '';
-      removeQrRequested = true;
-      window.V7_FORM_DIRTY = true;
-      $('.v7QrCurrent').innerHTML = '<div>QR</div><span>Se eliminará al guardar</span>';
-      $('#removeQrV7').classList.add('hidden');
-      showToast('QR marcado para eliminar. Pulsa Guardar perfil comercial.');
-    });
-    $('#useLocationV7').addEventListener('click', () => {
-      if (!navigator.geolocation) return showToast('El dispositivo no permite obtener ubicación.', 'error');
-      const btn = $('#useLocationV7'); btn.disabled = true; btn.textContent = 'Obteniendo ubicación…';
-      navigator.geolocation.getCurrentPosition(pos => {
-        $('#v7Lat').value = pos.coords.latitude.toFixed(6);
-        $('#v7Lng').value = pos.coords.longitude.toFixed(6);
-        window.V7_FORM_DIRTY = true;
-        btn.disabled = false; btn.textContent = 'Ubicación capturada';
-      }, () => { btn.disabled = false; btn.textContent = 'Usar mi ubicación actual'; showToast('No se pudo obtener la ubicación.', 'error'); }, { enableHighAccuracy: true, timeout: 10000 });
-    });
-    $('#saveCommercialProfileV7').addEventListener('click', async () => {
-      const btn = $('#saveCommercialProfileV7'); btn.disabled = true; btn.textContent = 'Guardando en Supabase…';
-      const profile = {
-        businessName: $('#v7BusinessName').value.trim(),
-        address: $('#v7Address').value.trim(),
-        locationLabel: $('#v7LocationLabel').value.trim(),
-        latitude: $('#v7Lat').value,
-        longitude: $('#v7Lng').value,
-        receiptMessage: $('#v7ReceiptMessage').value.trim(),
-        qrUrl: removeQrRequested ? '' : (qrDataUrl || cp.qrUrl || '')
-      };
-      if (qrDataUrl && qrDataUrl.startsWith('data:image/')) {
-        const upload = await uploadPaymentQrV7(qrDataUrl);
-        if (!upload.ok) {
-          btn.disabled = false; btn.textContent = 'Reintentar guardado';
-          return showToast(upload.message || 'No se pudo subir el QR. No se guardó ningún cambio.', 'error');
-        }
-        profile.qrUrl = upload.url;
-      }
-      const res = await saveCommercialProfileV7(profile);
-      if (!res.ok) {
-        btn.disabled = false; btn.textContent = 'Reintentar guardado';
-        return showToast(res.message, 'error');
-      }
-      const verify = await fetchCommercialProfilesV7();
-      const persisted = myCommercialProfile();
-      const qrVerified = verify.ok && (removeQrRequested ? !persisted.qrUrl : String(persisted.qrUrl || '') === String(profile.qrUrl || ''));
-      if (!qrVerified) {
-        btn.disabled = false; btn.textContent = 'Verificar y reintentar';
-        return showToast('Supabase no confirmó el QR guardado. No cierres esta pantalla y vuelve a intentarlo.', 'error');
-      }
-      if (removeQrRequested && window.deletePaymentQrV7) await deletePaymentQrV7().catch(() => {});
-      btn.disabled = false; btn.textContent = 'Guardar perfil comercial';
-      qrDataUrl = '';
-      removeQrRequested = false;
-      window.V7_FORM_DIRTY = false;
-      showToast('Perfil comercial y QR verificados correctamente.');
-      renderProfileV7();
-    });
+  function changeOrderQty(productId, delta) {
+    const p = AppState.products.find(x => x.id === productId);
+    if (!p) return;
+    const max = centralStock(p);
+    const next = Math.max(0, Math.min(max, Number(orderCart[productId] || 0) + delta));
+    if (next === 0) delete orderCart[productId]; else orderCart[productId] = next;
+    renderOrderRequestV7();
   }
 
-  function openAdminOfficialEditV7() {
-    openSheet(`
-      <h2>Editar datos oficiales <span class="x" id="closeSheet">✕</span></h2>
-      <div class="field"><label>WhatsApp</label><input id="adminPhoneV7" inputmode="tel" value="${escapeHtml(AppState.session.phone || '')}"></div>
-      <div class="field"><label>Ciudad</label><input id="adminCityV7" value="${escapeHtml(AppState.session.city || '')}"></div>
-      <button class="btn block" id="saveAdminOfficialV7">Guardar datos</button>
-    `, (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#saveAdminOfficialV7', overlay).addEventListener('click', async () => {
-        const btn = $('#saveAdminOfficialV7', overlay);
-        btn.disabled = true;
-        btn.textContent = 'Guardando…';
-        const res = await upsertCloudProfileForUser(AppState.session.userId, AppState.session.email, {
-          fullName: AppState.session.fullName,
-          phone: $('#adminPhoneV7', overlay).value.trim(),
-          city: $('#adminCityV7', overlay).value.trim()
-        });
-        if (!res.ok) {
-          btn.disabled = false;
-          btn.textContent = 'Reintentar';
-          return showToast(res.message, 'error');
-        }
-        AppState.session.phone = res.profile.phone || '';
-        AppState.session.city = res.profile.city || '';
-        close();
-        showToast('Datos oficiales actualizados.');
-        renderProfileV7();
-      });
-    });
-  }
-
-  function openOfficialChangeRequest() {
-    const pendingPhone = pendingOwnChange('phone');
-    const pendingCity = pendingOwnChange('city');
-    openSheet(`
-      <h2>Solicitar cambio <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7CashNotice">El administrador revisará la solicitud. El dato actual seguirá vigente hasta su aprobación.</div>
-      <div class="field"><label>Nuevo WhatsApp</label><input id="changePhoneV7" inputmode="tel" value="${escapeHtml(pendingPhone ? pendingPhone.newValue : AppState.session.phone || '')}" ${pendingPhone ? 'disabled' : ''}>${pendingPhone ? '<small class="pendingText">Ya existe una solicitud pendiente.</small>' : ''}</div>
-      <div class="field"><label>Nueva ciudad</label><input id="changeCityV7" value="${escapeHtml(pendingCity ? pendingCity.newValue : AppState.session.city || '')}" ${pendingCity ? 'disabled' : ''}>${pendingCity ? '<small class="pendingText">Ya existe una solicitud pendiente.</small>' : ''}</div>
-      <button class="btn block" id="sendOfficialChangeV7">Enviar solicitud</button>
-    `, (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#sendOfficialChangeV7', overlay).addEventListener('click', async () => {
-        const tasks = [];
-        const phone = $('#changePhoneV7', overlay).value.trim();
-        const city = $('#changeCityV7', overlay).value.trim();
-        if (!pendingPhone && phone && phone !== AppState.session.phone) tasks.push(requestProfileChangeV7('phone', phone));
-        if (!pendingCity && city && city !== AppState.session.city) tasks.push(requestProfileChangeV7('city', city));
-        if (!tasks.length) return showToast('No hay cambios nuevos para solicitar.', 'error');
-        const results = await Promise.all(tasks); const failed = results.find(r => !r.ok);
-        if (failed) return showToast(failed.message, 'error');
-        close(); showToast('Solicitud enviada al administrador.'); renderProfileV7();
-      });
-    });
-  }
-
-  function drawQrCrop(canvas, image, zoom = 1, offsetX = 0, offsetY = 0, guide = true) {
-    if (!canvas || !image) return;
-    const ctx = canvas.getContext('2d');
-    const size = canvas.width;
-    ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
-    const baseScale = Math.max(size / image.width, size / image.height);
-    const scale = baseScale * zoom;
-    const w = image.width * scale, h = image.height * scale;
-    ctx.drawImage(image, (size - w) / 2 + offsetX, (size - h) / 2 + offsetY, w, h);
-    if (guide) {
-      ctx.strokeStyle = '#11a060'; ctx.lineWidth = 4; ctx.setLineDash([12, 8]);
-      ctx.strokeRect(5, 5, size - 10, size - 10); ctx.setLineDash([]);
+  function renderOrderCartBar() {
+    let bar = $('#cartBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'cartBar';
+      bar.className = 'cartBar v7CartBar';
+      $('#app').appendChild(bar);
     }
+    if (!cartUnits()) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    bar.innerHTML = `<div><strong>${cartUnits()} unidad(es)</strong><span>${fmtMoney(cartTotal())}</span></div><button class="btn" id="openOrderCartV7">Ver carrito</button>`;
+    $('#openOrderCartV7').addEventListener('click', openOrderCartSheet);
   }
 
-  function cleanQrCropDataUrl(image, zoom, offsetX, offsetY) {
-    const output = document.createElement('canvas');
-    output.width = 800; output.height = 800;
-    const scaleFactor = output.width / 420;
-    drawQrCrop(output, image, zoom, offsetX * scaleFactor, offsetY * scaleFactor, false);
-    return output.toDataURL('image/jpeg', 0.96);
+  function orderCard(order, representativeView = false) {
+    const [label, tone] = statusMeta(order.status);
+    const canEdit = representativeView && ['submitted', 'modified', 'approved_pending_payment'].includes(order.status);
+    const canCancel = representativeView && !['paid', 'cancelled', 'rejected'].includes(order.status);
+    return `<article class="v7OrderCard ${tone}">
+      <div class="v7OrderTop"><div><span class="v7DocNumber">${escapeHtml(order.orderNumber || 'Pedido')}</span><strong>${representativeView ? 'Compra a Natura Vida' : escapeHtml(order.representativeName || 'Representante')}</strong></div><span class="v7Status ${tone}">${escapeHtml(label)}</span></div>
+      <div class="v7OrderItems">${(order.items || []).slice(0,4).map(i => `<span>${escapeHtml(i.productName)} <b>× ${i.qty}</b></span>`).join('')}${(order.items || []).length > 4 ? `<span>+ ${(order.items || []).length - 4} producto(s)</span>` : ''}</div>
+      <div class="v7OrderFoot"><span>${fmtDateTime(order.createdAt)}</span><strong>${fmtMoney(order.total || 0)}</strong></div>
+      <div class="v7OrderActions">
+        ${canEdit ? `<button class="btn sm outline v7EditOwnOrder" data-id="${order.id}">Modificar</button>` : ''}
+        ${canCancel ? `<button class="btn sm ghost dangerText v7CancelOwnOrder" data-id="${order.id}">Cancelar</button>` : ''}
+        ${order.status === 'approved_pending_payment' ? `<button class="btn sm v7PaymentOrder" data-id="${order.id}">Ver QR y pagar</button>` : ''}
+        ${order.status === 'paid' ? `<button class="btn sm v7ReceiptOrder" data-id="${order.id}">Ver recibo</button>` : ''}
+      </div>
+    </article>`;
   }
 
-  function openQrCropper(existingUrl) {
-    qrImage = null; qrZoom = 1; qrOffsetX = 0; qrOffsetY = 0;
+  async function renderOrderRequestV7() {
+    if (isAdmin()) return renderAdminOrdersInboxV7();
+    $('#fabAdd').classList.add('hidden');
+    const orders = (await currentOrders()).filter(o => o.representativeId === AppState.session.userId).sort((a,b)=>b.createdAt-a.createdAt);
+    const products = AppState.products.filter(p => p.status !== 'archived');
+    const discount = Number(AppState.session.discountPercent || 0);
+    const repGroup = AppState.priceGroups.find(g => g.id === (AppState.session.priceGroupId || ''));
+    $('#mainArea').innerHTML = `
+      <section class="v7PageHead v7BuyHead"><span class="v7Eyebrow">Catálogo central</span><h1>Compra online</h1><p>Elige productos, envía tu solicitud y recibe el stock cuando el administrador confirme el pago.</p>${repGroup ? `<span class="v7DiscountChip">Grupo: ${escapeHtml(repGroup.name)}</span>` : ''}${discount > 0 ? `<span class="v7DiscountChip">Descuento personal: ${discount}%</span>` : ''}</section>
+      ${editingOrderId ? `<div class="v7EditBanner"><span>Editando pedido ${escapeHtml((orders.find(o=>o.id===editingOrderId)||{}).orderNumber || '')}</span><button id="cancelEditOrderV7">Cancelar edición</button></div>` : ''}
+      <div class="v7SearchBox"><span>⌕</span><input id="v7OrderSearch" placeholder="Buscar producto o categoría" value="${escapeHtml(orderSearch)}"></div>
+      <section class="v7ProductGrid">
+        ${products.map(p => {
+          const stock = centralStock(p); const qty = Number(orderCart[p.id] || 0); const price = representativeOrderPrice(p);
+          return `<article class="v7ProductCard ${stock === 0 ? 'soldout' : ''}">
+            <div class="v7ProductImage">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async" >` : '<span>NV</span>'}${stock === 0 ? '<em>AGOTADO</em>' : ''}</div>
+            <div class="v7ProductBody"><small>${escapeHtml(p.category || 'General')}</small><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.description || '')}</p><div class="v7ProductPrice"><strong>${fmtMoney(price)}</strong><span>${stock} disponibles</span></div>
+            <div class="v7Stepper"><button data-minus="${p.id}" ${stock===0?'disabled':''}>−</button><b>${qty}</b><button data-plus="${p.id}" ${stock===0?'disabled':''}>+</button></div></div>
+          </article>`;
+        }).join('') || `<div class="v7Empty"><span>🌿</span><h3>No hay productos disponibles</h3><p>El catálogo aparecerá cuando el administrador publique productos activos.</p></div>`}
+      </section>
+      <section class="v7Panel v7OrderHistory"><div class="v7PanelHead"><div><span class="v7Eyebrow">Registro permanente</span><h2>Mis pedidos</h2></div><span>${orders.length}</span></div>${orders.map(o=>orderCard(o,true)).join('') || '<div class="v7EmptyInline"><span>🛒</span><div><strong>Aún no hiciste pedidos</strong><small>Tu historial aparecerá aquí.</small></div></div>'}</section>`;
+    bindStableSearch('#v7OrderSearch', '#mainArea .v7ProductCard', value => { orderSearch = value; });
+    $all('[data-plus]').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.plus, 1)));
+    $all('[data-minus]').forEach(b => b.addEventListener('click', () => changeOrderQty(b.dataset.minus, -1)));
+    if ($('#cancelEditOrderV7')) $('#cancelEditOrderV7').addEventListener('click', () => { editingOrderId = null; orderCart = {}; orderNote = ''; renderOrderRequestV7(); });
+    $all('.v7EditOwnOrder').forEach(b => b.addEventListener('click', () => editOwnOrder(b.dataset.id, orders)));
+    $all('.v7CancelOwnOrder').forEach(b => b.addEventListener('click', () => cancelOwnOrder(b.dataset.id)));
+    $all('.v7PaymentOrder, .v7ReceiptOrder').forEach(b => b.addEventListener('click', () => {
+      const o = orders.find(x => x.id === b.dataset.id); if (o) openV7ReceiptPreview(o, 'order');
+    }));
+    renderOrderCartBar();
+  }
+
+  function editOwnOrder(id, orders) {
+    const order = orders.find(o => o.id === id); if (!order) return;
+    editingOrderId = id; orderCart = {}; orderNote = order.note || '';
+    (order.items || []).forEach(i => { orderCart[i.productId] = Number(i.qty || 0); });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    renderOrderRequestV7();
+  }
+
+  async function cancelOwnOrder(id) {
+    if (!confirmDialog('¿Cancelar este pedido? Solo puede cancelarse antes de confirmar el pago.')) return;
+    const res = await cancelPurchaseOrderV7(id);
+    showToast(res.ok ? 'Pedido cancelado.' : res.message, res.ok ? undefined : 'error');
+    if (res.ok) renderOrderRequestV7();
+  }
+
+  function openOrderCartSheet() {
+    const items = cartItems();
     openSheet(`
-      <h2>Recortar QR <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7QrWarning"><strong>Solo QR limpio:</strong> centra el código dentro del cuadro. Puedes arrastrar la imagen y acercarla. La línea verde es solo una guía y no aparecerá en el QR guardado.</div>
-      <label class="v7QrUpload"><input id="qrFileV7" type="file" accept="image/*"><span>Seleccionar imagen del QR</span></label>
-      <canvas id="qrCanvasV7" width="420" height="420" aria-label="Área de recorte del QR"></canvas>
-      <div class="field"><label>Acercar / alejar</label><input id="qrZoomV7" type="range" min="1" max="4" step="0.05" value="1"></div>
-      <button class="btn ghost block" id="centerQrV7">Centrar nuevamente</button>
-      <button class="btn block" id="useQrCropV7" disabled>Usar este recorte limpio</button>
+      <h2>${editingOrderId ? 'Modificar pedido' : 'Confirmar pedido'} <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7CartList">${items.map(i => `<div><span><strong>${escapeHtml(i.productName)}</strong><small>${i.qty} × ${fmtMoney(i.unitPrice)}</small></span><b>${fmtMoney(i.subtotal)}</b></div>`).join('')}</div>
+      <div class="field"><label>Nota para el administrador</label><textarea id="v7OrderNote" rows="3" placeholder="Ej.: enviar por flota, confirmar horario...">${escapeHtml(orderNote)}</textarea></div>
+      <div class="v7TotalLine"><span>Total al contado</span><strong>${fmtMoney(cartTotal())}</strong></div>
+      <div class="v7CashNotice">El stock pasa a tu inventario únicamente cuando el administrador confirma el pago.</div>
+      <button class="btn block" id="submitOrderV7">${editingOrderId ? 'Guardar modificación' : 'Enviar pedido'}</button>
+      <button class="btn outline block" id="clearOrderV7">Vaciar carrito</button>
     `, (overlay, close) => {
-      const canvas = $('#qrCanvasV7', overlay);
-      let dragging = false, lastX = 0, lastY = 0;
-      const redraw = () => drawQrCrop(canvas, qrImage, qrZoom, qrOffsetX, qrOffsetY, true);
-      const loadImage = src => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          qrImage = img; qrZoom = 1; qrOffsetX = 0; qrOffsetY = 0;
-          $('#qrZoomV7', overlay).value = 1; redraw(); $('#useQrCropV7', overlay).disabled = false;
-        };
-        img.onerror = () => showToast('No se pudo abrir la imagen del QR.', 'error');
-        img.src = src;
-      };
-      if (existingUrl) loadImage(existingUrl);
       $('#closeSheet', overlay).addEventListener('click', close);
-      $('#qrFileV7', overlay).addEventListener('change', async e => {
-        const file = e.target.files && e.target.files[0]; if (!file) return;
-        if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type || '')) return showToast('Usa una imagen PNG, JPG o WEBP.', 'error');
-        if (file.size > 8 * 1024 * 1024) return showToast('La imagen supera 8 MB.', 'error');
-        loadImage(await readImageFile(file));
-      });
-      $('#qrZoomV7', overlay).addEventListener('input', e => { qrZoom = Number(e.target.value || 1); redraw(); });
-      $('#centerQrV7', overlay).addEventListener('click', () => { qrOffsetX = 0; qrOffsetY = 0; qrZoom = 1; $('#qrZoomV7', overlay).value = 1; redraw(); });
-      canvas.style.touchAction = 'none';
-      canvas.addEventListener('pointerdown', e => {
-        if (!qrImage) return; dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId);
-      });
-      canvas.addEventListener('pointermove', e => {
-        if (!dragging || !qrImage) return;
-        const rect = canvas.getBoundingClientRect();
-        const scale = canvas.width / Math.max(1, rect.width);
-        qrOffsetX += (e.clientX - lastX) * scale; qrOffsetY += (e.clientY - lastY) * scale;
-        lastX = e.clientX; lastY = e.clientY; redraw();
-      });
-      const stopDrag = () => { dragging = false; };
-      canvas.addEventListener('pointerup', stopDrag); canvas.addEventListener('pointercancel', stopDrag);
-      $('#useQrCropV7', overlay).addEventListener('click', () => {
-        if (!qrImage) return;
-        qrDataUrl = cleanQrCropDataUrl(qrImage, qrZoom, qrOffsetX, qrOffsetY);
-        removeQrRequested = false;
-        window.V7_FORM_DIRTY = true;
-        const box = $('.v7QrCurrent');
-        if (box) box.innerHTML = `<img src="${qrDataUrl}" alt="Vista previa del QR recortado"><span>Vista previa lista para guardar</span>`;
-        const removeBtn = $('#removeQrV7');
-        if (removeBtn) removeBtn.classList.remove('hidden');
-        close(); showToast('QR limpio preparado. Guarda el perfil para subirlo y verificarlo.');
+      $('#clearOrderV7', overlay).addEventListener('click', () => { orderCart = {}; orderNote = ''; editingOrderId = null; close(); renderOrderRequestV7(); });
+      $('#submitOrderV7', overlay).addEventListener('click', async () => {
+        if (!navigator.onLine) return showToast('Se necesita internet para enviar el pedido.', 'error');
+        orderNote = $('#v7OrderNote', overlay).value.trim();
+        const payload = { items: cartItems(), total: cartTotal(), note: orderNote, representativeName: AppState.session.fullName, representativePhone: AppState.session.phone || '', representativeCity: AppState.session.city || '', source: 'representative', status: editingOrderId ? 'modified' : 'submitted', paymentStatus: 'pending', updatedAt: Date.now() };
+        const btn = $('#submitOrderV7', overlay); btn.disabled = true; btn.textContent = 'Guardando en Supabase…';
+        const res = editingOrderId ? await representativeUpdateOrderV7(editingOrderId, payload) : await createPurchaseOrderV7(Object.assign({ id: uid('order'), createdAt: Date.now() }, payload));
+        if (!res.ok) { btn.disabled = false; btn.textContent = 'Reintentar'; return showToast(res.message, 'error'); }
+        orderCart = {}; orderNote = ''; editingOrderId = null; close(); showToast('Pedido enviado correctamente.'); renderOrderRequestV7();
       });
     });
   }
 
-  function userStatus(profile) {
-    const s = String(profile.status || 'pendiente').toLowerCase();
-    return s === 'activo' ? ['Activo', 'success'] : s === 'bloqueado' ? ['Bloqueado', 'danger'] : ['Pendiente', 'warning'];
+  function adminOrderActions(order) {
+    if (order.status === 'paid') return `<button class="btn sm v7ReceiptAdminOrder" data-id="${order.id}">Recibo</button>`;
+    if (['cancelled','rejected'].includes(order.status)) return '';
+    return `${['submitted','modified','approved_pending_payment'].includes(order.status) ? `<button class="btn sm outline v7AdminEditOrder" data-id="${order.id}">${order.status === 'approved_pending_payment' ? 'Modificar antes del pago' : 'Revisar / modificar'}</button>` : ''}${['submitted','modified'].includes(order.status) ? `<button class="btn sm v7ApproveOrder" data-id="${order.id}">Aprobar</button>` : ''}${order.status === 'approved_pending_payment' ? `<button class="btn sm outline v7PaymentAdminOrder" data-id="${order.id}">Orden de pago</button><button class="btn sm v7ConfirmPayment" data-id="${order.id}">Confirmar pago</button>` : ''}<button class="btn sm ghost dangerText v7RejectOrder" data-id="${order.id}">Rechazar</button>`;
   }
 
-  async function renderUsersFoundationV7() {
+  async function renderAdminOrdersInboxV7() {
     $('#fabAdd').classList.add('hidden');
-    const [profilesRes] = await Promise.all([fetchAllProfilesV7(), fetchProfileChangeRequestsV7()]);
-    const profiles = profilesRes && profilesRes.ok ? profilesRes.profiles || [] : AppState.allProfiles || [];
-    const requests = (AppState.profileChangeRequests || []).filter(r => r.status === 'pending');
+    await refreshOrdersV7().catch(() => {});
+    const orders = (await currentOrders()).sort((a,b)=>b.createdAt-a.createdAt);
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Equipo comercial</span><h1>Representantes</h1><p>Controla cuentas, grupos de precios, stock, pedidos, ventas y actividad comercial.</p></section>
-      ${requests.length ? `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Solicitudes pendientes</span><h2>Cambios de perfil</h2></div><span class="v7BadgeCount">${requests.length}</span></div>${requests.map(r => { const p=profiles.find(x=>x.id===r.userId)||{}; return `<article class="v7ChangeRequest"><div><strong>${escapeHtml(p.full_name||p.email||'Usuario')}</strong><span>${r.fieldName==='phone'?'WhatsApp':'Ciudad'}: <b>${escapeHtml(r.oldValue||'—')}</b> → <b>${escapeHtml(r.newValue)}</b></span><small>${fmtDateTime(r.createdAt)}</small></div><div><button class="btn sm approveProfileChange" data-id="${r.id}">Aprobar</button><button class="btn sm outline rejectProfileChange" data-id="${r.id}">Rechazar</button></div></article>`; }).join('')}</section>` : ''}
-      <section class="v7UsersGrid">${profiles.map(p => { const [label,tone]=userStatus(p); const self=p.id===AppState.session.userId; const admin=String(p.role||'').toLowerCase()==='administrador'; return `<article class="v7UserCard ${admin?'admin':''}"><div class="v7UserTop"><div class="v7Avatar">${escapeHtml((p.full_name||p.email||'U').charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(p.full_name||'Sin nombre')}</strong><span>${escapeHtml(p.email||'')}</span><small>${escapeHtml(p.city||'')} ${p.phone?'· '+escapeHtml(p.phone):''}</small></div><em class="v7Status ${tone}">${label}</em></div>${admin?`<div class="v7AdminPrincipal">Administrador principal</div>`:`<div class="repQuickMetricsV730"><span><small>Stock</small><b data-rep-stock-units="${p.id}">Cargando…</b></span><span><small>Ventas</small><b data-rep-sales-total="${p.id}">Cargando…</b></span><span><small>Actividad</small><b data-rep-last-activity="${p.id}">Cargando…</b></span></div><div class="v7DiscountEditor"><label>Grupo de precios<select data-rep-group="${p.id}"><option value="">Sin grupo fijo</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${((((AppState.representatives||[]).find(r=>r.id===p.id)||{}).priceGroupId)||p.representative_price_group_id||'')===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></label><label>Descuento personal para compras<input type="number" min="0" max="100" step="0.5" value="${Number(p.representative_discount_percent||0)}" data-discount-input="${p.id}"></label><button class="btn sm outline saveDiscountV7" data-id="${p.id}">Guardar grupo/descuento</button></div><div class="v7UserActions"><button class="btn sm detailRepresentativeV725" data-id="${p.id}">Ver stock y movimientos</button><button class="btn sm ghost editLegalNameV7" data-id="${p.id}">Corregir nombre</button>${String(p.status).toLowerCase()==='pendiente'?`<button class="btn sm approveUserV7" data-id="${p.id}">Aprobar</button>`:''}${String(p.status).toLowerCase()==='activo'?`<button class="btn sm outline blockUserV7" data-id="${p.id}">Bloquear</button>`:''}${String(p.status).toLowerCase()==='bloqueado'?`<button class="btn sm unblockUserV7" data-id="${p.id}">Reactivar</button>`:''}</div>`}</article>`; }).join('')}</section>`;
-
-    $all('.editLegalNameV7').forEach(b=>b.addEventListener('click',()=>openLegalNameCorrection(b.dataset.id, profiles)));
-    $all('.approveUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminApproveUser,'Cuenta aprobada.')));
-    $all('.blockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminBlockUser,'Cuenta bloqueada.')));
-    $all('.unblockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminUnblockUser,'Cuenta reactivada.')));
-    $all('.saveDiscountV7').forEach(b=>b.addEventListener('click',async()=>{const input=$(`[data-discount-input="${b.dataset.id}"]`);const group=$(`[data-rep-group="${b.dataset.id}"]`);const res=await setRepresentativePricingV730(b.dataset.id,group?group.value:'',Number(input.value||0)); if(res.ok){await saveRepresentativeConfigV730(b.dataset.id,{priceGroupId:group?group.value:'',discountPercent:Number(input.value||0)}, profiles.find(p=>p.id===b.dataset.id)).catch(()=>{});} showToast(res.ok?(res.groupPendingMigration?res.message:'Grupo/descuento actualizado.'):res.message,res.ok&&!res.groupPendingMigration?undefined:'error');if(res.ok)renderUsersFoundationV7();}));
-    $all('.detailRepresentativeV725').forEach(b=>b.addEventListener('click',()=>openRepresentativeDetailV730(b.dataset.id, profiles)));
-    $all('.approveProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'approved')));
-    $all('.rejectProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'rejected')));
-    if (window.hydrateRepresentativeCardsV730) hydrateRepresentativeCardsV730(profiles);
+      <section class="v7PageHead v7AdminOrdersHead"><div><span class="v7Eyebrow">Compras de representantes</span><h1>Pedidos y cobros</h1><p>Revisa, modifica, aprueba y confirma pagos al contado.</p></div><button class="btn" id="v7DirectSaleBtn">+ Venta directa</button></section>
+      <section class="v7MetricGrid compact"><article class="v7MetricCard"><span>Nuevos</span><strong>${orders.filter(o=>['submitted','modified'].includes(o.status)).length}</strong></article><article class="v7MetricCard"><span>Pendientes de pago</span><strong>${orders.filter(o=>o.status==='approved_pending_payment').length}</strong></article><article class="v7MetricCard primary"><span>Pagados</span><strong>${orders.filter(o=>o.status==='paid').length}</strong></article></section>
+      <section class="v7AdminOrderList">${orders.map(order => { const [label,tone]=statusMeta(order.status); return `<article class="v7AdminOrderCard ${tone}"><div class="v7OrderTop"><div><span class="v7DocNumber">${escapeHtml(order.orderNumber || 'Pedido')}</span><strong>${escapeHtml(order.representativeName || 'Representante')}</strong><small>${fmtDateTime(order.createdAt)} · ${order.source === 'admin_direct' ? 'Venta directa' : 'Pedido online'}</small></div><span class="v7Status ${tone}">${escapeHtml(label)}</span></div><div class="v7OrderItems">${(order.items||[]).map(i=>`<span>${escapeHtml(i.productName)} <b>× ${i.qty}</b> · ${fmtMoney(i.subtotal)}</span>`).join('')}</div>${order.note?`<div class="v7OrderNote">${escapeHtml(order.note)}</div>`:''}<div class="v7OrderFoot"><span>${order.receiptNumber ? escapeHtml(order.receiptNumber) : 'Pago al contado'}</span><strong>${fmtMoney(order.total)}</strong></div><div class="v7OrderActions">${adminOrderActions(order)}</div></article>`; }).join('') || '<div class="v7Empty"><span>📦</span><h3>Sin pedidos</h3><p>Las solicitudes aparecerán automáticamente.</p></div>'}</section>`;
+    $('#v7DirectSaleBtn').addEventListener('click', openDirectRepresentativeSale);
+    $all('.v7AdminEditOrder').forEach(b => b.addEventListener('click', () => openAdminOrderEditor(b.dataset.id, orders)));
+    $all('.v7ApproveOrder').forEach(b => b.addEventListener('click', () => approveAdminOrder(b.dataset.id)));
+    $all('.v7PaymentAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openV7ReceiptPreview(o,'order'); }));
+    $all('.v7ConfirmPayment').forEach(b => b.addEventListener('click', () => confirmAdminOrderPayment(b.dataset.id)));
+    $all('.v7RejectOrder').forEach(b => b.addEventListener('click', () => rejectAdminOrder(b.dataset.id, orders)));
+    $all('.v7ReceiptAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openV7ReceiptPreview(o,'order'); }));
   }
 
-  function openLegalNameCorrection(userId, profiles) {
-    const profile = profiles.find(p => p.id === userId);
-    if (!profile) return;
+  function openAdminOrderEditor(id, orders) {
+    const order = orders.find(o => o.id === id); if (!order) return;
+    const items = JSON.parse(JSON.stringify(order.items || []));
+    const profile = (AppState.allProfiles || []).find(p => p.id === order.representativeId) || {};
+    const orderDiscount = Math.min(100, Math.max(0, Number(order.representativeDiscountPercent ?? profile.representative_discount_percent ?? 0)));
+    const suggestedOrderPrice = product => roundBs(representativePrice(product) * (1 - orderDiscount / 100));
+    openSheet(`<h2>Revisar ${escapeHtml(order.orderNumber || 'pedido')} <span class="x" id="closeSheet">✕</span></h2><div class="v7EditOrderInfo"><strong>${escapeHtml(order.representativeName || '')}</strong><span>Toda modificación será notificada al representante.</span></div><div id="v7AdminEditItems"></div><div class="field"><label>Agregar producto</label><select id="v7AddProductSelect"><option value="">Seleccionar…</option>${AppState.products.filter(p=>centralStock(p)>0).map(p=>`<option value="${p.id}">${escapeHtml(p.name)} · ${fmtMoney(suggestedOrderPrice(p))}</option>`).join('')}</select></div><div class="field"><label>Nota del administrador</label><textarea id="v7AdminOrderNote">${escapeHtml(order.adminNote || '')}</textarea></div><div class="v7TotalLine"><span>Total actualizado</span><strong id="v7AdminEditTotal"></strong></div><button class="btn block" id="v7SaveAdminOrder">Guardar y notificar</button>`, (overlay, close) => {
+      const renderItems = () => {
+        $('#v7AdminEditItems', overlay).innerHTML = items.map((i,idx)=>`<div class="v7EditItem"><div><strong>${escapeHtml(i.productName)}</strong><small>Disponible: ${centralStock(AppState.products.find(p=>p.id===i.productId)||{})}</small></div><input type="number" min="0" step="1" value="${i.qty}" data-q="${idx}"><input type="number" min="0" step="0.01" value="${i.unitPrice}" data-p="${idx}"><button data-r="${idx}">×</button></div>`).join('');
+        const recalc=()=>{items.forEach(i=>i.subtotal=roundBs(Number(i.qty||0)*Number(i.unitPrice||0))); $('#v7AdminEditTotal',overlay).textContent=fmtMoney(items.reduce((s,i)=>s+i.subtotal,0));};
+        $all('[data-q]',overlay).forEach(el=>el.addEventListener('input',()=>{items[Number(el.dataset.q)].qty=Math.max(0,Number(el.value||0));recalc();}));
+        $all('[data-p]',overlay).forEach(el=>el.addEventListener('input',()=>{items[Number(el.dataset.p)].unitPrice=Math.max(0,Number(el.value||0));recalc();}));
+        $all('[data-r]',overlay).forEach(el=>el.addEventListener('click',()=>{items.splice(Number(el.dataset.r),1);renderItems();})); recalc();
+      };
+      renderItems();
+      $('#closeSheet',overlay).addEventListener('click',close);
+      $('#v7AddProductSelect',overlay).addEventListener('change',e=>{const p=AppState.products.find(x=>x.id===e.target.value);if(!p)return;const found=items.find(i=>i.productId===p.id);if(found)found.qty+=1;else { const unitPrice=suggestedOrderPrice(p); items.push({productId:p.id,productName:p.name,category:p.category||'General',qty:1,unitPrice,subtotal:unitPrice}); }e.target.value='';renderItems();});
+      $('#v7SaveAdminOrder',overlay).addEventListener('click',async()=>{const clean=items.filter(i=>Number(i.qty)>0&&Number(i.unitPrice)>=0).map(i=>Object.assign(i,{subtotal:roundBs(Number(i.qty)*Number(i.unitPrice))}));if(!clean.length)return showToast('El pedido debe conservar al menos un producto.','error');const payload=Object.assign({},order,{items:clean,total:clean.reduce((s,i)=>s+i.subtotal,0),adminNote:$('#v7AdminOrderNote',overlay).value.trim(),status:'modified',updatedAt:Date.now()});const btn=$('#v7SaveAdminOrder',overlay);btn.disabled=true;btn.textContent='Guardando…';const res=await adminUpdateOrderV7(order.id,payload);if(!res.ok){btn.disabled=false;btn.textContent='Reintentar';return showToast(res.message,'error');}close();showToast('Pedido modificado y notificado.');renderAdminOrdersInboxV7();});
+    });
+  }
+
+  async function approveAdminOrder(id) { const res=await adminApproveOrderV7(id); showToast(res.ok?'Pedido aprobado. Esperando pago.':res.message,res.ok?undefined:'error'); if(res.ok)renderAdminOrdersInboxV7(); }
+  async function confirmAdminOrderPayment(id) { if(!confirmDialog('¿Confirmas que el pago total fue recibido? Al confirmar, el stock pasará al representante.'))return; const res=await adminConfirmOrderPaymentV7(id); showToast(res.ok?'Pago confirmado y stock transferido.':res.message,res.ok?undefined:'error'); if(res.ok){await renderAdminOrdersInboxV7();const orders=await currentOrders();const o=orders.find(x=>x.id===id);if(o)openV7ReceiptPreview(o,'order');} }
+  async function rejectAdminOrder(id, orders) { if(!confirmDialog('¿Rechazar este pedido?'))return; const order=orders.find(o=>o.id===id);const res=await adminUpdateOrderV7(id,Object.assign({},order,{status:'rejected',updatedAt:Date.now()}));showToast(res.ok?'Pedido rechazado.':res.message,res.ok?undefined:'error');if(res.ok)renderAdminOrdersInboxV7(); }
+
+  async function openDirectRepresentativeSale() {
+    const reps = await activeRepresentativesV7();
+    if (!reps.length) return showToast('No hay representantes activos.', 'error');
+
+    let selectedRep = reps[0].id;
+    const cart = {};
+    const priceForRepresentative = (product) => {
+      const rep = reps.find(r => r.id === selectedRep) || {};
+      const discount = Math.min(100, Math.max(0, Number(rep.representative_discount_percent || 0)));
+      return roundBs(representativePrice(product) * (1 - discount / 100));
+    };
+
     openSheet(`
-      <h2>Corregir nombre oficial <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7CashNotice">Este dato queda protegido. Solo el administrador puede corregirlo cuando el registro inicial está incompleto.</div>
-      <div class="field"><label>Nombre completo</label><input id="legalNameV7" value="${escapeHtml(profile.full_name || '')}" placeholder="Nombre y apellidos"></div>
-      <button class="btn block" id="saveLegalNameV7">Guardar corrección</button>
+      <h2>Venta directa a representante <span class="x" id="closeSheet">✕</span></h2>
+      <div class="field">
+        <label>Representante activo</label>
+        <select id="v7DirectRep">
+          ${reps.map(r => `<option value="${r.id}">${escapeHtml(r.full_name || r.email)} · ${escapeHtml(r.city || '')}${Number(r.representative_discount_percent || 0) > 0 ? ` · descuento ${Number(r.representative_discount_percent)}%` : ''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="v7CashNotice">Se generará una operación pendiente de pago. El stock se transferirá al confirmar el pago.</div>
+      <div class="v7DirectProducts">
+        ${AppState.products.filter(p => p.status !== 'archived').map(p => `
+          <div>
+            <span>
+              <strong>${escapeHtml(p.name)}</strong>
+              <small data-direct-price="${p.id}">${fmtMoney(priceForRepresentative(p))} · ${centralStock(p)} disponibles</small>
+            </span>
+            <input type="number" min="0" max="${centralStock(p)}" value="0" data-direct="${p.id}" ${centralStock(p) === 0 ? 'disabled' : ''}>
+          </div>
+        `).join('')}
+      </div>
+      <div class="field"><label>Nota</label><textarea id="v7DirectNote" placeholder="Detalle de entrega o acuerdo"></textarea></div>
+      <div class="v7TotalLine"><span>Total</span><strong id="v7DirectTotal">Bs 0</strong></div>
+      <button class="btn block" id="v7CreateDirectSale">Crear venta pendiente de pago</button>
     `, (overlay, close) => {
+      const refreshVisiblePrices = () => {
+        AppState.products.forEach(product => {
+          const el = $(`[data-direct-price="${product.id}"]`, overlay);
+          if (el) el.textContent = `${fmtMoney(priceForRepresentative(product))} · ${centralStock(product)} disponibles`;
+        });
+      };
+      const recalc = () => {
+        $all('[data-direct]', overlay).forEach(el => {
+          cart[el.dataset.direct] = Math.max(0, Number(el.value || 0));
+        });
+        const total = Object.entries(cart).reduce((sum, [id, qty]) => {
+          const product = AppState.products.find(x => x.id === id);
+          return sum + (product ? priceForRepresentative(product) * qty : 0);
+        }, 0);
+        $('#v7DirectTotal', overlay).textContent = fmtMoney(total);
+      };
+
       $('#closeSheet', overlay).addEventListener('click', close);
-      $('#saveLegalNameV7', overlay).addEventListener('click', async () => {
-        const value = $('#legalNameV7', overlay).value.trim();
-        if (value.length < 3) return showToast('Ingresa un nombre completo válido.', 'error');
-        const btn = $('#saveLegalNameV7', overlay);
+      $('#v7DirectRep', overlay).addEventListener('change', event => {
+        selectedRep = event.target.value;
+        refreshVisiblePrices();
+        recalc();
+      });
+      $all('[data-direct]', overlay).forEach(el => el.addEventListener('input', recalc));
+
+      $('#v7CreateDirectSale', overlay).addEventListener('click', async () => {
+        recalc();
+        const rep = reps.find(r => r.id === selectedRep);
+        const items = Object.entries(cart)
+          .filter(([, qty]) => qty > 0)
+          .map(([id, qty]) => {
+            const product = AppState.products.find(x => x.id === id);
+            const unitPrice = priceForRepresentative(product);
+            return {
+              productId: id,
+              productName: product.name,
+              category: product.category || 'General',
+              qty,
+              unitPrice,
+              subtotal: roundBs(qty * unitPrice)
+            };
+          });
+
+        if (!items.length) return showToast('Selecciona al menos un producto.', 'error');
+
+        const order = {
+          id: uid('order'),
+          source: 'admin_direct',
+          representativeName: rep.full_name || rep.email,
+          representativePhone: rep.phone || '',
+          representativeCity: rep.city || '',
+          representativeDiscountPercent: Number(rep.representative_discount_percent || 0),
+          items,
+          total: items.reduce((sum, item) => sum + item.subtotal, 0),
+          note: $('#v7DirectNote', overlay).value.trim(),
+          status: 'approved_pending_payment',
+          paymentStatus: 'pending',
+          createdAt: Date.now()
+        };
+
+        const btn = $('#v7CreateDirectSale', overlay);
         btn.disabled = true;
         btn.textContent = 'Guardando…';
-        const res = await adminUpdateProfileNameV7(userId, value);
+        const res = await adminCreateDirectOrderV7(selectedRep, order);
         if (!res.ok) {
           btn.disabled = false;
           btn.textContent = 'Reintentar';
           return showToast(res.message, 'error');
         }
         close();
-        showToast('Nombre oficial corregido.');
-        renderUsersFoundationV7();
+        showToast('Venta creada y notificada al representante.');
+        renderAdminOrdersInboxV7();
       });
     });
   }
 
-  async function runUserAction(btn, fn, success) { btn.disabled=true; const res=await fn(btn.dataset.id); showToast(res.ok?success:res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); else btn.disabled=false; }
-  async function reviewChange(id, decision) { const res=await reviewProfileChangeV7(id,decision,''); showToast(res.ok?(decision==='approved'?'Cambio aprobado.':'Cambio rechazado.'):res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); }
-
-  Object.assign(window, { renderProfileV7, openOfficialChangeRequest, openQrCropper, renderUsersFoundation: renderUsersFoundationV7 });
+  Object.assign(window, {
+    renderOrderRequest: renderOrderRequestV7,
+    renderAdminOrdersInbox: renderAdminOrdersInboxV7,
+    renderOrderRequestV7,
+    renderAdminOrdersInboxV7
+  });
 })();
