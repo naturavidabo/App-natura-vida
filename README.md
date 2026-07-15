@@ -1,12 +1,33 @@
-# Natura Vida V7.2.0 estabilizada
+# Natura Vida V7.3.0 — Gestión Comercial Inteligente
 
-Aplicación PWA estática conectada a Supabase. GitHub Pages publica únicamente los archivos de la aplicación mediante el workflow `.github/workflows/deploy-pages.yml`.
+Versión de consolidación comercial basada en V7.2.5.
 
-## Despliegue
+## Funciones principales
 
-1. En **Settings → Pages**, seleccionar **GitHub Actions** como fuente.
-2. Ejecutar primero en Supabase `sql/2026-07-09_v7_2_0_stabilization.sql`.
-3. Subir estos archivos a la raíz de `main`.
-4. El workflow valida la aplicación, crea una carpeta `_site` limpia y despliega con acciones compatibles con Node.js 24.
+- Ventas unitarias y mayoristas con precios flexibles.
+- Grupos de precios y descuentos personales.
+- Beneficio comercial por cliente con vigencia y nota interna.
+- Ventas por cobrar y pagos parciales.
+- Cotizaciones / precios de oferta.
+- Egresos, insumos y balance básico.
+- Ficha avanzada del representante con stock, valor, pedidos, ventas, movimientos y productos de mayor rotación.
+- Centro Comercial con alertas y oportunidades accionables.
+- Supabase como única fuente persistente.
+- GitHub Pages con workflow Node 24.
 
-No se publican las carpetas `sql`, `tests` ni la documentación dentro del sitio web.
+## Instalación en GitHub
+
+1. Descomprimir el ZIP.
+2. Reemplazar el contenido del repositorio.
+3. Hacer commit y push a `main`.
+4. Esperar que `Deploy Natura Vida to GitHub Pages` termine en verde.
+5. En la app, entrar a Más → Actualizaciones → Actualizar ahora.
+
+## SQL V7.3 obligatorio
+
+Para que el grupo de precios asignado al representante también se aplique en su Compra online, ejecutar en Supabase SQL Editor:
+
+1. `sql/2026-07-15_v7_3_0_representative_pricing.sql`
+2. `sql/2026-07-15_v7_3_0_verify.sql`
+
+La migración no elimina datos y puede ejecutarse más de una vez.

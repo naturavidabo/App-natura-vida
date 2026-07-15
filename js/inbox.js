@@ -1,35 +1,26 @@
 /* inbox.js — Buzón conectado directamente a Supabase. */
 
 let _lastUnreadV725 = 0;
-let _audioCtxV726 = null;
-function audioCtxV726(){
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return null;
-  if (!_audioCtxV726) _audioCtxV726 = new Ctx();
-  if (_audioCtxV726.state === 'suspended') _audioCtxV726.resume().catch(()=>{});
-  return _audioCtxV726;
-}
 function playNotificationBeatV725() {
   try {
-    const ctx = audioCtxV726();
-    if (!ctx) return;
-    const start = ctx.currentTime + 0.02;
-    [0, 0.13, 0.28].forEach((offset, idx) => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const start = ctx.currentTime;
+    [0, 0.16].forEach((offset, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'square';
-      osc.frequency.value = [2100, 2550, 2300][idx] || 2300;
+      osc.frequency.value = idx ? 2300 : 1950;
       gain.gain.setValueAtTime(0.0001, start + offset);
-      gain.gain.exponentialRampToValueAtTime(0.72, start + offset + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.11);
+      gain.gain.exponentialRampToValueAtTime(0.42, start + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.135);
       osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(start + offset); osc.stop(start + offset + 0.125);
+      osc.start(start + offset); osc.stop(start + offset + 0.145);
     });
-    if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
+    setTimeout(()=>ctx.close && ctx.close(), 600);
   } catch (_) {}
 }
-['pointerdown','touchstart','click'].forEach(ev => document.addEventListener(ev, () => audioCtxV726(), { once: true, passive: true }));
-window.playNotificationBeatV725 = playNotificationBeatV725;
 
 
 function normalizeMessage(m = {}) {

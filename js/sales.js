@@ -384,7 +384,7 @@ function openCheckoutSheet() {
     <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
     ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
-    <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" type="number" inputmode="decimal" step="0.01" value="0"></div></div>
+    <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" readonly value="0"></div></div>
     <div class="field"><label>Motivo si queda saldo pendiente</label><input id="ck_pendingReason" placeholder="Ej.: faltó cambio, transferencia pendiente, saldo por cobrar"></div>
     <div class="v7CashNotice">Si el pago queda incompleto, la venta se registrará y aparecerá en Ventas por cobrar.</div>
     <div class="v7CashNotice">La operación usa un identificador único. Si se corta la conexión, se verificará primero si la venta ya quedó guardada para evitar duplicarla.</div>
@@ -396,29 +396,36 @@ function openCheckoutSheet() {
       operation.client = c;
       $('#ck_clientname', overlay).value = c.name || '';
       $('#ck_clientphone', overlay).value = c.phone || '';
+      let rebuildForBenefit = false;
       if (c.priceGroupId && (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) && c.priceGroupId !== _saleSelectedGroup) {
         const g = AppState.priceGroups.find(x => x.id === c.priceGroupId);
         if (g && window.confirm(`Este cliente tiene beneficio/grupo: ${g.name}. ¿Aplicarlo a esta venta?`)) {
           _saleSelectedGroup = c.priceGroupId;
-          close();
-          setTimeout(openCheckoutSheet, 80);
+          rebuildForBenefit = true;
         }
+      }
+      const personalPct = Number(c.customDiscountPercent || 0);
+      const benefitActive = !c.benefitUntil || new Date(`${c.benefitUntil}T23:59:59`).getTime() >= Date.now();
+      if (personalPct > 0 && benefitActive && window.confirm(`Este cliente tiene ${personalPct}% de descuento personal adicional. ¿Aplicarlo a los productos de esta venta?`)) {
+        Object.keys(_cart).forEach(productId => {
+          const product = AppState.products.find(p => p.id === productId);
+          if (!product) return;
+          const reference = groupPriceForModeV7(product, _saleType, _saleSelectedGroup, sellerMode());
+          _cartPrices[productId] = { manualPrice: roundBs(Math.max(0, reference * (1 - personalPct / 100))), mode: 'client_benefit', value: personalPct, reason: c.benefitNote || `Beneficio personal ${personalPct}%` };
+        });
+        rebuildForBenefit = true;
+      }
+      if (rebuildForBenefit) {
+        AppState.lastClient = c;
+        close();
+        setTimeout(openCheckoutSheet, 80);
       }
     };
     $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
     if ($('#registerWholesaleV725', overlay)) $('#registerWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#ck_clientname', overlay).value.trim(), phone: $('#ck_clientphone', overlay).value.trim(), customerType: 'wholesale' }); });
     $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
-    const updatePaymentV725 = () => {
-      const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0));
-      $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - Math.min(total, paid)));
-    };
-    const updatePendingV726 = () => {
-      const pending = Math.max(0, Number($('#ck_pendingBalance', overlay).value || 0));
-      $('#ck_amountPaid', overlay).value = roundBs(Math.max(0, total - Math.min(total, pending)));
-    };
-    $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725);
-    $('#ck_pendingBalance', overlay).addEventListener('input', updatePendingV726);
-    updatePaymentV725();
+    const updatePaymentV725 = () => { const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0)); $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - paid)); };
+    $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725); updatePaymentV725();
     $('#ck_clientname', overlay).addEventListener('blur', () => {
       const name = $('#ck_clientname', overlay).value.trim();
       const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));

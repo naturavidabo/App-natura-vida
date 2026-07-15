@@ -201,28 +201,6 @@ async function findOrCreateClientQuick(name, phone) {
 }
 
 
-
-function openClientBenefitV725(clientId) {
-  const c = (AppState.clients || []).find(x => x.id === clientId);
-  if (!c) return showToast('Cliente no encontrado.', 'error');
-  const currentGroup = c.priceGroupId || '';
-  openSheet(`
-    <h2>Beneficio para cliente <span class="x" id="closeSheet">✕</span></h2>
-    <div class="v7CashNotice"><strong>${escapeHtml(c.name || 'Cliente')}</strong><br>Este beneficio se aplicará como grupo sugerido en ventas y cotizaciones de este cliente.</div>
-    <div class="field"><label>Grupo / beneficio</label><select id="benefitGroupV725"><option value="">Sin beneficio especial</option>${(AppState.priceGroups||[]).map(g=>`<option value="${g.id}" ${currentGroup===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></div>
-    <div class="actions"><button class="btn outline block" id="newBenefitGroupV726">+ Crear grupo</button><button class="btn block" id="saveBenefitV725">Guardar beneficio</button></div>
-  `, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#newBenefitGroupV726', overlay).addEventListener('click', () => { close(); openPriceGroupForm(null); });
-    $('#saveBenefitV725', overlay).addEventListener('click', async () => {
-      const btn = $('#saveBenefitV725', overlay); btn.disabled = true; btn.textContent = 'Guardando…';
-      const updated = buildClientRecordV723(c, { priceGroupId: $('#benefitGroupV725', overlay).value });
-      try { await saveClientV723(updated); close(); showToast('Beneficio actualizado.'); if (AppState.currentTab === 'clientes') renderClients(); }
-      catch (err) { btn.disabled = false; btn.textContent = 'Guardar beneficio'; showToast(err.message || 'No se pudo guardar el beneficio.', 'error'); }
-    });
-  });
-}
-
 window.renderClients = renderClients;
 window.openClientForm = openClientForm;
 window.findOrCreateClientQuick = findOrCreateClientQuick;
@@ -257,7 +235,7 @@ function openWhatsAppV723(phone, name = '') {
   try { window.location.href = intent; setTimeout(() => window.open(url, '_blank', 'noopener'), 900); }
   catch (_) { window.open(url, '_blank', 'noopener'); }
 }
-function whatsappButtonLabelV725(){ return '<span class="waLogoV725">🟢</span>'; }
+function whatsappButtonLabelV725(){ return '<svg class="waSvgV730" viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M16 3a12.7 12.7 0 0 0-11 19l-1.7 6.2 6.4-1.7A12.8 12.8 0 1 0 16 3Zm0 23.2c-2.1 0-4.1-.6-5.8-1.6l-.4-.2-3.8 1 1-3.7-.3-.4a10.5 10.5 0 1 1 9.3 4.9Zm5.8-7.9c-.3-.2-1.9-.9-2.2-1s-.5-.2-.8.2-.8 1-1 1.2-.4.2-.7.1a8.5 8.5 0 0 1-2.5-1.6 9.4 9.4 0 0 1-1.7-2.1c-.2-.3 0-.5.1-.7l.5-.6.3-.6c.1-.2 0-.5 0-.7s-.8-2-1.1-2.7c-.3-.7-.6-.6-.8-.6h-.7c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9s1.2 3.3 1.4 3.5c.2.2 2.4 3.7 5.8 5.2.8.3 1.4.5 1.9.7.8.3 1.6.2 2.2.1.7-.1 1.9-.8 2.2-1.5.3-.7.3-1.4.2-1.5-.1-.2-.4-.3-.7-.5Z"/></svg>'; }
 function customerTypeForSaleV723(saleType) {
   if (['market', 'reseller_wholesale', 'wholesale', 'representative_transfer'].includes(String(saleType || ''))) return 'wholesale';
   if (['unit', 'reseller_unit'].includes(String(saleType || ''))) return 'unit';
@@ -347,7 +325,7 @@ function clientCardHtmlV723(c) {
       <div class="clientTopV723"><div class="name">${escapeHtml(c.name || 'Sin nombre')}</div><span class="typePillV723 ${customerTypeClassV723(type)}">${customerTypeLabelV723(type)}</span></div>
       ${c.businessName && c.businessName !== c.name ? `<div class="costline">🏪 ${escapeHtml(c.businessName)}</div>` : ''}
       <div class="costline">📞 ${escapeHtml(c.phone || 'sin teléfono')} ${c.phone ? `<button class="waMiniV723 waIconOnlyV725" data-wa="${c.id}" title="Abrir WhatsApp normal">${whatsappButtonLabelV725()}</button>` : ''}</div>
-      <div class="costline">🛒 ${purchases.length} compra(s) · <span class="trust ${status.cls}">${status.label}</span>${c.priceGroupId ? ` · <span class="priceBadge group">Beneficio</span>` : ''}</div>
+      <div class="costline">🛒 ${purchases.length} compra(s) · <span class="trust ${status.cls}">${status.label}</span>${(c.priceGroupId || Number(c.customDiscountPercent||0)>0) ? ` · <span class="priceBadge group" title="${escapeHtml(window.clientBenefitLabelV730 ? clientBenefitLabelV730(c) : 'Beneficio comercial')}">Beneficio</span>` : ''}</div>
       ${c.city || c.address ? `<div class="costline">📍 ${escapeHtml([c.city, c.address].filter(Boolean).join(' · '))}</div>` : ''}
     </div>
     <div class="cardactions">
@@ -527,28 +505,6 @@ function openClientCleanupV723() {
   });
 }
 
-
-function openClientBenefitV725(clientId) {
-  const c = (AppState.clients || []).find(x => x.id === clientId);
-  if (!c) return showToast('Cliente no encontrado.', 'error');
-  const currentGroup = c.priceGroupId || '';
-  openSheet(`
-    <h2>Beneficio para cliente <span class="x" id="closeSheet">✕</span></h2>
-    <div class="v7CashNotice"><strong>${escapeHtml(c.name || 'Cliente')}</strong><br>Este beneficio se aplicará como grupo sugerido en ventas y cotizaciones de este cliente.</div>
-    <div class="field"><label>Grupo / beneficio</label><select id="benefitGroupV725"><option value="">Sin beneficio especial</option>${(AppState.priceGroups||[]).map(g=>`<option value="${g.id}" ${currentGroup===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></div>
-    <div class="actions"><button class="btn outline block" id="newBenefitGroupV726">+ Crear grupo</button><button class="btn block" id="saveBenefitV725">Guardar beneficio</button></div>
-  `, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#newBenefitGroupV726', overlay).addEventListener('click', () => { close(); openPriceGroupForm(null); });
-    $('#saveBenefitV725', overlay).addEventListener('click', async () => {
-      const btn = $('#saveBenefitV725', overlay); btn.disabled = true; btn.textContent = 'Guardando…';
-      const updated = buildClientRecordV723(c, { priceGroupId: $('#benefitGroupV725', overlay).value });
-      try { await saveClientV723(updated); close(); showToast('Beneficio actualizado.'); if (AppState.currentTab === 'clientes') renderClients(); }
-      catch (err) { btn.disabled = false; btn.textContent = 'Guardar beneficio'; showToast(err.message || 'No se pudo guardar el beneficio.', 'error'); }
-    });
-  });
-}
-
 window.renderClients = renderClients;
 window.openClientForm = openClientForm;
 window.findOrCreateClientQuick = findOrCreateClientQuick;
@@ -559,4 +515,5 @@ window.commercialStatusV723 = commercialStatusV723;
 window.buildClientRecordV723 = buildClientRecordV723;
 window.saveClientV723 = saveClientV723;
 window.normalizePhoneV723 = normalizePhoneV723;
-window.openClientBenefitV725 = openClientBenefitV725;
+window.clientSalesV723 = clientSalesV723;
+// openClientBenefitV725 se incorpora en v7-commercial-center.js

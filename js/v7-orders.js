@@ -19,8 +19,10 @@
   function centralStock(p) { return Math.max(0, Number(p.adminStock != null ? p.adminStock : p.stock) || 0); }
   function representativeOrderPrice(p) {
     const base = representativePrice(p);
+    const groupId = AppState.session.priceGroupId || '';
+    const grouped = groupId && window.applyPercentGroupV7 ? applyPercentGroupV7(base, groupId) : base;
     const discount = Math.min(100, Math.max(0, Number(AppState.session.discountPercent || 0)));
-    return roundBs(base * (1 - discount / 100));
+    return roundBs(grouped * (1 - discount / 100));
   }
   function cartUnits() { return Object.values(orderCart).reduce((s, q) => s + Number(q || 0), 0); }
   function cartItems() {
@@ -85,8 +87,9 @@
     const orders = (await currentOrders()).filter(o => o.representativeId === AppState.session.userId).sort((a,b)=>b.createdAt-a.createdAt);
     const products = AppState.products.filter(p => p.status !== 'archived');
     const discount = Number(AppState.session.discountPercent || 0);
+    const repGroup = AppState.priceGroups.find(g => g.id === (AppState.session.priceGroupId || ''));
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead v7BuyHead"><span class="v7Eyebrow">Catálogo central</span><h1>Compra online</h1><p>Elige productos, envía tu solicitud y recibe el stock cuando el administrador confirme el pago.</p>${discount > 0 ? `<span class="v7DiscountChip">Descuento personal: ${discount}%</span>` : ''}</section>
+      <section class="v7PageHead v7BuyHead"><span class="v7Eyebrow">Catálogo central</span><h1>Compra online</h1><p>Elige productos, envía tu solicitud y recibe el stock cuando el administrador confirme el pago.</p>${repGroup ? `<span class="v7DiscountChip">Grupo: ${escapeHtml(repGroup.name)}</span>` : ''}${discount > 0 ? `<span class="v7DiscountChip">Descuento personal: ${discount}%</span>` : ''}</section>
       ${editingOrderId ? `<div class="v7EditBanner"><span>Editando pedido ${escapeHtml((orders.find(o=>o.id===editingOrderId)||{}).orderNumber || '')}</span><button id="cancelEditOrderV7">Cancelar edición</button></div>` : ''}
       <div class="v7SearchBox"><span>⌕</span><input id="v7OrderSearch" placeholder="Buscar producto o categoría" value="${escapeHtml(orderSearch)}"></div>
       <section class="v7ProductGrid">

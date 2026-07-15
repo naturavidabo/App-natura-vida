@@ -9,7 +9,7 @@ const STORES = [
   'products','priceGroups','sales','clients','quotes','settings','users','roles',
   'permissions','inventoryMovements','commissionRules','commissions','reportsCache',
   'auditLog','representatives','dispatches','representativeReports',
-  'importedPackages','purchaseOrders','messages','expenses','receivablePayments','expenses','receivablePayments','syncMeta'
+  'importedPackages','purchaseOrders','messages','expenses','receivablePayments','syncMeta'
 ];
 
 const INDEX_FIELDS = {

@@ -87,6 +87,7 @@
       const { data } = await sb.from('profiles').select('*').eq('id', AppState.session.onlineUserId).maybeSingle();
       if (data && AppState.session) {
         AppState.session.discountPercent = Number(data.representative_discount_percent || 0);
+        AppState.session.priceGroupId = data.representative_price_group_id || '';
         AppState.session.phone = data.phone || AppState.session.phone || '';
         AppState.session.city = data.city || AppState.session.city || '';
         AppState.session.fullName = data.full_name || AppState.session.fullName;
@@ -303,6 +304,25 @@
     } catch (error) { return { ok: false, message: v7Error(error) }; }
   }
 
+  async function setRepresentativePricingV730(userId, priceGroupId, percent) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_set_representative_pricing_v730', {
+        p_user_id: userId,
+        p_price_group_id: String(priceGroupId || ''),
+        p_discount_percent: Number(percent || 0)
+      });
+      if (error) {
+        // Compatibilidad temporal: el descuento antiguo sigue guardándose aunque falte el SQL V7.3.
+        const fallback = await setRepresentativeDiscountV7(userId, percent);
+        if (!fallback.ok) return { ok: false, message: v7Error(error) };
+        return { ok: true, profile: fallback.profile, groupPendingMigration: true, message: 'Descuento guardado. Ejecuta el SQL V7.3 para activar el grupo en la cuenta del representante.' };
+      }
+      await fetchAllProfilesV7();
+      return { ok: true, profile: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
   async function adminUpdateProfileNameV7(userId, fullName) {
     try {
       const sb = await requireClient();
@@ -400,6 +420,7 @@
     cancelPurchaseOrderV7,
     representativeUpdateOrderV7,
     setRepresentativeDiscountV7,
+    setRepresentativePricingV730,
     adminUpdateProfileNameV7,
     nextDocumentNumberV7,
     activeRepresentativesV7,

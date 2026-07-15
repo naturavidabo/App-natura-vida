@@ -70,54 +70,13 @@
   }
 
   function openExpenseFormV725(){
-    const cats = EXPENSE_CATEGORIES.concat(['Otro personalizado']);
-    openSheet(`
-      <h2>Registrar egreso / insumo <span class="x" id="closeSheet">✕</span></h2>
-      <div class="field"><label>Tipo de gasto</label><select id="expCatV725">${cats.map(c=>`<option>${c}</option>`).join('')}</select></div>
-      <div id="expenseDynamicFieldsV726"></div>
-      <div class="v7CashNotice" id="expPreviewV725">Selecciona el tipo de gasto y completa los datos.</div>
-      <div class="field"><label>Nota</label><textarea id="expNoteV725" rows="3" placeholder="Proveedor, detalle o referencia"></textarea></div>
-      <button class="btn block" id="saveExpenseV725">Guardar egreso</button>
-    `,(overlay,close)=>{
-      const body = $('#expenseDynamicFieldsV726', overlay);
-      const renderFields = () => {
-        const cat = $('#expCatV725', overlay).value;
-        const simple = ['Alquiler','Servicios','Transporte','Mano de obra','Otros gastos','Otro personalizado'].includes(cat);
-        if (simple) {
-          body.innerHTML = `
-            ${cat === 'Otro personalizado' ? `<div class="field"><label>Nombre del gasto</label><input id="expCustomCatV726" placeholder="Ej.: mantenimiento, combustible, internet"></div>` : ''}
-            <div class="field"><label>Descripción</label><input id="expNameV725" placeholder="Ej.: ${cat === 'Alquiler' ? 'alquiler mensual' : cat.toLowerCase()}"></div>
-            <div class="field-row"><div class="field"><label>Monto Bs</label><input id="expCostV725" type="number" inputmode="decimal" step="0.01"></div><div class="field"><label>Fecha</label><input id="expDateV725" type="date" value="${todayISO()}"></div></div>`;
-        } else if (cat === 'Materia prima') {
-          body.innerHTML = `
-            <div class="field"><label>Materia prima</label><input id="expNameV725" placeholder="Ej.: bolsa de coco 25 kg"></div>
-            <div class="field-row"><div class="field"><label>Costo total Bs</label><input id="expCostV725" type="number" inputmode="decimal" step="0.01"></div><div class="field"><label>Fecha</label><input id="expDateV725" type="date" value="${todayISO()}"></div></div>
-            <div class="field-row"><div class="field"><label>Cantidad comprada</label><input id="expQtyV725" type="number" inputmode="decimal" step="0.01" placeholder="25"></div><div class="field"><label>Unidad compra</label><input id="expUnitV725" value="kg"></div></div>
-            <div class="field-row"><div class="field"><label>Rendimiento final</label><input id="expYieldV725" type="number" inputmode="decimal" step="0.01" placeholder="15000"></div><div class="field"><label>Unidad resultado</label><input id="expYieldUnitV725" value="ml"></div></div>`;
-        } else if (cat === 'Envases') {
-          body.innerHTML = `
-            <div class="field"><label>Envase / presentación</label><input id="expNameV725" placeholder="Ej.: frasco vidrio 500 ml, tapa blanca"></div>
-            <div class="field-row"><div class="field"><label>Costo total Bs</label><input id="expCostV725" type="number" inputmode="decimal" step="0.01"></div><div class="field"><label>Fecha</label><input id="expDateV725" type="date" value="${todayISO()}"></div></div>
-            <div class="field-row"><div class="field"><label>Cantidad</label><input id="expQtyV725" type="number" inputmode="decimal" step="0.01" placeholder="100"></div><div class="field"><label>Unidad</label><input id="expUnitV725" value="frasco"></div></div>`;
-        } else if (cat === 'Etiquetas') {
-          body.innerHTML = `
-            <div class="field"><label>Pedido de etiquetas</label><input id="expNameV725" placeholder="Ej.: etiquetas varias presentaciones"></div>
-            <div class="field-row"><div class="field"><label>Costo total Bs</label><input id="expCostV725" type="number" inputmode="decimal" step="0.01"></div><div class="field"><label>Fecha</label><input id="expDateV725" type="date" value="${todayISO()}"></div></div>
-            <div class="field-row"><div class="field"><label>Cantidad total</label><input id="expQtyV725" type="number" inputmode="decimal" step="0.01" placeholder="1000"></div><div class="field"><label>Unidad</label><input id="expUnitV725" value="etiqueta"></div></div>`;
-        }
-        ['#expCostV725','#expYieldV725','#expYieldUnitV725','#expQtyV725','#expUnitV725'].forEach(sel=>$(sel,overlay)?.addEventListener('input',update));
-        update();
-      };
-      const update=()=>{
-        const cat=$('#expCatV725',overlay).value; const cost=Number($('#expCostV725',overlay)?.value||0); const yieldEl=$('#expYieldV725',overlay); const qty=Number((yieldEl&&yieldEl.value)||$('#expQtyV725',overlay)?.value||0); const unit=(yieldEl?$('#expYieldUnitV725',overlay)?.value:$('#expUnitV725',overlay)?.value)||'unidad';
-        $('#expPreviewV725',overlay).textContent=(cost&&qty)?`Costo estimado: ${fmtMoney(cost/qty)} por ${unit}`:(['Alquiler','Servicios','Transporte','Mano de obra','Otros gastos','Otro personalizado'].includes(cat)?'Gasto directo: solo monto y fecha.':'Completa costo y cantidad/rendimiento para calcular costo unitario.');
-      };
-      $('#expCatV725',overlay).addEventListener('change',renderFields); renderFields();
+    openSheet(`<h2>Registrar egreso / insumo <span class="x" id="closeSheet">✕</span></h2><div class="field"><label>Tipo</label><select id="expCatV725">${EXPENSE_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div><div class="field"><label>Descripción</label><input id="expNameV725" placeholder="Ej.: bolsa de coco 25 kg, frascos 200 ml, etiquetas"></div><div class="field-row"><div class="field"><label>Costo total Bs</label><input id="expCostV725" type="number" inputmode="decimal" step="0.01"></div><div class="field"><label>Fecha</label><input id="expDateV725" type="date" value="${todayISO()}"></div></div><div class="field-row"><div class="field"><label>Cantidad comprada</label><input id="expQtyV725" type="number" inputmode="decimal" step="0.01" placeholder="Ej.: 25"></div><div class="field"><label>Unidad compra</label><input id="expUnitV725" placeholder="kg, unidad, lote, mes"></div></div><div class="field-row"><div class="field"><label>Rendimiento final</label><input id="expYieldV725" type="number" inputmode="decimal" step="0.01" placeholder="Ej.: 15000"></div><div class="field"><label>Unidad resultado</label><input id="expYieldUnitV725" placeholder="ml, frasco, etiqueta"></div></div><div class="v7CashNotice" id="expPreviewV725">Completa costo y rendimiento para calcular costo unitario.</div><div class="field"><label>Nota</label><textarea id="expNoteV725" rows="3" placeholder="Proveedor, detalle o referencia"></textarea></div><button class="btn block" id="saveExpenseV725">Guardar egreso</button>`,(overlay,close)=>{
+      const update=()=>{const cost=Number($('#expCostV725',overlay).value||0);const y=Number($('#expYieldV725',overlay).value||0);$('#expPreviewV725',overlay).textContent=(cost&&y)?`Costo estimado: ${fmtMoney(cost/y)} por ${$('#expYieldUnitV725',overlay).value||'unidad'}`:'Completa costo y rendimiento para calcular costo unitario.';};
+      ['#expCostV725','#expYieldV725','#expYieldUnitV725'].forEach(sel=>$(sel,overlay).addEventListener('input',update)); update();
       $('#closeSheet',overlay).addEventListener('click',close);
-      $('#saveExpenseV725',overlay).addEventListener('click',async()=>{const cost=roundBs(Number($('#expCostV725',overlay)?.value||0)); if(cost<=0)return showToast('Ingresa el costo total.','error'); const rawCat=$('#expCatV725',overlay).value; const cat=rawCat==='Otro personalizado'?($('#expCustomCatV726',overlay)?.value.trim()||'Otros gastos'):rawCat; const btn=$('#saveExpenseV725',overlay); btn.disabled=true; btn.textContent='Guardando…'; try{await saveExpenseV725({category:cat,name:$('#expNameV725',overlay)?.value.trim()||cat,totalCost:cost,date:new Date(($('#expDateV725',overlay)?.value||todayISO())+'T12:00:00').getTime(),quantity:Number($('#expQtyV725',overlay)?.value||0),unit:$('#expUnitV725',overlay)?.value.trim()||'',yieldQty:Number($('#expYieldV725',overlay)?.value||0),yieldUnit:$('#expYieldUnitV725',overlay)?.value.trim()||'',note:$('#expNoteV725',overlay).value.trim()}); close(); showToast('Egreso registrado.'); renderFinanceV725();}catch(err){btn.disabled=false;btn.textContent='Guardar egreso';showToast(err.message||'No se pudo guardar.','error');}});
+      $('#saveExpenseV725',overlay).addEventListener('click',async()=>{const cost=roundBs(Number($('#expCostV725',overlay).value||0)); if(cost<=0)return showToast('Ingresa el costo total.','error'); const btn=$('#saveExpenseV725',overlay); btn.disabled=true; btn.textContent='Guardando…'; try{await saveExpenseV725({category:$('#expCatV725',overlay).value,name:$('#expNameV725',overlay).value.trim()||$('#expCatV725',overlay).value,totalCost:cost,date:new Date($('#expDateV725',overlay).value+'T12:00:00').getTime(),quantity:Number($('#expQtyV725',overlay).value||0),unit:$('#expUnitV725',overlay).value.trim(),yieldQty:Number($('#expYieldV725',overlay).value||0),yieldUnit:$('#expYieldUnitV725',overlay).value.trim(),note:$('#expNoteV725',overlay).value.trim()}); close(); showToast('Egreso registrado.'); renderFinanceV725();}catch(err){btn.disabled=false;btn.textContent='Guardar egreso';showToast(err.message||'No se pudo guardar.','error');}});
     });
   }
 
-
-  Object.assign(window,{renderReceivablesV725, renderFinanceV725, saleBalanceV725, salePaidTotalV725});
+  Object.assign(window,{renderReceivablesV725, renderFinanceV725, saleBalanceV725, salePaidTotalV725, receivableSalesV725, receivableTotalsV725});
 })();

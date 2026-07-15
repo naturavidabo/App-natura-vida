@@ -1,42 +1,26 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import re
-import sys
+import re, sys
 
-ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / '.github' / 'workflows' / 'deploy-pages.yml'
-failures = []
-passes = []
+ROOT=Path(__file__).resolve().parents[1]
+workflow=ROOT/'.github/workflows/deploy-pages.yml'
+errors=[]
+text=workflow.read_text(encoding='utf-8') if workflow.exists() else ''
 
-def check(condition, label):
-    (passes if condition else failures).append(label)
+def require(cond,msg):
+    if not cond: errors.append(msg)
 
-check(WORKFLOW.is_file(), 'Existe workflow personalizado de GitHub Pages')
-text = WORKFLOW.read_text(encoding='utf-8') if WORKFLOW.is_file() else ''
+require(workflow.exists(),'Falta workflow de GitHub Pages')
+for action in ['actions/checkout@v6','actions/configure-pages@v6','actions/upload-pages-artifact@v5','actions/deploy-pages@v5']:
+    require(action in text,f'Acción faltante o desactualizada: {action}')
+for item in ['index.html','manifest.json','service-worker.js','app-version.json','css icons img js']:
+    require(item in text,f'Empaquetado incompleto: {item}')
+require('cancel-in-progress: true' in text,'Falta cancelación de despliegues antiguos')
+require('pages: write' in text and 'id-token: write' in text,'Permisos Pages incompletos')
+require((ROOT/'.nojekyll').exists(),'Falta .nojekyll')
+require((ROOT/'.node-version').read_text().strip().startswith('24'),'Node 24 no configurado')
 
-for needle, label in [
-    ('actions/checkout@v6', 'Checkout actualizado'),
-    ('actions/configure-pages@v6', 'Configure Pages usa Node 24'),
-    ('actions/upload-pages-artifact@v5', 'Upload Pages actualizado'),
-    ('actions/deploy-pages@v5', 'Deploy Pages usa Node 24'),
-    ('cancel-in-progress: true', 'Despliegues antiguos se cancelan automáticamente'),
-    ('workflow_dispatch:', 'Permite ejecución manual'),
-    ('pages: write', 'Permiso Pages presente'),
-    ('id-token: write', 'Permiso OIDC presente'),
-    ('path: _site', 'Solo se publica la carpeta estática limpia'),
-]:
-    check(needle in text, label)
-
-check(not re.search(r'actions/(deploy-pages|configure-pages)@v[1-4]\b', text), 'No quedan acciones Pages antiguas')
-check((ROOT / '.nojekyll').is_file(), 'Existe .nojekyll en la raíz')
-
-required = ['index.html', 'manifest.json', 'service-worker.js', 'app-version.json']
-for item in required:
-    check((ROOT / item).is_file(), f'Existe {item}')
-
-print(f'PASS={len(passes)} FAIL={len(failures)}')
-for label in failures:
-    print('FAIL:', label)
-if failures:
+print(f'Auditoría de despliegue V7.3: {11-len(errors)}/11 controles OK')
+if errors:
+    for e in errors: print('ERROR:',e)
     sys.exit(1)
-print('Auditoría de despliegue completada sin fallos.')

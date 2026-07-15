@@ -294,18 +294,19 @@
     const profiles = profilesRes && profilesRes.ok ? profilesRes.profiles || [] : AppState.allProfiles || [];
     const requests = (AppState.profileChangeRequests || []).filter(r => r.status === 'pending');
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Equipo comercial</span><h1>Representantes</h1><p>Aprueba cuentas, bloquea accesos y asigna descuentos personales.</p></section>
+      <section class="v7PageHead"><span class="v7Eyebrow">Equipo comercial</span><h1>Representantes</h1><p>Controla cuentas, grupos de precios, stock, pedidos, ventas y actividad comercial.</p></section>
       ${requests.length ? `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Solicitudes pendientes</span><h2>Cambios de perfil</h2></div><span class="v7BadgeCount">${requests.length}</span></div>${requests.map(r => { const p=profiles.find(x=>x.id===r.userId)||{}; return `<article class="v7ChangeRequest"><div><strong>${escapeHtml(p.full_name||p.email||'Usuario')}</strong><span>${r.fieldName==='phone'?'WhatsApp':'Ciudad'}: <b>${escapeHtml(r.oldValue||'—')}</b> → <b>${escapeHtml(r.newValue)}</b></span><small>${fmtDateTime(r.createdAt)}</small></div><div><button class="btn sm approveProfileChange" data-id="${r.id}">Aprobar</button><button class="btn sm outline rejectProfileChange" data-id="${r.id}">Rechazar</button></div></article>`; }).join('')}</section>` : ''}
-      <section class="v7UsersGrid">${profiles.map(p => { const [label,tone]=userStatus(p); const self=p.id===AppState.session.userId; const admin=String(p.role||'').toLowerCase()==='administrador'; return `<article class="v7UserCard ${admin?'admin':''}"><div class="v7UserTop"><div class="v7Avatar">${escapeHtml((p.full_name||p.email||'U').charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(p.full_name||'Sin nombre')}</strong><span>${escapeHtml(p.email||'')}</span><small>${escapeHtml(p.city||'')} ${p.phone?'· '+escapeHtml(p.phone):''}</small></div><em class="v7Status ${tone}">${label}</em></div>${admin?`<div class="v7AdminPrincipal">Administrador principal</div>`:`<div class="v7DiscountEditor"><label>Grupo de precios<select data-rep-group="${p.id}"><option value="">Sin grupo fijo</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${((AppState.representatives||[]).find(r=>r.id===p.id)||{}).priceGroupId===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></label><label>Descuento personal para compras<input type="number" min="0" max="100" step="0.5" value="${Number(p.representative_discount_percent||0)}" data-discount-input="${p.id}"></label><button class="btn sm outline saveDiscountV7" data-id="${p.id}">Guardar grupo/descuento</button></div><div class="v7UserActions"><button class="btn sm detailRepresentativeV725" data-id="${p.id}">Ver stock y movimientos</button><button class="btn sm ghost editLegalNameV7" data-id="${p.id}">Corregir nombre</button>${String(p.status).toLowerCase()==='pendiente'?`<button class="btn sm approveUserV7" data-id="${p.id}">Aprobar</button>`:''}${String(p.status).toLowerCase()==='activo'?`<button class="btn sm outline blockUserV7" data-id="${p.id}">Bloquear</button>`:''}${String(p.status).toLowerCase()==='bloqueado'?`<button class="btn sm unblockUserV7" data-id="${p.id}">Reactivar</button>`:''}</div>`}</article>`; }).join('')}</section>`;
+      <section class="v7UsersGrid">${profiles.map(p => { const [label,tone]=userStatus(p); const self=p.id===AppState.session.userId; const admin=String(p.role||'').toLowerCase()==='administrador'; return `<article class="v7UserCard ${admin?'admin':''}"><div class="v7UserTop"><div class="v7Avatar">${escapeHtml((p.full_name||p.email||'U').charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(p.full_name||'Sin nombre')}</strong><span>${escapeHtml(p.email||'')}</span><small>${escapeHtml(p.city||'')} ${p.phone?'· '+escapeHtml(p.phone):''}</small></div><em class="v7Status ${tone}">${label}</em></div>${admin?`<div class="v7AdminPrincipal">Administrador principal</div>`:`<div class="repQuickMetricsV730"><span><small>Stock</small><b data-rep-stock-units="${p.id}">Cargando…</b></span><span><small>Ventas</small><b data-rep-sales-total="${p.id}">Cargando…</b></span><span><small>Actividad</small><b data-rep-last-activity="${p.id}">Cargando…</b></span></div><div class="v7DiscountEditor"><label>Grupo de precios<select data-rep-group="${p.id}"><option value="">Sin grupo fijo</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${((((AppState.representatives||[]).find(r=>r.id===p.id)||{}).priceGroupId)||p.representative_price_group_id||'')===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></label><label>Descuento personal para compras<input type="number" min="0" max="100" step="0.5" value="${Number(p.representative_discount_percent||0)}" data-discount-input="${p.id}"></label><button class="btn sm outline saveDiscountV7" data-id="${p.id}">Guardar grupo/descuento</button></div><div class="v7UserActions"><button class="btn sm detailRepresentativeV725" data-id="${p.id}">Ver stock y movimientos</button><button class="btn sm ghost editLegalNameV7" data-id="${p.id}">Corregir nombre</button>${String(p.status).toLowerCase()==='pendiente'?`<button class="btn sm approveUserV7" data-id="${p.id}">Aprobar</button>`:''}${String(p.status).toLowerCase()==='activo'?`<button class="btn sm outline blockUserV7" data-id="${p.id}">Bloquear</button>`:''}${String(p.status).toLowerCase()==='bloqueado'?`<button class="btn sm unblockUserV7" data-id="${p.id}">Reactivar</button>`:''}</div>`}</article>`; }).join('')}</section>`;
 
     $all('.editLegalNameV7').forEach(b=>b.addEventListener('click',()=>openLegalNameCorrection(b.dataset.id, profiles)));
     $all('.approveUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminApproveUser,'Cuenta aprobada.')));
     $all('.blockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminBlockUser,'Cuenta bloqueada.')));
     $all('.unblockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminUnblockUser,'Cuenta reactivada.')));
-    $all('.saveDiscountV7').forEach(b=>b.addEventListener('click',async()=>{const input=$(`[data-discount-input="${b.dataset.id}"]`);const group=$(`[data-rep-group="${b.dataset.id}"]`);const res=await setRepresentativeDiscountV7(b.dataset.id,Number(input.value||0)); if(res.ok){await saveRepresentativeConfigV725(b.dataset.id,{priceGroupId:group?group.value:'',discountPercent:Number(input.value||0)}).catch(()=>{});} showToast(res.ok?'Grupo/descuento actualizado.':res.message,res.ok?undefined:'error');if(res.ok)renderUsersFoundationV7();}));
-    $all('.detailRepresentativeV725').forEach(b=>b.addEventListener('click',()=>openRepresentativeDetailV725(b.dataset.id, profiles)));
+    $all('.saveDiscountV7').forEach(b=>b.addEventListener('click',async()=>{const input=$(`[data-discount-input="${b.dataset.id}"]`);const group=$(`[data-rep-group="${b.dataset.id}"]`);const res=await setRepresentativePricingV730(b.dataset.id,group?group.value:'',Number(input.value||0)); if(res.ok){await saveRepresentativeConfigV730(b.dataset.id,{priceGroupId:group?group.value:'',discountPercent:Number(input.value||0)}, profiles.find(p=>p.id===b.dataset.id)).catch(()=>{});} showToast(res.ok?(res.groupPendingMigration?res.message:'Grupo/descuento actualizado.'):res.message,res.ok&&!res.groupPendingMigration?undefined:'error');if(res.ok)renderUsersFoundationV7();}));
+    $all('.detailRepresentativeV725').forEach(b=>b.addEventListener('click',()=>openRepresentativeDetailV730(b.dataset.id, profiles)));
     $all('.approveProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'approved')));
     $all('.rejectProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'rejected')));
+    if (window.hydrateRepresentativeCardsV730) hydrateRepresentativeCardsV730(profiles);
   }
 
   function openLegalNameCorrection(userId, profiles) {
@@ -334,44 +335,6 @@
         showToast('Nombre oficial corregido.');
         renderUsersFoundationV7();
       });
-    });
-  }
-
-
-  async function saveRepresentativeConfigV725(userId, data = {}) {
-    const existing = (AppState.representatives || []).find(r => r.id === userId) || { id: userId, createdAt: Date.now() };
-    const row = Object.assign({}, existing, data, { id: userId, updatedAt: Date.now() });
-    await DB.put('representatives', row);
-    const idx = (AppState.representatives || []).findIndex(r => r.id === userId);
-    if (idx >= 0) AppState.representatives[idx] = row; else AppState.representatives.push(row);
-    return row;
-  }
-
-  async function openRepresentativeDetailV725(userId, profiles = []) {
-    const p = profiles.find(x => x.id === userId) || (AppState.allProfiles || []).find(x => x.id === userId) || {};
-    openSheet(`<h2>Representante <span class="x" id="closeSheet">✕</span></h2><div class="v7CashNotice">Cargando stock, pedidos y ventas de ${escapeHtml(p.full_name || p.email || 'representante')}…</div>`, async (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', close);
-      const stockRes = window.fetchRepresentativeStockForAdminV725 ? await fetchRepresentativeStockForAdminV725(userId) : { ok: true, rows: [] };
-      const orderRes = window.fetchRepresentativeOrdersForAdminV725 ? await fetchRepresentativeOrdersForAdminV725(userId) : { ok: true, orders: [] };
-      const rows = stockRes.ok ? (stockRes.rows || []) : [];
-      const orders = orderRes.ok ? (orderRes.orders || []) : [];
-      const sales = (AppState.sales || []).filter(s => s.sellerId === userId || s.ownerUserId === userId || s.representativeId === userId);
-      const productMoves = new Map();
-      sales.forEach(s => (s.items || []).forEach(it => productMoves.set(it.productName || it.name || it.productId, (productMoves.get(it.productName || it.name || it.productId) || 0) + Number(it.qty || 0))));
-      const topProducts = Array.from(productMoves.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
-      const stockUnits = rows.reduce((sum,r)=>sum+Number(r.stock||0),0);
-      const stockValue = rows.reduce((sum,r)=>sum+(Number(r.stock||0)*Number(r.acquisitionCost||0)),0);
-      const cfg = (AppState.representatives || []).find(r => r.id === userId) || {};
-      const group = AppState.priceGroups.find(g => g.id === cfg.priceGroupId);
-      $('.sheet', overlay).innerHTML = `
-        <h2>Representante <span class="x" id="closeSheet">✕</span></h2>
-        <section class="v7ProfileCardMain compact"><div class="v7Avatar">${escapeHtml((p.full_name || p.email || 'R').charAt(0).toUpperCase())}</div><div><h2>${escapeHtml(p.full_name || 'Sin nombre')}</h2><span>${escapeHtml(p.email || '')}</span><small>${escapeHtml(p.phone || '')}</small></div></section>
-        <section class="v7MetricGrid compact"><article class="v7MetricCard"><span>Stock</span><strong>${stockUnits}</strong><small>unidades</small></article><article class="v7MetricCard"><span>Valor stock</span><strong>${fmtMoney(stockValue)}</strong></article><article class="v7MetricCard primary"><span>Ventas</span><strong>${sales.length}</strong></article></section>
-        <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Precios</span><h2>Grupo y descuento</h2></div></div><div class="priceLine"><span>Grupo asignado</span><b>${escapeHtml(group ? group.name : 'Sin grupo')}</b></div><div class="priceLine"><span>Descuento personal</span><b>${Number(cfg.discountPercent ?? p.representative_discount_percent ?? 0)}%</b></div></section>
-        <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Stock actual</span><h2>Productos del representante</h2></div></div>${rows.length ? rows.map(r=>`<div class="repStockLineV726"><span><strong>${escapeHtml(r.productName)}</strong><small>${escapeHtml(r.category||'General')}</small></span><b>${Number(r.stock||0)}</b></div>`).join('') : `<div class="v7Empty small"><span>📦</span><p>No se encontró stock registrado para este representante.</p></div>`}</section>
-        <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Actividad</span><h2>Pedidos y ventas</h2></div></div><div class="priceLine"><span>Pedidos recientes</span><b>${orders.length}</b></div><div class="priceLine"><span>Ventas registradas</span><b>${sales.length}</b></div>${topProducts.length?`<div class="v7CashNotice"><strong>Productos más movidos</strong><br>${topProducts.map(x=>`${escapeHtml(x[0])}: ${x[1]} u.`).join('<br>')}</div>`:''}</section>
-      `;
-      $('#closeSheet', overlay).addEventListener('click', close);
     });
   }
 

@@ -1,7 +1,7 @@
 {
-  "name": "NATURA VIDA V7.2 — Gestión Online",
+  "name": "NATURA VIDA V7.3 — Gestión Comercial Inteligente",
   "short_name": "NaturaVida",
-  "description": "Gestión comercial Natura Vida con catálogo, ventas, pedidos, recibos, QR, Supabase y Realtime.",
+  "description": "Gestión comercial Natura Vida con clientes, representantes, stock, beneficios, cotizaciones, cobros, egresos, Supabase y Realtime.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
