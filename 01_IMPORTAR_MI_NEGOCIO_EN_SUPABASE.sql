@@ -1,344 +1,120 @@
-/* NATURA VIDA V7 — perfil comercial, QR y gestión de representantes. */
+/* v7-stats.js — Inteligencia comercial básica para Natura Vida V7.2.3. */
 
 (() => {
-  let qrImage = null;
-  let qrZoom = 1;
-  let qrOffsetX = 0;
-  let qrOffsetY = 0;
-  let qrDataUrl = '';
-  let removeQrRequested = false;
-
-  function pendingOwnChange(field) {
-    return (AppState.profileChangeRequests || []).find(r => r.userId === AppState.session.userId && r.fieldName === field && r.status === 'pending');
+  function userSalesV7() {
+    const uid = AppState.session && (AppState.session.onlineUserId || AppState.session.userId);
+    return (AppState.sales || []).filter(s => isAdmin() || !uid || s.sellerId === uid).slice().sort((a,b)=>Number(b.date||0)-Number(a.date||0));
   }
 
-  function renderProfileV7() {
-    // Cada entrada al módulo comienza con el estado confirmado en Supabase.
-    // Así un recorte o eliminación no guardados no reaparecen al volver más tarde.
-    qrDataUrl = '';
-    removeQrRequested = false;
+  function monthKey(ts) {
+    const d = new Date(Number(ts || Date.now()));
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  function currentMonthSales(sales) {
+    const key = monthKey(Date.now());
+    return sales.filter(s => monthKey(s.date) === key);
+  }
+
+  function summarizeSales(sales) {
+    return sales.reduce((acc, s) => {
+      acc.total += Number(s.total || 0);
+      acc.count += 1;
+      acc.units += (s.items || []).reduce((sum, i) => sum + Number(i.qty || 0), 0);
+      acc.discount += Number(s.discountTotal || 0) || (s.items || []).reduce((sum, i) => sum + Number(i.discountAmount || 0), 0);
+      acc.surcharge += Number(s.surchargeTotal || 0) || (s.items || []).reduce((sum, i) => sum + Number(i.surchargeAmount || 0), 0);
+      acc.profit += Number(s.sellerProfit || 0);
+      return acc;
+    }, { count: 0, total: 0, units: 0, discount: 0, surcharge: 0, profit: 0 });
+  }
+
+  function topProducts(sales) {
+    const map = new Map();
+    sales.forEach(s => (s.items || []).forEach(i => {
+      const key = i.productId || i.productName;
+      const row = map.get(key) || { name: i.productName || 'Producto', units: 0, total: 0 };
+      row.units += Number(i.qty || 0);
+      row.total += Number(i.subtotal || 0);
+      map.set(key, row);
+    }));
+    return Array.from(map.values()).sort((a,b)=>b.units-a.units || b.total-a.total).slice(0, 8);
+  }
+
+  function topClients(sales) {
+    const map = new Map();
+    sales.forEach(s => {
+      const key = (s.clientPhone || '').trim() || normalizeSearch(s.clientName || 'Cliente');
+      const row = map.get(key) || { name: s.clientName || 'Cliente', phone: s.clientPhone || '', count: 0, total: 0, last: 0 };
+      row.count += 1;
+      row.total += Number(s.total || 0);
+      row.last = Math.max(row.last, Number(s.date || 0));
+      map.set(key, row);
+    });
+    return Array.from(map.values()).sort((a,b)=>b.total-a.total || b.count-a.count).slice(0, 8);
+  }
+
+  function topRepresentatives(sales) {
+    const map = new Map();
+    sales.forEach(s => {
+      const key = s.sellerId || s.sellerName || 'rep';
+      const row = map.get(key) || { name: s.sellerName || 'Representante', count: 0, total: 0, units: 0 };
+      row.count += 1;
+      row.total += Number(s.total || 0);
+      row.units += (s.items || []).reduce((sum, i) => sum + Number(i.qty || 0), 0);
+      map.set(key, row);
+    });
+    return Array.from(map.values()).sort((a,b)=>b.total-a.total).slice(0, 8);
+  }
+
+  function commercialStatus(row) {
+    const days = row.last ? Math.floor((Date.now() - row.last) / 86400000) : 9999;
+    if (days > 90) return { label: 'Inactivo', cls: 'gray' };
+    if (row.count >= 8 || row.total >= 3000) return { label: 'Consolidado', cls: 'green' };
+    if (row.count >= 3 || row.total >= 800) return { label: 'Recurrente', cls: 'blue' };
+    if (days <= 30) return { label: 'Nuevo', cls: 'orange' };
+    return { label: 'En seguimiento', cls: 'yellow' };
+  }
+
+  function bar(widthPct) {
+    return `<span class="statBar"><i style="width:${Math.max(4, Math.min(100, widthPct))}%"></i></span>`;
+  }
+
+  function renderRows(rows, type) {
+    if (!rows.length) return `<div class="v7Empty small"><span>📊</span><p>Aún no hay datos suficientes.</p></div>`;
+    const max = Math.max(...rows.map(r => Number(type === 'products' ? r.units : r.total) || 0), 1);
+    return rows.map(r => {
+      const value = Number(type === 'products' ? r.units : r.total) || 0;
+      const status = type === 'clients' ? commercialStatus(r) : null;
+      return `<div class="statRow"><div><strong>${escapeHtml(r.name)}</strong><small>${type === 'products' ? `${r.units} unidad(es) · ${fmtMoney(r.total)}` : type === 'clients' ? `${r.count} compra(s) · ${r.last ? fmtDate(r.last) : 'sin fecha'}` : `${r.count} venta(s) · ${r.units} unidad(es)`}${status ? ` · <em class="trust ${status.cls}">${status.label}</em>` : ''}</small>${bar((value / max) * 100)}</div><b>${type === 'products' ? r.units : fmtMoney(r.total)}</b></div>`;
+    }).join('');
+  }
+
+  function renderCommercialStatsV7() {
     $('#fabAdd').classList.add('hidden');
-    const cp = myCommercialProfile();
-    const phoneReq = pendingOwnChange('phone');
-    const cityReq = pendingOwnChange('city');
-    window.V7_FORM_DIRTY = false;
+    const sales = userSalesV7();
+    const month = currentMonthSales(sales);
+    const all = summarizeSales(sales);
+    const now = summarizeSales(month);
+    const avg = now.count ? now.total / now.count : 0;
+    const products = topProducts(sales);
+    const clients = topClients(sales);
+    const reps = isAdmin() ? topRepresentatives(sales) : [];
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Puedes actualizar tus datos de perfil y presentación comercial. El correo, rol y estado permanecen protegidos.'}</p></section>
-      <section class="v7ProfileCardMain">
-        <div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
-        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</small></div>
+      <section class="v7PageHead"><span class="v7Eyebrow">Medición comercial</span><h1>Estadísticas</h1><p>Productos que más salen, clientes que más compran, descuentos, recargos y rendimiento.</p></section>
+      <section class="v7MetricGrid compact statsMetrics">
+        <article class="v7MetricCard primary"><span>Ventas del mes</span><strong>${fmtMoney(now.total)}</strong></article>
+        <article class="v7MetricCard"><span>Operaciones</span><strong>${now.count}</strong></article>
+        <article class="v7MetricCard"><span>Unidades</span><strong>${now.units}</strong></article>
+        <article class="v7MetricCard"><span>Ticket promedio</span><strong>${fmtMoney(avg)}</strong></article>
+        <article class="v7MetricCard"><span>Rebajas</span><strong>${fmtMoney(now.discount)}</strong></article>
+        <article class="v7MetricCard"><span>Recargos</span><strong>${fmtMoney(now.surcharge)}</strong></article>
       </section>
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Datos de perfil</span><h2>Identificación</h2></div><span class="v7Lock">Correo protegido</span></div>
-        <div class="v7ReadonlyGrid">
-          <label>Nombre completo<input id="v7FullName" value="${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}" placeholder="Nombre y apellidos"></label>
-          <label>Correo Gmail<input value="${escapeHtml(AppState.session.email || '')}" readonly></label>
-          <label>WhatsApp<input id="v7OfficialPhone" inputmode="tel" value="${escapeHtml(AppState.session.phone || '')}" placeholder="Ej.: 70700000"></label>
-          <label>Ciudad<input id="v7OfficialCity" value="${escapeHtml(AppState.session.city || '')}" placeholder="Ej.: Santa Cruz"></label>
-        </div>
-        <div class="v7CashNotice">Puedes editar tu nombre, WhatsApp y ciudad. El correo, rol y estado no se modifican desde la app.</div>
-        <button class="btn outline block" id="saveOfficialProfileV7">Guardar datos de perfil</button>
-      </section>
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Presentación en recibos</span><h2>Mi negocio</h2></div></div>
-        <div class="field"><label>Nombre comercial opcional</label><input id="v7BusinessName" value="${escapeHtml(cp.businessName || '')}" placeholder="Ej.: Natura Vida La Paz"></div>
-        <div class="field"><label>Dirección comercial opcional</label><input id="v7Address" value="${escapeHtml(cp.address || '')}" placeholder="Dirección o zona de atención"></div>
-        <div class="field"><label>Ubicación / referencia</label><input id="v7LocationLabel" value="${escapeHtml(cp.locationLabel || '')}" placeholder="Ej.: Barrio Equipetrol, frente a..."></div>
-        <div class="field-row"><div class="field"><label>Latitud</label><input id="v7Lat" type="number" step="any" value="${cp.latitude == null ? '' : cp.latitude}"></div><div class="field"><label>Longitud</label><input id="v7Lng" type="number" step="any" value="${cp.longitude == null ? '' : cp.longitude}"></div></div>
-        <button class="btn ghost block" id="useLocationV7">Usar mi ubicación actual</button>
-        <div class="field"><label>Mensaje para recibos</label><textarea id="v7ReceiptMessage" rows="3" placeholder="Ej.: Gracias por confiar en productos naturales Natura Vida.">${escapeHtml(cp.receiptMessage || '')}</textarea></div>
-      </section>
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Cobro al contado</span><h2>Mi QR</h2></div></div>
-        <div class="v7QrWarning"><strong>Importante:</strong> sube solamente el QR limpio. No uses capturas completas del banco, marcos, saldos, logotipos decorativos ni información adicional.</div>
-        <div class="v7QrCurrent">${cp.qrUrl ? `<img src="${escapeHtml(cp.qrUrl)}" alt="QR actual" loading="lazy" decoding="async"><span>QR actual guardado</span>` : '<div>QR</div><span>Aún no configurado</span>'}</div>
-        <button class="btn outline block" id="openQrCropV7">Cargar y recortar QR</button>
-        <button class="btn ghost block ${cp.qrUrl ? '' : 'hidden'}" id="removeQrV7">Eliminar QR guardado</button>
-      </section>
-      <button class="btn block v7SaveProfile" id="saveCommercialProfileV7">Guardar perfil comercial</button>
+      <section class="statsPanel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Ranking</span><h2>Productos más vendidos</h2></div></div>${renderRows(products, 'products')}</section>
+      <section class="statsPanel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Clientes</span><h2>Mejores clientes y estado comercial</h2></div></div>${renderRows(clients, 'clients')}</section>
+      ${isAdmin() ? `<section class="statsPanel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Representantes</span><h2>Rendimiento por vendedor</h2></div></div>${renderRows(reps, 'reps')}</section>` : ''}
+      <section class="statsPanel soft"><div class="v7PanelHead"><div><span class="v7Eyebrow">Histórico total</span><h2>Resumen acumulado</h2></div></div><div class="statTotals"><span>Total vendido <b>${fmtMoney(all.total)}</b></span><span>Ventas <b>${all.count}</b></span><span>Unidades <b>${all.units}</b></span><span>Rebajas <b>${fmtMoney(all.discount)}</b></span><span>Recargos <b>${fmtMoney(all.surcharge)}</b></span></div></section>
     `;
-
-    $all('#mainArea input:not([readonly]), #mainArea textarea').forEach(el => el.addEventListener('input', () => { window.V7_FORM_DIRTY = true; }));
-    $('#saveOfficialProfileV7').addEventListener('click', async () => {
-      const btn = $('#saveOfficialProfileV7');
-      const fullName = $('#v7FullName').value.trim();
-      const phone = $('#v7OfficialPhone').value.trim();
-      const city = $('#v7OfficialCity').value.trim();
-      if (!fullName || fullName.length < 3) return showToast('Ingresa un nombre completo válido.', 'error');
-      btn.disabled = true; btn.textContent = 'Guardando perfil…';
-      const res = await upsertCloudProfileForUser(AppState.session.userId, AppState.session.email, { fullName, phone, city });
-      btn.disabled = false; btn.textContent = 'Guardar datos de perfil';
-      if (!res.ok) return showToast(res.message || 'No se pudo guardar el perfil.', 'error');
-      AppState.session.fullName = res.profile.full_name || fullName;
-      AppState.session.phone = res.profile.phone || phone;
-      AppState.session.city = res.profile.city || city;
-      window.V7_FORM_DIRTY = false;
-      showToast('Perfil actualizado correctamente.');
-      renderProfileV7();
-    });
-    $('#openQrCropV7').addEventListener('click', () => openQrCropper(qrDataUrl || cp.qrUrl || ''));
-    const currentQrImg = $('.v7QrCurrent img');
-    if (currentQrImg) currentQrImg.addEventListener('error', () => {
-      const box = $('.v7QrCurrent');
-      if (box) box.innerHTML = '<div>!</div><span>No se pudo cargar el QR guardado</span>';
-    }, { once: true });
-    $('#removeQrV7').addEventListener('click', async () => {
-      if (!confirm('¿Eliminar el QR de cobro de tu perfil y de los próximos recibos?')) return;
-      qrDataUrl = '';
-      removeQrRequested = true;
-      window.V7_FORM_DIRTY = true;
-      $('.v7QrCurrent').innerHTML = '<div>QR</div><span>Se eliminará al guardar</span>';
-      $('#removeQrV7').classList.add('hidden');
-      showToast('QR marcado para eliminar. Pulsa Guardar perfil comercial.');
-    });
-    $('#useLocationV7').addEventListener('click', () => {
-      if (!navigator.geolocation) return showToast('El dispositivo no permite obtener ubicación.', 'error');
-      const btn = $('#useLocationV7'); btn.disabled = true; btn.textContent = 'Obteniendo ubicación…';
-      navigator.geolocation.getCurrentPosition(pos => {
-        $('#v7Lat').value = pos.coords.latitude.toFixed(6);
-        $('#v7Lng').value = pos.coords.longitude.toFixed(6);
-        window.V7_FORM_DIRTY = true;
-        btn.disabled = false; btn.textContent = 'Ubicación capturada';
-      }, () => { btn.disabled = false; btn.textContent = 'Usar mi ubicación actual'; showToast('No se pudo obtener la ubicación.', 'error'); }, { enableHighAccuracy: true, timeout: 10000 });
-    });
-    $('#saveCommercialProfileV7').addEventListener('click', async () => {
-      const btn = $('#saveCommercialProfileV7'); btn.disabled = true; btn.textContent = 'Guardando en Supabase…';
-      const profile = {
-        businessName: $('#v7BusinessName').value.trim(),
-        address: $('#v7Address').value.trim(),
-        locationLabel: $('#v7LocationLabel').value.trim(),
-        latitude: $('#v7Lat').value,
-        longitude: $('#v7Lng').value,
-        receiptMessage: $('#v7ReceiptMessage').value.trim(),
-        qrUrl: removeQrRequested ? '' : (qrDataUrl || cp.qrUrl || '')
-      };
-      if (qrDataUrl && qrDataUrl.startsWith('data:image/')) {
-        const upload = await uploadPaymentQrV7(qrDataUrl);
-        if (!upload.ok) {
-          btn.disabled = false; btn.textContent = 'Reintentar guardado';
-          return showToast(upload.message || 'No se pudo subir el QR. No se guardó ningún cambio.', 'error');
-        }
-        profile.qrUrl = upload.url;
-      }
-      const res = await saveCommercialProfileV7(profile);
-      if (!res.ok) {
-        btn.disabled = false; btn.textContent = 'Reintentar guardado';
-        return showToast(res.message, 'error');
-      }
-      const verify = await fetchCommercialProfilesV7();
-      const persisted = myCommercialProfile();
-      const qrVerified = verify.ok && (removeQrRequested ? !persisted.qrUrl : String(persisted.qrUrl || '') === String(profile.qrUrl || ''));
-      if (!qrVerified) {
-        btn.disabled = false; btn.textContent = 'Verificar y reintentar';
-        return showToast('Supabase no confirmó el QR guardado. No cierres esta pantalla y vuelve a intentarlo.', 'error');
-      }
-      if (removeQrRequested && window.deletePaymentQrV7) await deletePaymentQrV7().catch(() => {});
-      btn.disabled = false; btn.textContent = 'Guardar perfil comercial';
-      qrDataUrl = '';
-      removeQrRequested = false;
-      window.V7_FORM_DIRTY = false;
-      showToast('Perfil comercial y QR verificados correctamente.');
-      renderProfileV7();
-    });
   }
 
-  function openAdminOfficialEditV7() {
-    openSheet(`
-      <h2>Editar datos oficiales <span class="x" id="closeSheet">✕</span></h2>
-      <div class="field"><label>WhatsApp</label><input id="adminPhoneV7" inputmode="tel" value="${escapeHtml(AppState.session.phone || '')}"></div>
-      <div class="field"><label>Ciudad</label><input id="adminCityV7" value="${escapeHtml(AppState.session.city || '')}"></div>
-      <button class="btn block" id="saveAdminOfficialV7">Guardar datos</button>
-    `, (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#saveAdminOfficialV7', overlay).addEventListener('click', async () => {
-        const btn = $('#saveAdminOfficialV7', overlay);
-        btn.disabled = true;
-        btn.textContent = 'Guardando…';
-        const res = await upsertCloudProfileForUser(AppState.session.userId, AppState.session.email, {
-          fullName: AppState.session.fullName,
-          phone: $('#adminPhoneV7', overlay).value.trim(),
-          city: $('#adminCityV7', overlay).value.trim()
-        });
-        if (!res.ok) {
-          btn.disabled = false;
-          btn.textContent = 'Reintentar';
-          return showToast(res.message, 'error');
-        }
-        AppState.session.phone = res.profile.phone || '';
-        AppState.session.city = res.profile.city || '';
-        close();
-        showToast('Datos oficiales actualizados.');
-        renderProfileV7();
-      });
-    });
-  }
-
-  function openOfficialChangeRequest() {
-    const pendingPhone = pendingOwnChange('phone');
-    const pendingCity = pendingOwnChange('city');
-    openSheet(`
-      <h2>Solicitar cambio <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7CashNotice">El administrador revisará la solicitud. El dato actual seguirá vigente hasta su aprobación.</div>
-      <div class="field"><label>Nuevo WhatsApp</label><input id="changePhoneV7" inputmode="tel" value="${escapeHtml(pendingPhone ? pendingPhone.newValue : AppState.session.phone || '')}" ${pendingPhone ? 'disabled' : ''}>${pendingPhone ? '<small class="pendingText">Ya existe una solicitud pendiente.</small>' : ''}</div>
-      <div class="field"><label>Nueva ciudad</label><input id="changeCityV7" value="${escapeHtml(pendingCity ? pendingCity.newValue : AppState.session.city || '')}" ${pendingCity ? 'disabled' : ''}>${pendingCity ? '<small class="pendingText">Ya existe una solicitud pendiente.</small>' : ''}</div>
-      <button class="btn block" id="sendOfficialChangeV7">Enviar solicitud</button>
-    `, (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#sendOfficialChangeV7', overlay).addEventListener('click', async () => {
-        const tasks = [];
-        const phone = $('#changePhoneV7', overlay).value.trim();
-        const city = $('#changeCityV7', overlay).value.trim();
-        if (!pendingPhone && phone && phone !== AppState.session.phone) tasks.push(requestProfileChangeV7('phone', phone));
-        if (!pendingCity && city && city !== AppState.session.city) tasks.push(requestProfileChangeV7('city', city));
-        if (!tasks.length) return showToast('No hay cambios nuevos para solicitar.', 'error');
-        const results = await Promise.all(tasks); const failed = results.find(r => !r.ok);
-        if (failed) return showToast(failed.message, 'error');
-        close(); showToast('Solicitud enviada al administrador.'); renderProfileV7();
-      });
-    });
-  }
-
-  function drawQrCrop(canvas, image, zoom = 1, offsetX = 0, offsetY = 0, guide = true) {
-    if (!canvas || !image) return;
-    const ctx = canvas.getContext('2d');
-    const size = canvas.width;
-    ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
-    const baseScale = Math.max(size / image.width, size / image.height);
-    const scale = baseScale * zoom;
-    const w = image.width * scale, h = image.height * scale;
-    ctx.drawImage(image, (size - w) / 2 + offsetX, (size - h) / 2 + offsetY, w, h);
-    if (guide) {
-      ctx.strokeStyle = '#11a060'; ctx.lineWidth = 4; ctx.setLineDash([12, 8]);
-      ctx.strokeRect(5, 5, size - 10, size - 10); ctx.setLineDash([]);
-    }
-  }
-
-  function cleanQrCropDataUrl(image, zoom, offsetX, offsetY) {
-    const output = document.createElement('canvas');
-    output.width = 800; output.height = 800;
-    const scaleFactor = output.width / 420;
-    drawQrCrop(output, image, zoom, offsetX * scaleFactor, offsetY * scaleFactor, false);
-    return output.toDataURL('image/jpeg', 0.96);
-  }
-
-  function openQrCropper(existingUrl) {
-    qrImage = null; qrZoom = 1; qrOffsetX = 0; qrOffsetY = 0;
-    openSheet(`
-      <h2>Recortar QR <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7QrWarning"><strong>Solo QR limpio:</strong> centra el código dentro del cuadro. Puedes arrastrar la imagen y acercarla. La línea verde es solo una guía y no aparecerá en el QR guardado.</div>
-      <label class="v7QrUpload"><input id="qrFileV7" type="file" accept="image/*"><span>Seleccionar imagen del QR</span></label>
-      <canvas id="qrCanvasV7" width="420" height="420" aria-label="Área de recorte del QR"></canvas>
-      <div class="field"><label>Acercar / alejar</label><input id="qrZoomV7" type="range" min="1" max="4" step="0.05" value="1"></div>
-      <button class="btn ghost block" id="centerQrV7">Centrar nuevamente</button>
-      <button class="btn block" id="useQrCropV7" disabled>Usar este recorte limpio</button>
-    `, (overlay, close) => {
-      const canvas = $('#qrCanvasV7', overlay);
-      let dragging = false, lastX = 0, lastY = 0;
-      const redraw = () => drawQrCrop(canvas, qrImage, qrZoom, qrOffsetX, qrOffsetY, true);
-      const loadImage = src => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          qrImage = img; qrZoom = 1; qrOffsetX = 0; qrOffsetY = 0;
-          $('#qrZoomV7', overlay).value = 1; redraw(); $('#useQrCropV7', overlay).disabled = false;
-        };
-        img.onerror = () => showToast('No se pudo abrir la imagen del QR.', 'error');
-        img.src = src;
-      };
-      if (existingUrl) loadImage(existingUrl);
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#qrFileV7', overlay).addEventListener('change', async e => {
-        const file = e.target.files && e.target.files[0]; if (!file) return;
-        if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type || '')) return showToast('Usa una imagen PNG, JPG o WEBP.', 'error');
-        if (file.size > 8 * 1024 * 1024) return showToast('La imagen supera 8 MB.', 'error');
-        loadImage(await readImageFile(file));
-      });
-      $('#qrZoomV7', overlay).addEventListener('input', e => { qrZoom = Number(e.target.value || 1); redraw(); });
-      $('#centerQrV7', overlay).addEventListener('click', () => { qrOffsetX = 0; qrOffsetY = 0; qrZoom = 1; $('#qrZoomV7', overlay).value = 1; redraw(); });
-      canvas.style.touchAction = 'none';
-      canvas.addEventListener('pointerdown', e => {
-        if (!qrImage) return; dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId);
-      });
-      canvas.addEventListener('pointermove', e => {
-        if (!dragging || !qrImage) return;
-        const rect = canvas.getBoundingClientRect();
-        const scale = canvas.width / Math.max(1, rect.width);
-        qrOffsetX += (e.clientX - lastX) * scale; qrOffsetY += (e.clientY - lastY) * scale;
-        lastX = e.clientX; lastY = e.clientY; redraw();
-      });
-      const stopDrag = () => { dragging = false; };
-      canvas.addEventListener('pointerup', stopDrag); canvas.addEventListener('pointercancel', stopDrag);
-      $('#useQrCropV7', overlay).addEventListener('click', () => {
-        if (!qrImage) return;
-        qrDataUrl = cleanQrCropDataUrl(qrImage, qrZoom, qrOffsetX, qrOffsetY);
-        removeQrRequested = false;
-        window.V7_FORM_DIRTY = true;
-        const box = $('.v7QrCurrent');
-        if (box) box.innerHTML = `<img src="${qrDataUrl}" alt="Vista previa del QR recortado"><span>Vista previa lista para guardar</span>`;
-        const removeBtn = $('#removeQrV7');
-        if (removeBtn) removeBtn.classList.remove('hidden');
-        close(); showToast('QR limpio preparado. Guarda el perfil para subirlo y verificarlo.');
-      });
-    });
-  }
-
-  function userStatus(profile) {
-    const s = String(profile.status || 'pendiente').toLowerCase();
-    return s === 'activo' ? ['Activo', 'success'] : s === 'bloqueado' ? ['Bloqueado', 'danger'] : ['Pendiente', 'warning'];
-  }
-
-  async function renderUsersFoundationV7() {
-    $('#fabAdd').classList.add('hidden');
-    const [profilesRes] = await Promise.all([fetchAllProfilesV7(), fetchProfileChangeRequestsV7()]);
-    const profiles = profilesRes && profilesRes.ok ? profilesRes.profiles || [] : AppState.allProfiles || [];
-    const requests = (AppState.profileChangeRequests || []).filter(r => r.status === 'pending');
-    $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Equipo comercial</span><h1>Representantes</h1><p>Aprueba cuentas, bloquea accesos y asigna descuentos personales.</p></section>
-      ${requests.length ? `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Solicitudes pendientes</span><h2>Cambios de perfil</h2></div><span class="v7BadgeCount">${requests.length}</span></div>${requests.map(r => { const p=profiles.find(x=>x.id===r.userId)||{}; return `<article class="v7ChangeRequest"><div><strong>${escapeHtml(p.full_name||p.email||'Usuario')}</strong><span>${r.fieldName==='phone'?'WhatsApp':'Ciudad'}: <b>${escapeHtml(r.oldValue||'—')}</b> → <b>${escapeHtml(r.newValue)}</b></span><small>${fmtDateTime(r.createdAt)}</small></div><div><button class="btn sm approveProfileChange" data-id="${r.id}">Aprobar</button><button class="btn sm outline rejectProfileChange" data-id="${r.id}">Rechazar</button></div></article>`; }).join('')}</section>` : ''}
-      <section class="v7UsersGrid">${profiles.map(p => { const [label,tone]=userStatus(p); const self=p.id===AppState.session.userId; const admin=String(p.role||'').toLowerCase()==='administrador'; return `<article class="v7UserCard ${admin?'admin':''}"><div class="v7UserTop"><div class="v7Avatar">${escapeHtml((p.full_name||p.email||'U').charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(p.full_name||'Sin nombre')}</strong><span>${escapeHtml(p.email||'')}</span><small>${escapeHtml(p.city||'')} ${p.phone?'· '+escapeHtml(p.phone):''}</small></div><em class="v7Status ${tone}">${label}</em></div>${admin?`<div class="v7AdminPrincipal">Administrador principal</div>`:`<div class="v7DiscountEditor"><label>Grupo de precios<select data-rep-group="${p.id}"><option value="">Sin grupo fijo</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${((AppState.representatives||[]).find(r=>r.id===p.id)||{}).priceGroupId===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></label><label>Descuento personal para compras<input type="number" min="0" max="100" step="0.5" value="${Number(p.representative_discount_percent||0)}" data-discount-input="${p.id}"></label><button class="btn sm outline saveDiscountV7" data-id="${p.id}">Guardar grupo/descuento</button></div><div class="v7UserActions"><button class="btn sm detailRepresentativeV725" data-id="${p.id}">Ver stock y movimientos</button><button class="btn sm ghost editLegalNameV7" data-id="${p.id}">Corregir nombre</button>${String(p.status).toLowerCase()==='pendiente'?`<button class="btn sm approveUserV7" data-id="${p.id}">Aprobar</button>`:''}${String(p.status).toLowerCase()==='activo'?`<button class="btn sm outline blockUserV7" data-id="${p.id}">Bloquear</button>`:''}${String(p.status).toLowerCase()==='bloqueado'?`<button class="btn sm unblockUserV7" data-id="${p.id}">Reactivar</button>`:''}</div>`}</article>`; }).join('')}</section>`;
-
-    $all('.editLegalNameV7').forEach(b=>b.addEventListener('click',()=>openLegalNameCorrection(b.dataset.id, profiles)));
-    $all('.approveUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminApproveUser,'Cuenta aprobada.')));
-    $all('.blockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminBlockUser,'Cuenta bloqueada.')));
-    $all('.unblockUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminUnblockUser,'Cuenta reactivada.')));
-    $all('.saveDiscountV7').forEach(b=>b.addEventListener('click',async()=>{const input=$(`[data-discount-input="${b.dataset.id}"]`);const group=$(`[data-rep-group="${b.dataset.id}"]`);const res=await setRepresentativeDiscountV7(b.dataset.id,Number(input.value||0)); if(res.ok){await saveRepresentativeConfigV725(b.dataset.id,{priceGroupId:group?group.value:'',discountPercent:Number(input.value||0)}).catch(()=>{});} showToast(res.ok?'Grupo/descuento actualizado.':res.message,res.ok?undefined:'error');if(res.ok)renderUsersFoundationV7();}));
-    $all('.detailRepresentativeV725').forEach(b=>b.addEventListener('click',()=>openRepresentativeDetailV725(b.dataset.id, profiles)));
-    $all('.approveProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'approved')));
-    $all('.rejectProfileChange').forEach(b=>b.addEventListener('click',()=>reviewChange(b.dataset.id,'rejected')));
-  }
-
-  function openLegalNameCorrection(userId, profiles) {
-    const profile = profiles.find(p => p.id === userId);
-    if (!profile) return;
-    openSheet(`
-      <h2>Corregir nombre oficial <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7CashNotice">Este dato queda protegido. Solo el administrador puede corregirlo cuando el registro inicial está incompleto.</div>
-      <div class="field"><label>Nombre completo</label><input id="legalNameV7" value="${escapeHtml(profile.full_name || '')}" placeholder="Nombre y apellidos"></div>
-      <button class="btn block" id="saveLegalNameV7">Guardar corrección</button>
-    `, (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#saveLegalNameV7', overlay).addEventListener('click', async () => {
-        const value = $('#legalNameV7', overlay).value.trim();
-        if (value.length < 3) return showToast('Ingresa un nombre completo válido.', 'error');
-        const btn = $('#saveLegalNameV7', overlay);
-        btn.disabled = true;
-        btn.textContent = 'Guardando…';
-        const res = await adminUpdateProfileNameV7(userId, value);
-        if (!res.ok) {
-          btn.disabled = false;
-          btn.textContent = 'Reintentar';
-          return showToast(res.message, 'error');
-        }
-        close();
-        showToast('Nombre oficial corregido.');
-        renderUsersFoundationV7();
-      });
-    });
-  }
-
-  async function runUserAction(btn, fn, success) { btn.disabled=true; const res=await fn(btn.dataset.id); showToast(res.ok?success:res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); else btn.disabled=false; }
-  async function reviewChange(id, decision) { const res=await reviewProfileChangeV7(id,decision,''); showToast(res.ok?(decision==='approved'?'Cambio aprobado.':'Cambio rechazado.'):res.message,res.ok?undefined:'error'); if(res.ok)renderUsersFoundationV7(); }
-
-  Object.assign(window, { renderProfileV7, openOfficialChangeRequest, openQrCropper, renderUsersFoundation: renderUsersFoundationV7 });
+  window.renderCommercialStatsV7 = renderCommercialStatsV7;
 })();

@@ -1,53 +1,65 @@
-# Guía corregida de despliegue — GitHub Pages / Node.js 24
+-- NATURA VIDA V7.5.0 — Gestión regional de representantes
+-- Seguro para ejecutar más de una vez. No elimina datos.
+begin;
 
-## Diagnóstico del fallo observado
+create table if not exists public.representative_regional_profiles (
+  id uuid primary key default gen_random_uuid(),
+  representative_user_id uuid not null unique references public.profiles(id) on delete cascade,
+  representative_name text not null default '',
+  region_name text not null default '',
+  city text not null default '',
+  operational_status text not null default 'active' check (operational_status in ('active','suspended','inactive')),
+  monthly_goal numeric(14,2) not null default 0 check (monthly_goal >= 0),
+  debt_limit numeric(14,2) not null default 0 check (debt_limit >= 0),
+  notes text not null default '',
+  updated_by uuid references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-El error **“The job was not acquired by Runner of type hosted even after multiple attempts”** ocurrió antes de iniciar los pasos del workflow. No fue causado por el código de Natura Vida: fue una incidencia de los runners alojados por GitHub.
+create table if not exists public.regional_restock_requests (
+  id text primary key,
+  request_code text not null unique,
+  representative_user_id uuid not null references public.profiles(id) on delete cascade,
+  representative_name text not null default '',
+  items jsonb not null default '[]'::jsonb,
+  priority text not null default 'normal' check (priority in ('normal','high','urgent')),
+  note text not null default '',
+  status text not null default 'pending' check (status in ('pending','approved','rejected','fulfilled')),
+  created_by uuid references auth.users(id),
+  reviewed_by uuid references auth.users(id),
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-La advertencia **“Node.js v20 is deprecated”** sí correspondía a una acción antigua usada por el flujo automático `pages-build-deployment`. Esta entrega incluye un workflow propio actualizado.
+create index if not exists idx_regional_profiles_region on public.representative_regional_profiles(region_name);
+create index if not exists idx_restock_rep_status on public.regional_restock_requests(representative_user_id,status);
 
-## Orden correcto
+alter table public.representative_regional_profiles enable row level security;
+alter table public.regional_restock_requests enable row level security;
 
-### 1. Supabase
+drop policy if exists nv750_regional_select on public.representative_regional_profiles;
+create policy nv750_regional_select on public.representative_regional_profiles for select to authenticated
+using (public.is_admin_v7() or representative_user_id = auth.uid());
+drop policy if exists nv750_regional_insert on public.representative_regional_profiles;
+create policy nv750_regional_insert on public.representative_regional_profiles for insert to authenticated
+with check (public.is_admin_v7());
+drop policy if exists nv750_regional_update on public.representative_regional_profiles;
+create policy nv750_regional_update on public.representative_regional_profiles for update to authenticated
+using (public.is_admin_v7()) with check (public.is_admin_v7());
 
-Con una instalación que ya funciona en V7.3.0, ejecutar:
+drop policy if exists nv750_restock_select on public.regional_restock_requests;
+create policy nv750_restock_select on public.regional_restock_requests for select to authenticated
+using (public.is_admin_v7() or representative_user_id = auth.uid());
+drop policy if exists nv750_restock_insert on public.regional_restock_requests;
+create policy nv750_restock_insert on public.regional_restock_requests for insert to authenticated
+with check (representative_user_id = auth.uid());
+drop policy if exists nv750_restock_update on public.regional_restock_requests;
+create policy nv750_restock_update on public.regional_restock_requests for update to authenticated
+using (public.is_admin_v7()) with check (public.is_admin_v7());
 
-1. `sql/2026-07-15_v7_4_0_production.sql`
-2. `sql/2026-07-15_v7_4_0_verify.sql`
+grant select,insert,update on public.representative_regional_profiles to authenticated;
+grant select,insert,update on public.regional_restock_requests to authenticated;
 
-En una instalación nueva o incompleta, respetar este orden:
-
-1. `sql/2026-07-09_v7_2_0_stabilization.sql`
-2. `sql/2026-07-15_v7_3_0_representative_pricing.sql`
-3. `sql/2026-07-15_v7_4_0_production.sql`
-4. `sql/2026-07-15_v7_4_0_verify.sql`
-
-V7.2 corrige la auditoría de ventas; V7.3 consolida precios de representantes; V7.4 crea producción, insumos, lotes y costos.
-
-### 2. GitHub Pages
-
-1. Entra al repositorio `App-natura-vida`.
-2. Ve a **Settings → Pages**.
-3. En **Build and deployment → Source**, selecciona **GitHub Actions**.
-4. Guarda el cambio.
-5. Cancela ejecuciones antiguas que sigan en **Queued**.
-6. Reemplaza los archivos del repositorio con el contenido de este paquete.
-7. Haz commit en la rama `main`.
-8. En **Actions**, abre **Deploy Natura Vida to GitHub Pages**.
-9. Deben ejecutarse dos trabajos: **Validate and package** y **Deploy**.
-
-## Acciones actualizadas
-
-- `actions/checkout@v6`
-- `actions/configure-pages@v6`
-- `actions/upload-pages-artifact@v5`
-- `actions/deploy-pages@v5`
-
-El workflow publica una carpeta `_site` limpia. SQL, pruebas e informes permanecen en el repositorio, pero no quedan expuestos en la página publicada.
-
-## Si el despliegue vuelve a quedar en cola
-
-1. Revisa GitHub Status.
-2. Cancela el run antiguo.
-3. Abre el workflow y pulsa **Run workflow**.
-4. No vuelvas a cambiar la aplicación ni Supabase por un error de runner que ocurre antes de los logs.
+commit;

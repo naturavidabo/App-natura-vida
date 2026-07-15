@@ -1,298 +1,432 @@
-/* NATURA VIDA V7 — shell, navegación por rol y panel moderno. */
+/* NATURA VIDA V7 — funciones Supabase adicionales.
+   Supabase continúa siendo la única fuente persistente. */
 
 (() => {
-  const oldRenderMas = window.renderMas;
-  const oldRenderResumen = window.renderResumen;
-  const oldRenderReports = window.renderReportsFoundation;
+  const originalSyncAfterLogin = window.syncAfterLogin;
+  const originalRunBackgroundSyncOnce = window.runBackgroundSyncOnce;
+  const originalSetCloudConnectionState = window.setCloudConnectionState;
+  let v7Channel = null;
+  let v7RefreshTimer = null;
 
-  const BRAND_MAIN_LOGO = 'icons/icon-192.png';
+  AppState.commercialProfiles = AppState.commercialProfiles || [];
+  AppState.profileChangeRequests = AppState.profileChangeRequests || [];
+  AppState.allProfiles = AppState.allProfiles || [];
 
-  function displayNameV7() {
-    const session = AppState.session || {};
-    const raw = String(session.fullName || session.email || session.username || '').trim();
-    if (!raw) return 'Usuario Natura Vida';
-    if (raw.includes('@')) {
-      const local = raw.split('@')[0].replace(/[._-]+/g, ' ').trim();
-      if (local) return local.replace(/\b\w/g, c => c.toUpperCase());
-    }
-    return raw;
+  function v7Error(error, fallback = 'No se pudo completar la operación.') {
+    if (window.messageFromError) return messageFromError(error, fallback);
+    return String((error && error.message) || error || fallback);
   }
 
-  function displayInitialV7() {
-    return String(displayNameV7()).trim().charAt(0).toUpperCase() || 'N';
-  }
-
-  function v7Icon(name) {
-    const paths = {
-      home: '<path d="M4 10.8 12 4l8 6.8V20a1 1 0 0 1-1 1h-4.7v-5.4H9.7V21H5a1 1 0 0 1-1-1z"/>',
-      sell: '<path d="M5 5h10l4 4v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M14 5v5h5M7 14h8M7 17h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-      buy: '<path d="M4 5h2l1.3 9.2a2 2 0 0 0 2 1.8h7.4a2 2 0 0 0 2-1.6L20 8H7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>',
-      inventory: '<path d="M12 2.8 3.7 7v10L12 21.2 20.3 17V7z"/><path d="m4 7 8 4 8-4M12 11v10" fill="none" stroke="#fff" stroke-width="1.4" opacity=".7"/>',
-      orders: '<path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 8h8M8 12h8M8 16h5" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity=".75"/>',
-      more: '<circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/>',
-      bell: '<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 21h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      profile: '<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      users: '<path d="M9 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm6 1a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 15 12z"/><path d="M2.5 21a6.5 6.5 0 0 1 13 0M13 21a5.5 5.5 0 0 1 9 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-      clients: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      tag: '<path d="M3 11V5a2 2 0 0 1 2-2h6l10 10-8 8z"/><circle cx="8" cy="8" r="1.5" fill="#fff"/>',
-      chart: '<path d="M5 20V10M12 20V4M19 20v-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>',
-      settings: '<circle cx="12" cy="12" r="3.5"/><path d="M19 13.5v-3l-2-.7a7 7 0 0 0-.6-1.4l.9-1.9-2.1-2.1-1.9.9a7 7 0 0 0-1.4-.6L10.5 3h-3l-.7 2a7 7 0 0 0-1.4.6l-1.9-.9-2.1 2.1.9 1.9a7 7 0 0 0-.6 1.4l-2 .7v3l2 .7a7 7 0 0 0 .6 1.4l-.9 1.9 2.1 2.1 1.9-.9a7 7 0 0 0 1.4.6l.7 2h3l.7-2a7 7 0 0 0 1.4-.6l1.9.9 2.1-2.1-.9-1.9a7 7 0 0 0 .6-1.4z" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+  function mapCommercialProfile(row = {}) {
+    return {
+      userId: row.user_id,
+      businessName: row.business_name || '',
+      address: row.address || '',
+      locationLabel: row.location_label || '',
+      latitude: row.latitude == null ? null : Number(row.latitude),
+      longitude: row.longitude == null ? null : Number(row.longitude),
+      receiptMessage: row.receipt_message || '',
+      qrUrl: row.qr_url || '',
+      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
     };
-    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.more}</svg>`;
   }
 
-  function updateCloudStatusBadgeV7(status) {
-    const badge = document.getElementById('cloudStatusBadge');
-    if (!badge) return;
-    const state = !navigator.onLine ? 'offline' : ((status && status.state) || 'connecting');
-    const normalized = state === 'error' ? 'reconnecting' : state;
-    const labels = { online: 'En línea', connecting: 'Conectando', reconnecting: 'Reconectando', offline: 'Sin internet' };
-    badge.className = `cloudBadge v7Cloud ${normalized}`;
-    const text = badge.querySelector('b');
-    if (text) text.textContent = labels[normalized] || 'Conectando';
-    badge.title = (status && status.detail) || labels[normalized] || '';
+  function myCommercialProfile() {
+    const id = AppState.session && AppState.session.onlineUserId;
+    return AppState.commercialProfiles.find(p => p.userId === id) || {
+      userId: id,
+      businessName: '', address: '', locationLabel: '', latitude: null,
+      longitude: null, receiptMessage: '', qrUrl: ''
+    };
   }
 
-  function renderTopHeaderV7() {
-    const name = AppState.settings.businessName || 'NATURA VIDA';
-    const headerLogo = AppState.settings.logo || BRAND_MAIN_LOGO;
-    $('#bizName').textContent = name;
-    $('#bizLogo').innerHTML = `<img src="${headerLogo}" alt="${escapeHtml(name)}">`;
-    const subtitle = document.querySelector('header.top .bizsub');
-    if (subtitle) {
-      subtitle.textContent = requireAuth()
-        ? `${displayNameV7()} · ${isAdmin() ? 'Administración' : 'Representante'}`
-        : 'Te cuida por dentro y por fuera';
-    }
-    if (window.installInboxButton) {
-      installInboxButton();
-      refreshInboxBadge({ silent: true }).catch(() => {});
-    }
-    updateCloudStatusBadgeV7(window.CloudConnection);
+  function commercialProfileFor(userId) {
+    return AppState.commercialProfiles.find(p => p.userId === userId) || null;
   }
 
-  function navItemsV7() {
-    if (isAdmin()) return [
-      ['inicio', 'home', 'Inicio'],
-      ['inventario', 'inventory', 'Inventario'],
-      ['vender', 'sell', 'Ventas'],
-      ['pedidos', 'orders', 'Pedidos'],
-      ['mas', 'more', 'Más']
-    ];
-    return [
-      ['inicio', 'home', 'Inicio'],
-      ['vender', 'sell', 'Ventas'],
-      ['compra', 'buy', 'Compra'],
-      ['inventario', 'inventory', 'Mi stock'],
-      ['mas', 'more', 'Más']
-    ];
+  async function fetchCommercialProfilesV7() {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('commercial_profiles').select('*').order('updated_at', { ascending: false });
+    if (error) return { ok: false, message: v7Error(error) };
+    AppState.commercialProfiles = (data || []).map(mapCommercialProfile);
+    return { ok: true, profiles: AppState.commercialProfiles };
   }
 
-  function renderBottomNavV7() {
-    const nav = $('#bottomNav');
-    if (!nav || !requireAuth()) return;
-    nav.innerHTML = navItemsV7().map(([tab, iconName, label]) => `
-      <button data-tab="${tab}" aria-label="${label}">
-        <span class="ic">${v7Icon(iconName)}</span><span class="tx">${label}</span>
-      </button>`).join('');
-    $all('button', nav).forEach(btn => btn.addEventListener('click', () => navigateToV7(btn.dataset.tab)));
-    highlightActiveV7();
+  async function fetchProfileChangeRequestsV7() {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('profile_change_requests').select('*').order('created_at', { ascending: false }).limit(200);
+    if (error) return { ok: false, message: v7Error(error) };
+    AppState.profileChangeRequests = (data || []).map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      fieldName: row.field_name,
+      oldValue: row.old_value || '',
+      newValue: row.new_value || '',
+      status: row.status || 'pending',
+      reviewedBy: row.reviewed_by || null,
+      reviewNote: row.review_note || '',
+      createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+      reviewedAt: row.reviewed_at ? new Date(row.reviewed_at).getTime() : null
+    }));
+    return { ok: true, requests: AppState.profileChangeRequests };
   }
 
-  function highlightActiveV7() {
-    $all('#bottomNav button').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === AppState.currentTab));
+  async function fetchAllProfilesV7() {
+    if (!isAdmin()) return { ok: true, profiles: [] };
+    const res = await fetchAllProfilesForAdmin();
+    if (res && res.ok) AppState.allProfiles = res.profiles || [];
+    return res;
   }
 
-  function canAccessV7(tab) {
-    if (!requireAuth()) return false;
-    if (isAdmin()) return !['compra', 'perfil-cambio'].includes(tab);
-    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'estadisticas', 'por-cobrar', 'cotizaciones', 'ajustes'].includes(tab);
+  async function syncV7Context() {
+    const tasks = [fetchCommercialProfilesV7(), fetchProfileChangeRequestsV7()];
+    if (isAdmin()) tasks.push(fetchAllProfilesV7());
+    const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: v7Error(error) }))));
+    try {
+      const sb = await requireClient();
+      const { data } = await sb.from('profiles').select('*').eq('id', AppState.session.onlineUserId).maybeSingle();
+      if (data && AppState.session) {
+        AppState.session.discountPercent = Number(data.representative_discount_percent || 0);
+        AppState.session.priceGroupId = data.representative_price_group_id || '';
+        AppState.session.phone = data.phone || AppState.session.phone || '';
+        AppState.session.city = data.city || AppState.session.city || '';
+        AppState.session.fullName = data.full_name || AppState.session.fullName;
+      }
+    } catch (_) {}
+    const failed = results.find(r => r && r.ok === false);
+    return failed || { ok: true };
   }
 
-  function navigateToV7(tab) {
-    // Compatibilidad con botones antiguos: el módulo se llama distinto según el rol.
-    if (tab === 'pedido') tab = isAdmin() ? 'pedidos' : 'compra';
-    if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
-    if (!canAccessV7(tab)) return;
-    if (tab === 'ajustes' && !isAdmin()) tab = 'perfil';
-    if (window.V7_FORM_DIRTY && tab !== AppState.currentTab) {
-      const leave = window.confirm('Hay cambios sin guardar en esta pantalla. ¿Salir y descartarlos?');
-      if (!leave) return;
-    }
-    window.V7_FORM_DIRTY = false;
-    AppState.currentTab = tab;
-    highlightActiveV7();
-    renderV7();
+  async function saveCommercialProfileV7(profile = {}) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('update_my_commercial_profile_v7', {
+        p_business_name: String(profile.businessName || ''),
+        p_address: String(profile.address || ''),
+        p_location_label: String(profile.locationLabel || ''),
+        p_latitude: profile.latitude === '' || profile.latitude == null ? null : Number(profile.latitude),
+        p_longitude: profile.longitude === '' || profile.longitude == null ? null : Number(profile.longitude),
+        p_receipt_message: String(profile.receiptMessage || ''),
+        p_qr_url: String(profile.qrUrl || '')
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await fetchCommercialProfilesV7();
+      return { ok: true, profile: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
   }
 
-  function renderV7() {
-    if (!requireAuth()) {
-      renderLoginScreen();
+  async function uploadPaymentQrV7(dataUrl) {
+    try {
+      if (!dataUrl || !String(dataUrl).startsWith('data:image/')) return { ok: false, message: 'Selecciona y recorta primero una imagen QR.' };
+      const sb = await requireClient();
+      const userId = AppState.session && AppState.session.onlineUserId;
+      if (!userId) return { ok: false, message: 'La sesión no está activa.' };
+      const blob = dataUrlToBlob(dataUrl);
+      const path = `${userId}/qr-current.jpg`;
+      const { error } = await sb.storage.from('payment-assets').upload(path, blob, {
+        upsert: true,
+        contentType: 'image/jpeg',
+        cacheControl: '86400'
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      const { data } = sb.storage.from('payment-assets').getPublicUrl(path);
+      if (!data || !data.publicUrl) return { ok: false, message: 'No se obtuvo la dirección pública del QR.' };
+      return { ok: true, url: `${data.publicUrl}?v=${Date.now()}` };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function deletePaymentQrV7() {
+    try {
+      const sb = await requireClient();
+      const userId = AppState.session && AppState.session.onlineUserId;
+      if (!userId) return { ok: false, message: 'La sesión no está activa.' };
+      const { error } = await sb.storage.from('payment-assets').remove([`${userId}/qr-current.jpg`]);
+      if (error) return { ok: false, message: v7Error(error) };
+      return { ok: true };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function requestProfileChangeV7(fieldName, newValue) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('request_profile_change_v7', {
+        p_field_name: String(fieldName || ''),
+        p_new_value: String(newValue || '')
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await fetchProfileChangeRequestsV7();
+      return { ok: true, request: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function reviewProfileChangeV7(requestId, decision, note = '') {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_review_profile_change_v7', {
+        p_request_id: String(requestId),
+        p_decision: String(decision),
+        p_note: String(note || '')
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await Promise.all([fetchProfileChangeRequestsV7(), fetchAllProfilesV7()]);
+      return { ok: true, request: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  function mapV7OrderRow(row = {}) {
+    const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+    return Object.assign({}, payload, {
+      id: row.id,
+      orderNumber: row.order_number || payload.orderNumber || '',
+      receiptNumber: row.receipt_number || payload.receiptNumber || '',
+      source: row.source || payload.source || 'representative',
+      representativeId: row.representative_user_id,
+      representativeName: row.representative_name || payload.representativeName || '',
+      status: row.status || payload.status || 'submitted',
+      paymentStatus: row.payment_status || payload.paymentStatus || 'pending',
+      total: Number(row.total || payload.total || 0),
+      note: row.note || payload.note || '',
+      createdAt: row.created_at ? new Date(row.created_at).getTime() : (payload.createdAt || Date.now()),
+      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : (payload.updatedAt || Date.now()),
+      approvedAt: row.approved_at ? new Date(row.approved_at).getTime() : (payload.approvedAt || null),
+      paidAt: row.paid_at ? new Date(row.paid_at).getTime() : (payload.paidAt || null),
+      syncStatus: 'cloud'
+    });
+  }
+
+  async function fetchCloudPurchaseOrdersV7() {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(300);
+      if (error) return { ok: false, message: v7Error(error) };
+      return { ok: true, orders: (data || []).map(mapV7OrderRow) };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function refreshOrdersV7() {
+    const res = await fetchCloudPurchaseOrdersV7();
+    if (!res.ok) return res;
+    await DB.clear('purchaseOrders');
+    if (res.orders.length) await DB.bulkPut('purchaseOrders', res.orders, { silent: true });
+    return res;
+  }
+
+  async function createPurchaseOrderV7(order) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('create_purchase_order_v7', { p_order: order });
+      if (error) return { ok: false, message: v7Error(error) };
+      await refreshOrdersV7();
+      return { ok: true, order: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function adminCreateDirectOrderV7(representativeUserId, order) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_create_direct_order_v7', {
+        p_representative_user_id: representativeUserId,
+        p_order: order
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await refreshOrdersV7();
+      return { ok: true, order: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function adminUpdateOrderV7(orderId, order) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_update_purchase_order_v7', {
+        p_order_id: String(orderId),
+        p_order: order
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await refreshOrdersV7();
+      return { ok: true, order: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function adminApproveOrderV7(orderId) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_approve_purchase_order_v7', { p_order_id: String(orderId) });
+      if (error) return { ok: false, message: v7Error(error) };
+      await refreshOrdersV7();
+      return { ok: true, order: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function adminConfirmOrderPaymentV7(orderId) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_confirm_order_payment_v7', { p_order_id: String(orderId) });
+      if (error) return { ok: false, message: v7Error(error) };
+      await Promise.all([refreshOrdersV7(), syncCloudProductsToLocal()]);
+      return { ok: true, order: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function cancelPurchaseOrderV7(orderId) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('cancel_purchase_order_v7', { p_order_id: String(orderId) });
+      if (error) return { ok: false, message: v7Error(error) };
+      await refreshOrdersV7();
+      return { ok: true, order: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+
+  async function representativeUpdateOrderV7(orderId, order) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('representative_update_purchase_order_v7', {
+        p_order_id: String(orderId),
+        p_order: order
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await refreshOrdersV7();
+      return { ok: true, order: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function setRepresentativeDiscountV7(userId, percent) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_set_representative_discount_v7', {
+        p_user_id: userId,
+        p_percent: Number(percent || 0)
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await fetchAllProfilesV7();
+      return { ok: true, profile: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function setRepresentativePricingV730(userId, priceGroupId, percent) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_set_representative_pricing_v730', {
+        p_user_id: userId,
+        p_price_group_id: String(priceGroupId || ''),
+        p_discount_percent: Number(percent || 0)
+      });
+      if (error) {
+        // Compatibilidad temporal: el descuento antiguo sigue guardándose aunque falte el SQL V7.3.
+        const fallback = await setRepresentativeDiscountV7(userId, percent);
+        if (!fallback.ok) return { ok: false, message: v7Error(error) };
+        return { ok: true, profile: fallback.profile, groupPendingMigration: true, message: 'Descuento guardado. Ejecuta el SQL V7.3 para activar el grupo en la cuenta del representante.' };
+      }
+      await fetchAllProfilesV7();
+      return { ok: true, profile: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function adminUpdateProfileNameV7(userId, fullName) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('admin_update_profile_name_v7', {
+        p_user_id: userId,
+        p_full_name: String(fullName || '')
+      });
+      if (error) return { ok: false, message: v7Error(error) };
+      await fetchAllProfilesV7();
+      return { ok: true, profile: data };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function nextDocumentNumberV7(prefix) {
+    try {
+      const sb = await requireClient();
+      const { data, error } = await sb.rpc('next_document_number_v7', { p_prefix: String(prefix || 'NV-DOC') });
+      return error ? { ok: false, message: v7Error(error) } : { ok: true, number: String(data || '') };
+    } catch (error) { return { ok: false, message: v7Error(error) }; }
+  }
+
+  async function activeRepresentativesV7() {
+    const res = await fetchAllProfilesV7();
+    if (!res || !res.ok) return [];
+    return (res.profiles || []).filter(p => String(p.role || '').toLowerCase() !== 'administrador' && String(p.status || '').toLowerCase() === 'activo');
+  }
+
+  function stopV7Realtime() {
+    clearTimeout(v7RefreshTimer);
+    const sb = getSupabaseClient();
+    if (sb && v7Channel) sb.removeChannel(v7Channel).catch(() => {});
+    v7Channel = null;
+  }
+
+  function scheduleV7Refresh() {
+    clearTimeout(v7RefreshTimer);
+    v7RefreshTimer = setTimeout(async () => {
+      await syncV7Context().catch(() => {});
+      if (window.render && !window.V7_FORM_DIRTY) render();
+    }, 220);
+  }
+
+  function startV7Realtime() {
+    // V7.1.1: commercial_profiles y profile_change_requests ya forman parte
+    // del canal Realtime principal. Se evita abrir un segundo canal duplicado.
+    return true;
+  }
+
+  async function syncAfterLoginV7() {
+    const base = originalSyncAfterLogin ? await originalSyncAfterLogin() : { ok: true };
+    await syncV7Context();
+    return base;
+  }
+
+  async function runBackgroundSyncV7(reason = 'automatic') {
+    const base = originalRunBackgroundSyncOnce ? await originalRunBackgroundSyncOnce(reason) : { ok: true };
+    await syncV7Context();
+    return base;
+  }
+
+  // Evita que el indicador cambie a “Conectando” por cada lectura o guardado.
+  window.setCloudConnectionState = function v7ConnectionState(state, detail = '') {
+    const current = window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' };
+    const importantConnecting = /reconect|internet recuperado|abriendo realtime|inicio de sesión|verificando acceso|creando cuenta/i.test(String(detail));
+    if (state === 'connecting' && current.state === 'online' && navigator.onLine && !importantConnecting) {
+      current.detail = detail || 'Actualizando datos';
+      current.updatedAt = Date.now();
+      window.dispatchEvent(new CustomEvent('nv:connection', { detail: Object.assign({}, current) }));
       return;
     }
-    $('#fabAdd').classList.add('hidden');
-    $('#fabAdd').onclick = null;
-    const cartBar = $('#cartBar');
-    if (cartBar && !['vender', 'compra'].includes(AppState.currentTab)) cartBar.classList.add('hidden');
-    switch (AppState.currentTab) {
-      case 'inicio': renderInicioV7(); break;
-      case 'inventario': renderInventario(); break;
-      case 'vender': renderVender(); break;
-      case 'compra': renderOrderRequest(); break;
-      case 'pedidos': renderAdminOrdersInbox(); break;
-      case 'clientes': renderClients(); break;
-      case 'inbox': openInboxPanel(); break;
-      case 'perfil': renderProfileV7(); break;
-      case 'historial': renderHistoryV7(); break;
-      case 'estadisticas': window.renderCommercialStatsV7 ? renderCommercialStatsV7() : renderInicioV7(); break;
-      case 'por-cobrar': window.renderReceivablesV725 ? renderReceivablesV725() : renderInicioV7(); break;
-      case 'egresos': isAdmin() && window.renderFinanceV725 ? renderFinanceV725() : renderInicioV7(); break;
-      case 'cotizaciones': window.renderQuotes ? renderQuotes() : renderInicioV7(); break;
-      case 'grupos': renderPriceGroups(); break;
-      case 'usuarios': renderUsersFoundation(); break;
-      case 'resumen': oldRenderResumen ? oldRenderResumen() : renderInicioV7(); break;
-      case 'reportes-pro': oldRenderReports ? oldRenderReports() : renderInicioV7(); break;
-      case 'ajustes': isAdmin() ? renderSettings() : renderProfileV7(); break;
-      case 'mas': renderMasV7(); break;
-      default: renderInicioV7();
-    }
-  }
-
-  function roleGreeting() {
-    const hour = new Date().getHours();
-    const greet = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
-    const firstName = String(displayNameV7()).trim().split(/\s+/)[0] || 'bienvenido';
-    return `${greet}, ${firstName}`;
-  }
-
-  function pendingOrderCount() {
-    return (AppState.purchaseOrders || []).filter(o => !['paid', 'cancelled', 'rejected'].includes(o.status)).length;
-  }
-
-  async function getOrdersMemoryV7() {
-    const rows = await DB.getAll('purchaseOrders').catch(() => []);
-    AppState.purchaseOrders = rows;
-    return rows;
-  }
-
-  async function renderInicioV7() {
-    const main = $('#mainArea');
-    const orders = await getOrdersMemoryV7();
-    const sales = AppState.sales || [];
-    const ownSales = isAdmin() ? sales : sales.filter(s => s.sellerId === AppState.session.userId);
-    const todayKey = new Date().toDateString();
-    const todaySales = ownSales.filter(s => new Date(s.date).toDateString() === todayKey);
-    const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
-    const unread = (AppState.messages || []).filter(m => messageVisibleForCurrentUser(m) && m.status !== 'read').length;
-    const ownOrders = isAdmin() ? orders : orders.filter(o => o.representativeId === AppState.session.userId);
-    const ownStock = AppState.products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
-    const name = displayNameV7();
-
-    main.innerHTML = `
-      <section class="v7Hero">
-        <div class="v7HeroGlow"></div>
-        <span class="v7Eyebrow">${isAdmin() ? 'Centro de operaciones' : 'Mi negocio Natura Vida'}</span>
-        <h1>${escapeHtml(roleGreeting())}</h1>
-        <p>${isAdmin()
-          ? 'Controla productos, ventas, pedidos y representantes desde una sola base en tiempo real.'
-          : 'Vende, compra reposición y administra tu inventario con datos oficiales de Supabase.'}</p>
-        <div class="v7Identity"><span>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</span><strong>${escapeHtml(name)}</strong></div>
-      </section>
-
-      <section class="v7MetricGrid">
-        <article class="v7MetricCard primary"><span>Ventas hoy</span><strong>${fmtMoney(todayTotal)}</strong><small>${todaySales.length} operación(es)</small></article>
-        <article class="v7MetricCard"><span>${isAdmin() ? 'Pedidos abiertos' : 'Mis pedidos'}</span><strong>${isAdmin() ? orders.filter(o => !['paid','cancelled','rejected'].includes(o.status)).length : ownOrders.length}</strong><small>actualización automática</small></article>
-        <article class="v7MetricCard"><span>${isAdmin() ? 'Productos activos' : 'Unidades propias'}</span><strong>${isAdmin() ? AppState.products.length : ownStock}</strong><small>${isAdmin() ? 'catálogo central' : 'inventario disponible'}</small></article>
-        <article class="v7MetricCard notification"><span>Notificaciones</span><strong>${unread}</strong><small>pendientes de lectura</small></article>
-      </section>
-
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Actividad reciente</span><h2>Todo bajo control</h2></div><span class="v7LiveChip">Realtime</span></div>
-        ${(AppState.messages || []).filter(messageVisibleForCurrentUser).slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,4).map(m => `
-          <button class="v7ActivityRow" data-open-inbox="1"><span class="v7ActivityIcon">${m.type === 'purchase_order' ? '🛒' : m.type.includes('profile') ? '👤' : '✓'}</span><span><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.body)} · ${fmtDateTime(m.createdAt)}</small></span><b>›</b></button>
-        `).join('') || `<div class="v7EmptyInline"><span>🌿</span><div><strong>Aún no hay actividad</strong><small>Los movimientos aparecerán automáticamente.</small></div></div>`}
-      </section>
-
-      <section class="v7Panel v7NaturePanel">
-        <div><span class="v7Eyebrow">Natura Vida V7</span><h2>Simple por fuera. Potente por dentro.</h2><p>Una sola base oficial, actualización automática y operaciones únicamente al contado.</p></div>
-        <div class="v7NatureMark">NV</div>
-      </section>
-    `;
-    $all('[data-open-inbox]', main).forEach(b => b.addEventListener('click', () => openInboxPanel()));
-  }
-
-  function moreItem(id, iconName, title, subtitle = '', badge = '') {
-    return `<button class="v7MoreItem" id="${id}"><span class="v7MoreIcon">${v7Icon(iconName)}</span><span><strong>${title}</strong>${subtitle ? `<small>${subtitle}</small>` : ''}</span>${badge ? `<em>${badge}</em>` : ''}<b>›</b></button>`;
-  }
-
-  function renderMasV7() {
-    const main = $('#mainArea');
-    const cp = window.myCommercialProfile ? myCommercialProfile() : {};
-    main.innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Configuración y herramientas</span><h1>Más opciones</h1><p>Solo se muestran funciones disponibles para tu rol.</p></section>
-      <section class="v7ProfileSummary">
-        <div class="v7Avatar">${escapeHtml(displayInitialV7())}</div>
-        <div><strong>${escapeHtml(displayNameV7())}</strong><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : (cp.businessName || 'Representante Natura Vida')}</small></div>
-      </section>
-      <section class="v7MoreList">
-        ${moreItem('v7MoreInbox', 'bell', 'Bandeja y actividad', 'Avisos, aprobaciones y comprobantes')}
-        ${moreItem('v7MoreClients', 'clients', 'Clientes', 'Directorio e historial de compras')}
-        ${moreItem('v7MoreHistory', 'chart', 'Ventas y recibos', 'Historial permanente de operaciones')}
-        ${moreItem('v7MoreStats', 'chart', 'Estadísticas comerciales', 'Productos, clientes, recargos y rebajas')}
-        ${moreItem('v7MoreReceivables', 'tag', 'Ventas por cobrar', 'Saldos pendientes y pagos parciales')}
-        ${moreItem('v7MoreQuotes', 'tag', 'Precios / cotizaciones', 'Ofertas personalizadas para clientes')}
-        ${isAdmin() ? moreItem('v7MoreFinance', 'chart', 'Egresos e insumos', 'Materia prima, envases y balance básico') : ''}
-        ${moreItem('v7MoreCatalog', 'tag', 'Catálogo PDF', 'Descargar o compartir con cualquier aplicación')}
-        ${moreItem('v7MoreProfile', 'profile', 'Perfil comercial y QR', 'Datos para recibos y cobros')}
-        ${isAdmin() ? moreItem('v7MoreUsers', 'users', 'Representantes', 'Aprobar, bloquear y personalizar descuento') : ''}
-        ${isAdmin() ? moreItem('v7MoreGroups', 'tag', 'Grupos de precios', 'Reglas generales de precios') : ''}
-        ${isAdmin() ? moreItem('v7MoreSettings', 'settings', 'Configuración del negocio', 'Marca, contacto y parámetros') : ''}
-        ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
-      </section>
-      <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.2.5')} · Supabase · Realtime</div>
-    `;
-    $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
-    $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
-    $('#v7MoreHistory').addEventListener('click', () => navigateToV7('historial'));
-    $('#v7MoreStats').addEventListener('click', () => navigateToV7('estadisticas'));
-    $('#v7MoreReceivables').addEventListener('click', () => navigateToV7('por-cobrar'));
-    $('#v7MoreQuotes').addEventListener('click', () => navigateToV7('cotizaciones'));
-    if ($('#v7MoreFinance')) $('#v7MoreFinance').addEventListener('click', () => navigateToV7('egresos'));
-    $('#v7MoreCatalog').addEventListener('click', () => openCatalogPdfOptions());
-    $('#v7MoreProfile').addEventListener('click', () => navigateToV7('perfil'));
-    if ($('#v7MoreUsers')) $('#v7MoreUsers').addEventListener('click', () => navigateToV7('usuarios'));
-    if ($('#v7MoreGroups')) $('#v7MoreGroups').addEventListener('click', () => navigateToV7('grupos'));
-    if ($('#v7MoreSettings')) $('#v7MoreSettings').addEventListener('click', () => navigateToV7('ajustes'));
-    if ($('#v7MoreUpdates')) $('#v7MoreUpdates').addEventListener('click', () => window.openUpdateCenter ? openUpdateCenter() : showToast('El módulo de actualización no está disponible.', 'error'));
-    $('#v7LogoutBtn').addEventListener('click', logoutSession);
-  }
-
-  function renderHistoryV7() {
-    const sales = (AppState.sales || []).filter(s => isAdmin() || s.sellerId === AppState.session.userId).slice().sort((a,b)=>b.date-a.date);
-    $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Registro permanente</span><h1>Ventas y recibos</h1><p>Todas las operaciones confirmadas al contado.</p></section>
-      <section class="v7HistoryList">
-        ${sales.map(s => `<button class="v7HistoryCard" data-sale-id="${s.id}"><span><strong>${escapeHtml(s.documentNumber || s.receiptNumber || 'Venta')}</strong><small>${escapeHtml(s.clientName || 'Cliente')} · ${fmtDateTime(s.date)}</small></span><span><b>${fmtMoney(s.total)}</b><small>${s.type && s.type.includes('wholesale') ? 'Mayorista' : 'Unitaria'}</small></span></button>`).join('') || `<div class="v7Empty"><span>🧾</span><h3>Sin ventas registradas</h3><p>Los recibos aparecerán aquí al confirmar ventas.</p></div>`}
-      </section>`;
-    $all('[data-sale-id]').forEach(btn => btn.addEventListener('click', () => {
-      const sale = sales.find(s => s.id === btn.dataset.saleId);
-      if (sale) openV7ReceiptPreview(sale, 'sale');
-    }));
-  }
+    return originalSetCloudConnectionState ? originalSetCloudConnectionState(state, detail) : undefined;
+  };
 
   Object.assign(window, {
-    v7Icon,
-    displayNameV7,
-    displayInitialV7,
-    updateCloudStatusBadge: updateCloudStatusBadgeV7,
-    renderTopHeader: renderTopHeaderV7,
-    renderBottomNav: renderBottomNavV7,
-    navigateTo: navigateToV7,
-    render: renderV7,
-    renderInicio: renderInicioV7,
-    renderMas: renderMasV7,
-    renderHistoryV7,
-    canAccessTab: canAccessV7
+    myCommercialProfile,
+    commercialProfileFor,
+    fetchCommercialProfilesV7,
+    fetchProfileChangeRequestsV7,
+    fetchAllProfilesV7,
+    syncV7Context,
+    saveCommercialProfileV7,
+    uploadPaymentQrV7,
+    deletePaymentQrV7,
+    requestProfileChangeV7,
+    reviewProfileChangeV7,
+    mapV7OrderRow,
+    fetchCloudPurchaseOrders: fetchCloudPurchaseOrdersV7,
+    fetchCloudPurchaseOrdersV7,
+    refreshOrdersV7,
+    createPurchaseOrderV7,
+    adminCreateDirectOrderV7,
+    adminUpdateOrderV7,
+    adminApproveOrderV7,
+    adminConfirmOrderPaymentV7,
+    cancelPurchaseOrderV7,
+    representativeUpdateOrderV7,
+    setRepresentativeDiscountV7,
+    setRepresentativePricingV730,
+    adminUpdateProfileNameV7,
+    nextDocumentNumberV7,
+    activeRepresentativesV7,
+    startV7Realtime,
+    stopV7Realtime,
+    syncAfterLogin: syncAfterLoginV7,
+    runBackgroundSyncOnce: runBackgroundSyncV7
   });
 })();

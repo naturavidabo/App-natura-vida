@@ -1,139 +1,1071 @@
-/* NATURA VIDA V7 — inventario propio y ventas al contado del representante.
-   V7.2.3: precios manuales por producto, grupos y trazabilidad. */
+/* Natura Vida V7 — Supabase único + Realtime.
+   - Supabase Auth/PostgreSQL/Storage son la única fuente persistente.
+   - No lee URL/key desde el teléfono.
+   - No existe cola offline ni sincronización manual.
+   - La memoria del navegador se repuebla desde Supabase al iniciar sesión
+     y ante cada evento Realtime permitido por RLS. */
 
-(() => {
-  const originalRenderInventario = window.renderInventario;
-  const originalRenderVender = window.renderVender;
-  let saleType = 'reseller_unit';
-  let saleSearch = '';
-  let saleCart = {};
-  let saleManualPrices = {};
-  let saleSelectedGroup = null;
+let _supabaseClient = null;
+let _realtimeChannel = null;
+let _realtimeRestartTimer = null;
+let _backgroundStarted = false;
+let _refreshInFlight = null;
+let _deferredRenderPending = false;
 
-  function renderRepresentativeInventoryV7() {
-    $('#fabAdd').classList.add('hidden');
-    const products = AppState.products.filter(p => p.status !== 'archived' && Number(p.stock || 0) > 0);
-    const totalUnits = products.reduce((s,p)=>s+Number(p.stock||0),0);
-    const invested = products.reduce((s,p)=>s+(resellerEffectiveCost(p)*Number(p.stock||0)),0);
-    $('#mainArea').innerHTML = `
-      <section class="v7PageHead"><span class="v7Eyebrow">Productos confirmados y pagados</span><h1>Inventario propio</h1><p>Tu stock se actualiza únicamente cuando Natura Vida confirma el pago de una compra.</p></section>
-      <section class="v7MetricGrid compact"><article class="v7MetricCard"><span>Productos</span><strong>${products.length}</strong></article><article class="v7MetricCard"><span>Unidades</span><strong>${totalUnits}</strong></article><article class="v7MetricCard primary"><span>Inversión estimada</span><strong>${fmtMoney(invested)}</strong></article></section>
-      <div class="v7CashNotice">Puedes definir libremente tu precio unitario y mayorista. Durante la venta también puedes negociar precios por producto.</div>
-      <section class="v7ProductGrid v7OwnInventory">
-        ${products.map(p=>`<article class="v7ProductCard"><div class="v7ProductImage">${p.photo?`<img src="${p.photo}" alt="" loading="lazy" decoding="async">`:'<span>NV</span>'}</div><div class="v7ProductBody"><small>${escapeHtml(p.category||'General')}</small><h3>${escapeHtml(p.name)}</h3><div class="v7StockBig"><span>Stock propio</span><strong>${p.stock}</strong></div><div class="v7PricePair"><div><span>Unitario</span><strong>${fmtMoney(resellerLocalUnitPrice(p))}</strong></div><div><span>Mayorista</span><strong>${fmtMoney(resellerLocalWholesalePrice(p))}</strong></div></div><button class="btn outline block v7EditOwnPrices" data-id="${p.id}">Editar mis precios base</button><button class="btn block v7SellOwnProduct" data-id="${p.id}">Vender</button></div></article>`).join('') || `<div class="v7Empty"><span>📦</span><h3>Aún no tienes inventario</h3><p>Compra productos en Compra online. Aparecerán aquí después de confirmar el pago.</p><button class="btn" id="goBuyFromEmpty">Ir a Compra online</button></div>`}
-      </section>`;
-    $all('.v7EditOwnPrices').forEach(b=>b.addEventListener('click',()=>openOwnPriceEditor(b.dataset.id)));
-    $all('.v7SellOwnProduct').forEach(b=>b.addEventListener('click',()=>{saleCart={[b.dataset.id]:1};saleManualPrices={};navigateTo('vender');}));
-    if($('#goBuyFromEmpty'))$('#goBuyFromEmpty').addEventListener('click',()=>navigateTo('compra'));
+const CloudConnection = {
+  state: navigator.onLine ? 'connecting' : 'offline',
+  detail: '',
+  updatedAt: Date.now()
+};
+
+
+function shouldDeferCloudRender() {
+  if (window.V7_FORM_DIRTY) return true;
+  const active = document.activeElement;
+  if (!active) return false;
+  const tag = String(active.tagName || '').toUpperCase();
+  return ['INPUT','TEXTAREA','SELECT'].includes(tag) && !active.readOnly && !active.disabled;
+}
+
+function renderAfterCloudRefresh() {
+  if (!window.render) return;
+  if (shouldDeferCloudRender()) {
+    _deferredRenderPending = true;
+    return;
   }
+  _deferredRenderPending = false;
+  render();
+}
 
-  function openOwnPriceEditor(id) {
-    const p=AppState.products.find(x=>x.id===id); if(!p)return;
-    const base=resellerAcquisitionCost(p); const extra=resellerAdditionalCost(p);
-    openSheet(`<h2>Mis precios base <span class="x" id="closeSheet">✕</span></h2><div class="v7ProductMini"><div>${p.photo?`<img src="${p.photo}" alt="" loading="lazy" decoding="async">`:'NV'}</div><span><strong>${escapeHtml(p.name)}</strong><small>Stock oficial: ${p.stock} · no editable</small></span></div><div class="field-row"><div class="field"><label>Costo promedio pagado a Natura Vida</label><input value="${base}" readonly></div><div class="field"><label>Transporte / costo adicional</label><input id="ownExtra" type="number" min="0" step="0.01" value="${extra||0}"></div></div><div class="field-row"><div class="field"><label>Mi precio unitario base</label><input id="ownUnit" type="number" min="0" step="0.01" value="${resellerLocalUnitPrice(p)||''}"></div><div class="field"><label>Mi precio mayorista base</label><input id="ownWholesale" type="number" min="0" step="0.01" value="${resellerLocalWholesalePrice(p)||''}"></div></div><div class="field"><label>Nota comercial opcional</label><input id="ownNote" value="${escapeHtml(p.resellerLocalNote||'')}" placeholder="Ej.: envío incluido"></div><div class="v7PricePreview"><span>Costo real estimado</span><strong id="ownCostPreview"></strong></div><button class="btn block" id="saveOwnPrices">Guardar precios base</button>`,(overlay,close)=>{
-      const calc=()=>{$('#ownCostPreview',overlay).textContent=fmtMoney(base+Number($('#ownExtra',overlay).value||0));};calc();$('#ownExtra',overlay).addEventListener('input',calc);$('#closeSheet',overlay).addEventListener('click',close);
-      $('#saveOwnPrices',overlay).addEventListener('click',async()=>{const additionalCost=roundBs(Number($('#ownExtra',overlay).value||0));const unitPrice=roundBs(Number($('#ownUnit',overlay).value||0));const wholesalePrice=roundBs(Number($('#ownWholesale',overlay).value||0));const real=roundBs(base+additionalCost);if(unitPrice<=0||wholesalePrice<=0)return showToast('Ingresa ambos precios de venta.','error');if(unitPrice<real||wholesalePrice<real)return showToast('Los precios base no pueden quedar por debajo de tu costo real.','error');const btn=$('#saveOwnPrices',overlay);btn.disabled=true;btn.textContent='Guardando…';const res=await updateRepresentativeInventoryRemote(p.id,0,{additionalCost,unitPrice,wholesalePrice,note:$('#ownNote',overlay).value.trim()});if(!res.ok){btn.disabled=false;btn.textContent='Reintentar';return showToast(res.message,'error');}p.resellerAdditionalCost=additionalCost;p.resellerLocalUnitPrice=unitPrice;p.resellerLocalWholesalePrice=wholesalePrice;p.resellerLocalNote=$('#ownNote',overlay).value.trim();await DB.put('products',p,{silent:true});close();showToast('Precios actualizados.');renderRepresentativeInventoryV7();});
+function flushDeferredCloudRender() {
+  if (!_deferredRenderPending || shouldDeferCloudRender()) return;
+  _deferredRenderPending = false;
+  if (window.render) render();
+}
+
+document.addEventListener('focusout', () => setTimeout(flushDeferredCloudRender, 180));
+window.addEventListener('nv:form-saved', flushDeferredCloudRender);
+
+function effectiveOnlineConfig() {
+  return window.NATURA_ONLINE_CONFIG || {};
+}
+
+function getSavedOnlineConfig() { return null; }
+function saveOnlineConfig() { return effectiveOnlineConfig(); }
+
+function getOnlineConfigValue(key) {
+  const value = effectiveOnlineConfig()[key] || '';
+  return String(value).includes('PEGAR_AQUI') ? '' : value;
+}
+
+function isOnlineConfigured() {
+  const cfg = effectiveOnlineConfig();
+  return Boolean(
+    cfg.enabled !== false &&
+    cfg.supabaseUrl &&
+    cfg.supabaseAnonKey &&
+    !String(cfg.supabaseUrl).includes('PEGAR_AQUI') &&
+    !String(cfg.supabaseAnonKey).includes('PEGAR_AQUI')
+  );
+}
+
+function setCloudConnectionState(state, detail = '') {
+  CloudConnection.state = state;
+  CloudConnection.detail = detail || '';
+  CloudConnection.updatedAt = Date.now();
+  window.dispatchEvent(new CustomEvent('nv:connection', {
+    detail: Object.assign({}, CloudConnection)
+  }));
+}
+
+function getSupabaseClient() {
+  if (!isOnlineConfigured()) return null;
+  if (_supabaseClient) return _supabaseClient;
+  if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+    setCloudConnectionState('error', 'No cargó la librería de Supabase');
+    return null;
+  }
+  const cfg = effectiveOnlineConfig();
+  _supabaseClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: 'nv7-auth'
+    },
+    realtime: { params: { eventsPerSecond: 10 } }
+  });
+  return _supabaseClient;
+}
+
+function appRedirectUrl() {
+  const path = window.location.pathname.replace(/index\.html$/i, '');
+  return `${window.location.origin}${path}`;
+}
+
+function messageFromError(error, fallback = 'No se pudo completar la operación.') {
+  const raw = String((error && error.message) || error || fallback);
+  if (/audit_log.*user_id|column ["']?user_id["']? of relation ["']?audit_log/i.test(raw)) {
+    return 'La base de datos de ventas necesita la migración V7.2. La venta no fue registrada ni debe repetirse hasta aplicar el archivo SQL incluido.';
+  }
+  if (/invalid api key/i.test(raw)) return 'La Publishable key de Supabase no es válida o no pertenece a este proyecto.';
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) return 'Se perdió la conexión con Supabase. Se verificará si la operación alcanzó a guardarse antes de permitir reintentar.';
+  if (/email not confirmed/i.test(raw)) return 'Confirma primero el mensaje enviado a tu Gmail.';
+  if (/invalid login credentials/i.test(raw)) return 'Correo o contraseña incorrectos.';
+  if (/row-level security|violates row level security|permission denied/i.test(raw)) return 'Supabase rechazó la operación por permisos. Revisa las políticas RLS de la migración V7.2.';
+  if (/duplicate key|already exists/i.test(raw)) return 'La operación ya existe y no se volverá a registrar.';
+  return raw.length > 220 ? fallback : raw;
+}
+
+async function requireClient() {
+  if (!navigator.onLine) throw new Error('Sin internet. Natura Vida trabaja directamente con Supabase.');
+  const sb = getSupabaseClient();
+  if (!sb) throw new Error('Supabase no está configurado correctamente.');
+  return sb;
+}
+
+// ---------------------------------------------------------------------------
+// AUTH Y PERFILES
+// ---------------------------------------------------------------------------
+async function fetchCurrentProfile(userId) {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  if (error) throw new Error(messageFromError(error));
+  return data || null;
+}
+
+async function ensureSignedInProfile() {
+  const sb = await requireClient();
+  const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+  if (sessionError) throw new Error(messageFromError(sessionError));
+  const user = sessionData && sessionData.session && sessionData.session.user;
+  if (!user) return null;
+  const { error: ensureError } = await sb.rpc('ensure_my_profile');
+  if (ensureError) throw new Error(messageFromError(ensureError));
+  const profile = await fetchCurrentProfile(user.id);
+  return profile ? { user, profile } : null;
+}
+
+async function onlineSignIn(email, password) {
+  try {
+    const sb = await requireClient();
+    setCloudConnectionState('connecting', 'Verificando acceso');
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, message: messageFromError(error) };
+    const { error: ensureError } = await sb.rpc('ensure_my_profile');
+    if (ensureError) return { ok: false, message: messageFromError(ensureError) };
+    const profile = await fetchCurrentProfile(data.user.id);
+    if (!profile) return { ok: false, message: 'La cuenta existe, pero su perfil no fue creado. Ejecuta la migración SQL de Natura Vida V7.' };
+    if (String(profile.status).toLowerCase() === 'bloqueado') {
+      await sb.auth.signOut();
+      return { ok: false, message: 'Esta cuenta está bloqueada. Contacta al administrador.' };
+    }
+    setCloudConnectionState('online', 'Sesión autenticada');
+    return { ok: true, user: data.user, profile };
+  } catch (error) {
+    setCloudConnectionState('error', messageFromError(error));
+    return { ok: false, message: messageFromError(error) };
+  }
+}
+
+async function onlineSignOut() {
+  stopRealtimeSubscriptions();
+  const sb = getSupabaseClient();
+  if (sb) await sb.auth.signOut().catch(() => {});
+  setCloudConnectionState(navigator.onLine ? 'connecting' : 'offline', 'Sesión cerrada');
+}
+
+async function getOnlineSessionProfile() {
+  try { return await ensureSignedInProfile(); }
+  catch (error) {
+    console.warn('No se pudo restaurar sesión:', messageFromError(error));
+    return null;
+  }
+}
+
+async function upsertCloudProfileForUser(userId, _username, profile = {}) {
+  const sb = await requireClient();
+  const current = await sb.auth.getUser();
+  if (!current.data || !current.data.user || current.data.user.id !== userId) {
+    return { ok: false, message: 'Solo puedes actualizar tu propio perfil.' };
+  }
+  const { data, error } = await sb.rpc('update_my_profile', {
+    p_full_name: profile.fullName || profile.full_name || '',
+    p_phone: profile.phone || '',
+    p_city: profile.city || ''
+  });
+  return error ? { ok: false, message: messageFromError(error) } : { ok: true, profile: data };
+}
+
+async function signUpEmailAccount(email, password, fullName, extra = {}) {
+  try {
+    const sb = await requireClient();
+    setCloudConnectionState('connecting', 'Creando cuenta');
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: appRedirectUrl(),
+        data: {
+          full_name: fullName || '',
+          phone: extra.phone || '',
+          city: extra.city || ''
+        }
+      }
     });
+    if (error) return { ok: false, message: messageFromError(error) };
+    if (!data || !data.user) return { ok: false, message: 'Supabase no devolvió el usuario creado.' };
+    if (!data.session) {
+      return {
+        ok: true,
+        user: data.user,
+        needsEmailConfirmation: true,
+        message: 'Cuenta creada. Revisa tu Gmail y confirma el correo antes de iniciar sesión.'
+      };
+    }
+    const { error: ensureError } = await sb.rpc('ensure_my_profile');
+    if (ensureError) return { ok: false, message: messageFromError(ensureError) };
+    const profile = await fetchCurrentProfile(data.user.id);
+    setCloudConnectionState('online', 'Cuenta creada');
+    return { ok: true, user: data.user, profile };
+  } catch (error) {
+    setCloudConnectionState('error', messageFromError(error));
+    return { ok: false, message: messageFromError(error) };
   }
+}
 
-  function renderInventarioV7() { return isAdmin() ? originalRenderInventario() : renderRepresentativeInventoryV7(); }
+async function sendPasswordRecoveryEmail(email) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: appRedirectUrl() });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
 
-  function baseSalePrice(p) { return saleType === 'reseller_wholesale' ? resellerLocalWholesalePrice(p) : resellerLocalUnitPrice(p); }
-  function groupedSalePrice(p) { return saleSelectedGroup && window.applyPercentGroupV7 ? applyPercentGroupV7(baseSalePrice(p), saleSelectedGroup) : roundBs(baseSalePrice(p)); }
-  function saleBreakdown(p) { return buildSalePriceBreakdownV7(p, { saleType, groupId: saleSelectedGroup, seller: true, basePrice: baseSalePrice(p), groupPrice: groupedSalePrice(p), manual: saleManualPrices[p.id] }); }
-  function salePrice(p) { return saleBreakdown(p).unitPrice; }
-  function salePriceConfigured(p) { return Number(baseSalePrice(p) || 0) > 0; }
-  function saleUnits(){return Object.values(saleCart).reduce((s,q)=>s+Number(q||0),0);}
-  function manualCount(){return Object.keys(saleManualPrices).filter(id=>saleManualPrices[id]).length;}
-
-  function saleItems(){return Object.entries(saleCart).map(([id,qty])=>{
-    const p=AppState.products.find(x=>x.id===id);if(!p)return null;
-    const b=saleBreakdown(p); const q=Number(qty||0); const cost=resellerEffectiveCost(p); const signed=roundBs(b.unitPrice-b.basePrice);
-    return {
-      productId:p.id, productName:p.name, category:p.category||'General', qty:q,
-      originalUnitPrice:b.basePrice, groupUnitPrice:b.groupPrice, manualUnitPrice:b.manual?b.unitPrice:null,
-      unitPrice:b.unitPrice, priceSource:b.source, priceAdjustmentType:b.sign, priceAdjustmentAmount:b.adjustmentAmount,
-      priceAdjustmentSigned:b.adjustmentSigned, priceAdjustmentPercent:b.adjustmentPercent, manualPriceReason:b.manualReason||'',
-      groupId:b.groupId, groupName:b.groupName,
-      unitCost:cost, subtotal:roundBs(b.unitPrice*q), originalSubtotal:roundBs(b.basePrice*q), groupSubtotal:roundBs(b.groupPrice*q),
-      discountAmount:signed<0?roundBs(Math.abs(signed)*q):0, surchargeAmount:signed>0?roundBs(signed*q):0,
-      profit:roundBs((b.unitPrice-cost)*q), sellerUnitProfit:roundBs(b.unitPrice-cost), sellerProfit:roundBs((b.unitPrice-cost)*q)
-    };
-  }).filter(Boolean);}
-  function saleTotal(){return saleItems().reduce((s,i)=>s+i.subtotal,0);}
-
-  function changeSaleQty(id,delta){const p=AppState.products.find(x=>x.id===id);if(!p)return;if(delta>0&&!salePriceConfigured(p)){showToast('Configura primero tu precio base para este producto.','error');return openOwnPriceEditor(id);}const next=Math.max(0,Math.min(Number(p.stock||0),Number(saleCart[id]||0)+delta));if(next===0){delete saleCart[id];delete saleManualPrices[id];}else saleCart[id]=next;renderRepresentativeSalesV7();}
-
-  function openRepPriceEditor(id){
-    const p=AppState.products.find(x=>x.id===id); if(!p||!saleCart[id])return showToast('Agrega primero el producto al carrito.','error');
-    openSalePriceEditorV7({product:p,breakdown:saleBreakdown(p),manual:saleManualPrices[id],onApply:entry=>{saleManualPrices[id]=entry;renderRepresentativeSalesV7();showToast('Precio manual aplicado.');},onReset:()=>{delete saleManualPrices[id];renderRepresentativeSalesV7();showToast('Precio restablecido.');}});
+async function waitForPasswordRecoverySession(timeoutMs = 7000) {
+  const sb = getSupabaseClient();
+  if (!sb) return false;
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const { data } = await sb.auth.getSession();
+    if (data && data.session) return true;
+    await new Promise(resolve => setTimeout(resolve, 250));
   }
+  return false;
+}
 
-  function renderSaleCartBar(){let bar=$('#cartBar');if(!bar){bar=document.createElement('div');bar.id='cartBar';bar.className='cartBar v7CartBar';$('#app').appendChild(bar);}if(!saleUnits()){bar.classList.add('hidden');return;}bar.classList.remove('hidden');bar.innerHTML=`<div><strong>${saleUnits()} unidad(es)${manualCount()?` · ${manualCount()} manual`:''}</strong><span>${fmtMoney(saleTotal())}</span></div><button class="btn" id="v7SaleCheckout">Cobrar</button>`;$('#v7SaleCheckout').addEventListener('click',openSaleCheckoutV7);}
+async function updateCurrentUserPassword(newPassword) {
+  try {
+    if (!newPassword || newPassword.length < 6) return { ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
+    const sb = await requireClient();
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, message: 'Contraseña actualizada correctamente.' };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
 
-  function renderRepresentativeSalesV7(){
-    $('#fabAdd').classList.add('hidden');
-    const products=AppState.products.filter(p=>p.status!=='archived'&&Number(p.stock||0)>0);
-    const groupsEnabled=AppState.settings.priceGroupsEnabled&&AppState.priceGroups.length>0;
-    $('#mainArea').innerHTML=`<section class="v7PageHead"><span class="v7Eyebrow">Ventas a tus clientes</span><h1>Vender</h1><p>Elige venta unitaria o mayorista. Puedes aplicar grupos y excepciones manuales.</p></section><div class="v7Segment"><button data-sale-type="reseller_unit" class="${saleType==='reseller_unit'?'active':''}">Venta unitaria</button><button data-sale-type="reseller_wholesale" class="${saleType==='reseller_wholesale'?'active':''}">Venta mayorista</button></div>${groupsEnabled?`<div class="field"><label>Grupo / zona de venta opcional</label><select id="repSaleGroup"><option value="">Sin grupo / precio base</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${saleSelectedGroup===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select><small>Los precios manuales se mantienen como excepción.</small></div>`:''}<div class="v7SearchBox"><span>⌕</span><input id="v7SaleSearch" placeholder="Buscar en mi inventario" value="${escapeHtml(saleSearch)}"></div><section class="v7ProductGrid">${products.map(p=>{const q=Number(saleCart[p.id]||0);const configured=salePriceConfigured(p);const b=saleBreakdown(p);return`<article class="v7ProductCard ${configured?'':'unpriced'} price-${b.source} adjust-${b.sign}"><div class="v7ProductImage">${p.photo?`<img src="${p.photo}" alt="" loading="lazy" decoding="async">`:'<span>NV</span>'}${configured?salePriceBadgeV7(b):'<em>CONFIGURA PRECIO</em>'}</div><div class="v7ProductBody"><small>${escapeHtml(p.category||'General')}</small><h3>${escapeHtml(p.name)}</h3><div class="v7ProductPrice"><strong>${configured?fmtMoney(b.unitPrice):'Sin precio'}</strong><span>Stock: ${p.stock}</span></div>${configured&&b.source!=='normal'?`<div class="priceTrace">${salePriceLabelV7(b)} · Base ${fmtMoney(b.basePrice)}</div>`:''}${configured?`<div class="v7Stepper"><button data-sale-minus="${p.id}">−</button><b>${q}</b><button data-sale-plus="${p.id}">+</button></div>${q>0?`<button class="miniEditPrice" data-rep-edit-price="${p.id}">✎ Editar precio</button>`:''}`:`<button class="btn outline block v7ConfigureSalePrice" data-id="${p.id}">Configurar precio base</button>`}</div></article>`}).join('')||`<div class="v7Empty"><span>🌱</span><h3>Sin productos para vender</h3><p>Necesitas stock confirmado en tu Inventario propio.</p></div>`}</section>`;
-    $all('[data-sale-type]').forEach(b=>b.addEventListener('click',()=>{saleType=b.dataset.saleType;saleCart={};saleManualPrices={};renderRepresentativeSalesV7();}));
-    const group=$('#repSaleGroup'); if(group)group.addEventListener('change',()=>{if(manualCount()){const keep=window.confirm(`Hay ${manualCount()} producto(s) con precio manual.\n\nAceptar: mantener precios manuales.\nCancelar: reemplazar todos con el grupo.`);if(!keep)saleManualPrices={};}saleSelectedGroup=group.value||null;renderRepresentativeSalesV7();});
-    bindStableSearch('#v7SaleSearch','#mainArea .v7ProductCard',value=>{saleSearch=value;});$all('[data-sale-plus]').forEach(b=>b.addEventListener('click',()=>changeSaleQty(b.dataset.salePlus,1)));$all('[data-sale-minus]').forEach(b=>b.addEventListener('click',()=>changeSaleQty(b.dataset.saleMinus,-1)));$all('[data-rep-edit-price]').forEach(b=>b.addEventListener('click',()=>openRepPriceEditor(b.dataset.repEditPrice)));$all('.v7ConfigureSalePrice').forEach(b=>b.addEventListener('click',()=>openOwnPriceEditor(b.dataset.id)));renderSaleCartBar();
-  }
+async function touchLastLogin() {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.rpc('touch_last_login');
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
 
-  async function saveV7Client(data){
-    let phone = window.normalizePhoneV723 ? normalizePhoneV723(data.phone || '') : String(data.phone || '').trim();
-    let client=AppState.clients.find(c=>(phone && window.normalizePhoneV723 && normalizePhoneV723(c.phone)===phone)||normalizeSearch(c.name)===normalizeSearch(data.name));
-    if (window.buildClientRecordV723 && window.saveClientV723) return saveClientV723(buildClientRecordV723(client || {}, Object.assign({}, data, { phone })));
-    const row=Object.assign({},client||{id:uid('cli'),createdAt:Date.now()},{name:data.name,phone:phone||'',customerType:data.customerType,businessName:data.businessName||'',address:data.address||'',city:data.city||'',locationLabel:data.locationLabel||data.location||'',notes:data.notes||'',updatedAt:Date.now()});
-    await DB.put('clients',row); const idx=AppState.clients.findIndex(c=>c.id===row.id);if(idx>=0)AppState.clients[idx]=row;else AppState.clients.push(row);return row;
-  }
-
-  function openSaleCheckoutV7(){
-    const items = saleItems(); const total = saleTotal();
-    if (!items.length) return showToast('Selecciona al menos un producto.', 'error');
-    if (items.some(i => Number(i.unitPrice || 0) <= 0) || total <= 0) return showToast('Todos los productos deben tener un precio de venta válido.', 'error');
-    const discounts=items.reduce((s,i)=>s+Number(i.discountAmount||0),0); const surcharges=items.reduce((s,i)=>s+Number(i.surchargeAmount||0),0);
-    const operation = { id: uid('sale'), documentNumber: '', client: null, sale: null, submitting: false };
-    openSheet(`
-      <h2>Confirmar venta al contado <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7CartList">${items.map(i => `<div class="priceLine ${i.priceSource}"><span><strong>${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource,sign:i.priceAdjustmentType})}</strong><small>${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource,sign:i.priceAdjustmentType,adjustmentAmount:i.priceAdjustmentAmount,groupName:i.groupName})}</small>${i.manualPriceReason?`<small>${escapeHtml(i.manualPriceReason)}</small>`:''}</span><b>${fmtMoney(i.subtotal)}</b></div>`).join('')}</div>
-      ${(discounts||surcharges)?`<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>`:''}
-      <div class="v7TotalLine"><span>Total a cobrar</span><strong>${fmtMoney(total)}</strong></div>
-      <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="v7AmountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="v7PendingBalance" readonly value="0"></div></div>
-      <div class="field"><label>Motivo si queda saldo pendiente</label><input id="v7PendingReason" placeholder="Ej.: saldo pendiente, transferencia pendiente"></div>
-      <div class="v7CashNotice">Si queda saldo, aparecerá en Ventas por cobrar. La venta descuenta stock al confirmarse.</div>
-      <div class="sectiontitle2"><span>Cliente</span></div>
-      <div class="field"><label>Nombre *</label><div class="clientInputRow"><input id="v7ClientName" autocomplete="off" placeholder="Nombre del cliente o tienda"><button type="button" class="miniClientPick" id="pickRepClientV723">▾</button></div><small>${saleType === 'reseller_wholesale' ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
-      <div class="field"><label>WhatsApp</label><div class="clientInputRow"><input id="v7ClientPhone" inputmode="tel" autocomplete="off"><button type="button" class="waIconBtnV723" id="v7ClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
-      <input type="hidden" id="v7ClientType" value="${saleType === 'reseller_wholesale' ? 'wholesale' : 'unit'}">
-      ${saleType === 'reseller_wholesale' ? `<button type="button" class="btn outline block" id="registerRepWholesaleV725">Registrar datos de mayorista</button>` : ''}
-      <details class="v7OptionalDetails"><summary>Datos opcionales del cliente</summary><div class="field"><label>Dirección</label><input id="v7ClientAddress"></div><div class="field"><label>Ciudad</label><input id="v7ClientCity"></div><div class="field"><label>Dato de ubicación</label><input id="v7ClientLocation"></div><div class="field"><label>Observaciones</label><textarea id="v7ClientNotes"></textarea></div></details>
-      <div class="actions stickyActions"><button class="btn block" id="confirmSaleV7">Confirmar pago y generar recibo</button></div>
-    `, (overlay, close) => {
-      $('#closeSheet', overlay).addEventListener('click', () => { if (!operation.submitting) close(); });
-      const fillClientV723 = (c) => { if (!c) return; operation.client = c; $('#v7ClientName', overlay).value = c.name || ''; $('#v7ClientPhone', overlay).value = c.phone || ''; $('#v7ClientAddress', overlay).value = c.address || ''; $('#v7ClientCity', overlay).value = c.city || ''; $('#v7ClientLocation', overlay).value = c.locationLabel || c.location || ''; $('#v7ClientNotes', overlay).value = c.notes || ''; if (c.priceGroupId && c.priceGroupId !== saleSelectedGroup) { const g=AppState.priceGroups.find(x=>x.id===c.priceGroupId); if(g && window.confirm(`Este cliente tiene beneficio/grupo: ${g.name}. ¿Aplicarlo a esta venta?`)){ saleSelectedGroup=c.priceGroupId; close(); setTimeout(openSaleCheckoutV7,80); } } };
-      $('#pickRepClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType, onSelect: fillClientV723 }));
-      if ($('#registerRepWholesaleV725', overlay)) $('#registerRepWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#v7ClientName', overlay).value.trim(), phone: $('#v7ClientPhone', overlay).value.trim(), customerType: 'wholesale' }); });
-      $('#v7ClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#v7ClientPhone', overlay).value, $('#v7ClientName', overlay).value));
-      const updatePaymentV725=()=>{const paid=Math.max(0,Number($('#v7AmountPaid',overlay).value||0));$('#v7PendingBalance',overlay).value=roundBs(Math.max(0,total-paid));};
-      $('#v7AmountPaid',overlay).addEventListener('input',updatePaymentV725); updatePaymentV725();
-      $('#v7ClientName', overlay).addEventListener('blur', () => { const c = AppState.clients.find(x => normalizeSearch(x.name) === normalizeSearch($('#v7ClientName', overlay).value)); if (c) fillClientV723(c); });
-      $('#confirmSaleV7', overlay).addEventListener('click', async () => {
-        if (operation.submitting) return; const name = $('#v7ClientName', overlay).value.trim(); if (!name) return showToast('Ingresa el nombre del cliente.', 'error'); if (!navigator.onLine) return showToast('Se necesita internet para registrar la venta.', 'error');
-        const btn = $('#confirmSaleV7', overlay); operation.submitting = true; btn.disabled = true; btn.textContent = 'Verificando stock y guardando…';
-        try {
-          const productRefresh = await syncCloudProductsToLocal(); if (productRefresh && productRefresh.ok === false) throw new Error(productRefresh.message);
-          for (const item of items) { const current = AppState.products.find(p => p.id === item.productId); if (!current || Number(current.stock || 0) < Number(item.qty || 0)) throw new Error(`Stock insuficiente para ${item.productName}. Actualiza el carrito y vuelve a intentarlo.`); }
-          if (!operation.client) operation.client = await saveV7Client({ name, phone: $('#v7ClientPhone', overlay).value.trim(), customerType: $('#v7ClientType', overlay).value, address: $('#v7ClientAddress', overlay).value.trim(), city: $('#v7ClientCity', overlay).value.trim(), locationLabel: $('#v7ClientLocation', overlay).value.trim(), notes: $('#v7ClientNotes', overlay).value.trim() });
-          if (!operation.documentNumber) { const num = await nextDocumentNumberV7('NV-VTA'); if (!num.ok) throw new Error(num.message); operation.documentNumber = num.number; }
-          if (!operation.sale) { const paidNow=roundBs(Math.min(total,Math.max(0,Number($('#v7AmountPaid',overlay).value||0)))); const pendingNow=roundBs(Math.max(0,total-paidNow)); operation.sale = { id: operation.id, documentNumber: operation.documentNumber, receiptNumber: operation.documentNumber, type: saleType, role: AppState.session.roleName, sellerId: AppState.session.onlineUserId || AppState.session.userId, sellerName: AppState.session.fullName, sellerBusinessName: window.myCommercialProfile ? (myCommercialProfile().businessName || '') : '', sellerQrUrl: window.myCommercialProfile ? (myCommercialProfile().qrUrl || '') : '', sellerReceiptMessage: window.myCommercialProfile ? (myCommercialProfile().receiptMessage || '') : '', groupId: saleSelectedGroup, groupName: saleSelectedGroup ? ((AppState.priceGroups.find(g=>g.id===saleSelectedGroup)||{}).name||'') : null, items, total, originalTotal: items.reduce((s,i)=>s+i.originalSubtotal,0), discountTotal: discounts, surchargeTotal: surcharges, sellerProfit: items.reduce((sum, item) => sum + Number(item.profit || 0), 0), clientId: operation.client.id, clientName: operation.client.name, clientPhone: operation.client.phone, clientCity: operation.client.city || '', clientAddress: operation.client.address || '', clientBusinessName: operation.client.businessName || '', customerType: operation.client.customerType || '', paymentMethod: 'cash', paymentStatus: pendingNow>0 ? (paidNow>0?'partial':'pending') : 'paid', amountPaid: paidNow, pendingBalance: pendingNow, pendingReason: pendingNow>0 ? $('#v7PendingReason',overlay).value.trim() : '', date: Date.now(), syncStatus: 'cloud' }; }
-          await DB.put('sales', operation.sale); await Promise.all([syncCloudProductsToLocal().catch(() => null), window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()]); if (!AppState.sales.some(s => s.id === operation.sale.id)) AppState.sales.push(operation.sale); close(); saleCart = {}; saleManualPrices = {}; showToast('Venta registrada y stock actualizado.'); openV7ReceiptPreview(operation.sale, 'sale'); renderRepresentativeSalesV7();
-        } catch (err) { operation.submitting = false; btn.disabled = false; btn.textContent = 'Reintentar la misma operación'; const message = window.messageFromError ? messageFromError(err, 'No se pudo guardar la venta.') : (err.message || 'No se pudo guardar la venta.'); showToast(message, 'error'); }
-      });
+async function setProfileStatus(userId, statusCanonical) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.rpc('admin_set_profile_status', {
+      p_user_id: userId,
+      p_status: statusCanonical
     });
-  }
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, profile: data };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
 
-  function renderVenderV7(){return isAdmin()?originalRenderVender():renderRepresentativeSalesV7();}
-  Object.assign(window,{renderInventario:renderInventarioV7,renderVender:renderVenderV7,renderRepresentativeInventoryV7,renderRepresentativeSalesV7,openOwnPriceEditor});
-})();
+async function fetchAllProfilesForAdmin() {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, profiles: data || [] };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+const fetchCloudProfiles = fetchAllProfilesForAdmin;
+const updateCloudProfileStatus = setProfileStatus;
+
+// ---------------------------------------------------------------------------
+// FOTOS Y PRODUCTOS
+// ---------------------------------------------------------------------------
+function isDataUrlImage(value) {
+  return typeof value === 'string' && value.startsWith('data:image/');
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [meta = '', encoded = ''] = String(dataUrl || '').split(',');
+  const mime = (meta.match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function uploadProductPhotoIfNeeded(product) {
+  if (!product || !isDataUrlImage(product.photo)) return product && product.photo ? product.photo : null;
+  const sb = await requireClient();
+  const bucket = effectiveOnlineConfig().productImagesBucket || 'product-images';
+  const safeId = String(product.id || uid('prod')).replace(/[^a-z0-9_-]/gi, '_');
+  const path = `${safeId}/main.jpg`;
+  const blob = dataUrlToBlob(product.photo);
+  const { error } = await sb.storage.from(bucket).upload(path, blob, {
+    upsert: true,
+    contentType: 'image/jpeg',
+    cacheControl: '86400'
+  });
+  if (error) throw new Error(`No se pudo subir la imagen: ${messageFromError(error)}`);
+  const { data } = sb.storage.from(bucket).getPublicUrl(path);
+  if (!data || !data.publicUrl) throw new Error('Supabase Storage no devolvió la URL de la imagen.');
+  return `${data.publicUrl}?v=${Date.now()}`;
+}
+
+function stripEmbeddedImages(value) {
+  if (!value || typeof value !== 'object') return value;
+  const result = JSON.parse(JSON.stringify(value));
+  if (isDataUrlImage(result.photo)) result.photo = null;
+  if (result.payload && typeof result.payload === 'object') result.payload = stripEmbeddedImages(result.payload);
+  return result;
+}
+
+async function mapProductToCloud(product) {
+  const p = normalizeLegacyProduct(product);
+  const photoUrl = await uploadProductPhotoIfNeeded(p);
+  const payload = stripEmbeddedImages(Object.assign({}, p, { photo: photoUrl }));
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category || 'General',
+    sku: p.sku || '',
+    description: p.description || '',
+    cost: Number(p.cost || 0),
+    market_price: Number(p.marketPrice ?? p.wholesaleMarketPrice ?? p.marketPriceFixed ?? 0),
+    reseller_price: Number(p.resellerPrice ?? p.wholesalePriceFixed ?? 0),
+    public_price: Number(p.publicPrice ?? p.unitPriceFixed ?? 0),
+    stock: Number(p.stock || 0),
+    photo_url: photoUrl,
+    status: p.status || 'active',
+    payload
+  };
+}
+
+function mapProductFromCloud(row, repStockMap = null, repPrefsMap = null) {
+  const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+  const centralStock = Number(row.stock || 0);
+  const stockEntry = repStockMap && repStockMap.has(row.id) ? repStockMap.get(row.id) : null;
+  const ownStock = stockEntry && typeof stockEntry === 'object' ? Number(stockEntry.stock || 0) : Number(stockEntry || 0);
+  const acquisitionCost = stockEntry && typeof stockEntry === 'object' ? Number(stockEntry.acquisitionCost || 0) : 0;
+  const prefs = repPrefsMap && repPrefsMap.has(row.id) ? repPrefsMap.get(row.id) : {};
+  return normalizeLegacyProduct(Object.assign({}, payload, prefs, {
+    id: row.id,
+    name: row.name,
+    category: row.category || 'General',
+    sku: row.sku || '',
+    description: row.description || '',
+    cost: Number(row.cost || 0),
+    marketPrice: Number(row.market_price || 0),
+    wholesaleMarketPrice: Number(row.market_price || 0),
+    resellerPrice: Number(row.reseller_price || 0),
+    publicPrice: Number(row.public_price || 0),
+    marketPriceFixed: Number(row.market_price || 0),
+    wholesalePriceFixed: Number(row.reseller_price || 0),
+    unitPriceFixed: Number(row.public_price || 0),
+    stock: window.isReseller && isReseller() ? ownStock : centralStock,
+    adminStock: centralStock,
+    resellerAcquisitionCost: acquisitionCost || Number(row.reseller_price || 0),
+    photo: row.photo_url || null,
+    status: row.status || 'active',
+    syncStatus: 'cloud',
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+  }));
+}
+
+async function fetchRepresentativeStockMap() {
+  if (!AppState.session || !AppState.session.onlineUserId) return new Map();
+  const sb = await requireClient();
+  const { data, error } = await sb.from('representative_stock')
+    .select('product_id,stock,acquisition_cost')
+    .eq('representative_user_id', AppState.session.onlineUserId);
+  if (error) throw new Error(messageFromError(error));
+  return new Map((data || []).map(row => [row.product_id, {
+    stock: Number(row.stock || 0),
+    acquisitionCost: Number(row.acquisition_cost || 0)
+  }]));
+}
+
+async function syncCloudProductsToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('products').select('*').eq('status', 'active').order('updated_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  let repStockMap = null;
+  let repPrefsMap = null;
+  if (window.isReseller && isReseller()) {
+    repStockMap = await fetchRepresentativeStockMap();
+    const { data: prefRows, error: prefError } = await sb.from('representative_product_preferences')
+      .select('*').eq('representative_user_id', AppState.session.onlineUserId);
+    if (prefError) return { ok: false, message: messageFromError(prefError) };
+    repPrefsMap = new Map((prefRows || []).map(row => [row.product_id, {
+      resellerAdditionalCost: Number(row.additional_cost || 0),
+      resellerLocalUnitPrice: Number(row.unit_price || 0),
+      resellerLocalWholesalePrice: Number(row.wholesale_price || 0),
+      resellerLocalNote: row.note || '',
+      resellerLocalUpdatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+    }]));
+  }
+  const products = (data || []).map(row => mapProductFromCloud(row, repStockMap, repPrefsMap));
+  await DB.clear('products');
+  if (products.length) await DB.bulkPut('products', products, { silent: true });
+  AppState.products = products;
+  return { ok: true, count: products.length };
+}
+
+async function upsertCloudProduct(product) {
+  try {
+    if (!isAdmin()) return { ok: false, message: 'Solo el administrador puede modificar productos.' };
+    const sb = await requireClient();
+    const row = await mapProductToCloud(product);
+    const { data, error } = await sb.from('products').upsert(row, { onConflict: 'id' }).select().single();
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, row: data };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function deleteCloudProduct(productId) {
+  try {
+    if (!isAdmin()) return { ok: false, message: 'Solo el administrador puede eliminar productos.' };
+    const sb = await requireClient();
+    const { error } = await sb.from('products').update({ status: 'archived' }).eq('id', productId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function pushLocalProductsToCloud() {
+  return { ok: false, message: 'La publicación manual fue eliminada. Cada producto se guarda directamente en Supabase.' };
+}
+
+function generateMovementId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `mov_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+async function adjustRepresentativeStockRemote(productId, delta, movementId = generateMovementId()) {
+  try {
+    const sb = await requireClient();
+    const cleanDelta = Number(delta || 0);
+    if (!Number.isFinite(cleanDelta) || cleanDelta === 0) return { ok: true, stock: null };
+    const { data, error } = await sb.rpc('adjust_representative_stock', {
+      p_movement_id: movementId,
+      p_product_id: productId,
+      p_delta: cleanDelta
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, stock: Number(data || 0), movementId };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function queueRepresentativeStockDelta(productId, delta) {
+  // Nombre conservado para compatibilidad. Ya no existe cola: la operación
+  // se confirma ahora mismo en Supabase o falla sin alterar la memoria.
+  return adjustRepresentativeStockRemote(productId, delta, generateMovementId());
+}
+
+async function updateRepresentativeInventoryRemote(productId, delta, preferences = {}, movementId = generateMovementId()) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.rpc('update_representative_inventory', {
+      p_movement_id: movementId,
+      p_product_id: productId,
+      p_delta: Number(delta || 0),
+      p_additional_cost: Number(preferences.additionalCost || 0),
+      p_unit_price: Number(preferences.unitPrice || 0),
+      p_wholesale_price: Number(preferences.wholesalePrice || 0),
+      p_note: String(preferences.note || '')
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, stock: Number(data || 0), movementId };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+// ---------------------------------------------------------------------------
+// CLIENTES, VENTAS Y REGISTROS MODULARES
+// ---------------------------------------------------------------------------
+function mapClientToCloud(client) {
+  return {
+    id: client.id,
+    owner_user_id: client.ownerUserId || AppState.session.onlineUserId,
+    name: client.name || '',
+    phone: client.phone || '',
+    price_group_id: client.priceGroupId || '',
+    payload: client
+  };
+}
+
+function mapClientFromCloud(row) {
+  const payload = row.payload || {};
+  return Object.assign({}, payload, {
+    id: row.id,
+    name: row.name || '',
+    phone: row.phone || '',
+    priceGroupId: row.price_group_id || '',
+    ownerUserId: row.owner_user_id,
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    syncStatus: 'cloud'
+  });
+}
+
+async function upsertCloudClient(client) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('clients').upsert(mapClientToCloud(client), { onConflict: 'id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function deleteCloudClient(clientId) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('clients').delete().eq('id', clientId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function syncCloudClientsToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('clients').select('*').order('updated_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  const rows = (data || []).map(mapClientFromCloud);
+  await DB.clear('clients');
+  if (rows.length) await DB.bulkPut('clients', rows, { silent: true });
+  AppState.clients = rows;
+  return { ok: true, count: rows.length };
+}
+
+function mapSaleFromCloud(row) {
+  const payload = row.payload || {};
+  return Object.assign({}, payload, {
+    id: row.id,
+    sellerId: row.seller_user_id,
+    sellerName: row.seller_name || '',
+    clientName: row.client_name || '',
+    clientPhone: row.client_phone || '',
+    type: row.sale_type || 'unit',
+    total: Number(row.total || 0),
+    sellerProfit: Number(row.seller_profit || 0),
+    date: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    syncStatus: 'cloud'
+  });
+}
+
+async function syncCloudSalesToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('sales').select('*').order('created_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  const rows = (data || []).map(mapSaleFromCloud);
+  await DB.clear('sales');
+  if (rows.length) await DB.bulkPut('sales', rows, { silent: true });
+  AppState.sales = rows;
+  return { ok: true, count: rows.length };
+}
+
+async function findCloudSaleById(saleId) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('sales').select('*').eq('id', String(saleId)).maybeSingle();
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, sale: data || null };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function insertCloudSale(sale) {
+  try {
+    const sb = await requireClient();
+    const items = (sale.items || []).map(item => ({
+      product_id: item.productId,
+      qty: Number(item.qty || 0)
+    }));
+    const { data, error } = await sb.rpc('register_sale_atomic', {
+      p_sale: sale,
+      p_items: items
+    });
+    if (!error) return { ok: true, sale: data };
+
+    // Una respuesta puede perderse después de que PostgreSQL confirmó la venta.
+    // Antes de permitir un reintento se consulta el mismo ID, evitando duplicados.
+    const uncertain = /failed to fetch|networkerror|load failed|fetch failed|timeout|duplicate key|already exists/i.test(String(error.message || error));
+    if (uncertain && sale && sale.id && navigator.onLine) {
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const check = await findCloudSaleById(sale.id);
+      if (check.ok && check.sale) return { ok: true, sale: check.sale, recovered: true };
+    }
+    return { ok: false, message: messageFromError(error) };
+  } catch (error) {
+    if (sale && sale.id && navigator.onLine) {
+      const check = await findCloudSaleById(sale.id);
+      if (check.ok && check.sale) return { ok: true, sale: check.sale, recovered: true };
+    }
+    return { ok: false, message: messageFromError(error) };
+  }
+}
+
+const CLOUD_GENERIC_STORES = [
+  'priceGroups', 'quotes', 'settings', 'inventoryMovements',
+  'commissions', 'commissionRules', 'representatives', 'dispatches',
+  'representativeReports', 'expenses', 'receivablePayments'
+];
+const CLOUD_SHARED_STORES = new Set(['priceGroups', 'settings', 'commissionRules']);
+
+function recordIdForStore(storeName, record) {
+  return String(storeName === 'settings' ? (record.key || 'main') : (record.id || ''));
+}
+
+async function upsertGenericCloudRecord(storeName, record) {
+  try {
+    const sb = await requireClient();
+    const ownerUserId = AppState.session && AppState.session.onlineUserId;
+    const recordId = recordIdForStore(storeName, record);
+    if (!ownerUserId || !recordId) return { ok: false, message: 'Registro sin usuario o identificador.' };
+    const visibility = CLOUD_SHARED_STORES.has(storeName) && isAdmin() ? 'shared' : 'private';
+    const { error } = await sb.from('app_records').upsert({
+      store_name: storeName,
+      record_id: recordId,
+      owner_user_id: ownerUserId,
+      visibility,
+      payload: record
+    }, { onConflict: 'store_name,record_id,owner_user_id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function deleteGenericCloudRecord(storeName, recordId) {
+  try {
+    const sb = await requireClient();
+    const ownerUserId = AppState.session && AppState.session.onlineUserId;
+    const { error } = await sb.from('app_records').delete()
+      .eq('store_name', storeName)
+      .eq('record_id', String(recordId))
+      .eq('owner_user_id', ownerUserId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function syncGenericCloudRecordsToLocal() {
+  const sb = await requireClient();
+  const { data, error } = await sb.from('app_records').select('*')
+    .in('store_name', CLOUD_GENERIC_STORES)
+    .order('updated_at', { ascending: true });
+  if (error) return { ok: false, message: messageFromError(error) };
+  const grouped = new Map(CLOUD_GENERIC_STORES.map(name => [name, []]));
+  (data || []).forEach(row => {
+    if (grouped.has(row.store_name) && row.payload) grouped.get(row.store_name).push(row.payload);
+  });
+  for (const [name, rows] of grouped) {
+    await DB.clear(name);
+    if (rows.length) await DB.bulkPut(name, rows, { silent: true });
+  }
+  return { ok: true, count: (data || []).length };
+}
+
+// ---------------------------------------------------------------------------
+// PEDIDOS Y MENSAJES
+// ---------------------------------------------------------------------------
+function mapPurchaseOrderToCloud(order) {
+  return {
+    id: order.id,
+    representative_user_id: AppState.session.onlineUserId,
+    representative_name: order.representativeName || AppState.session.fullName || '',
+    status: order.status || 'pending',
+    total: Number(order.total || 0),
+    note: order.note || '',
+    payload: order
+  };
+}
+
+async function insertCloudPurchaseOrder(order) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('purchase_orders').upsert(mapPurchaseOrderToCloud(order), { onConflict: 'id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchCloudPurchaseOrders() {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(200);
+    if (error) return { ok: false, message: messageFromError(error) };
+    const orders = (data || []).map(row => Object.assign({}, row.payload || {}, {
+      id: row.id,
+      representativeId: row.representative_user_id,
+      representativeName: row.representative_name,
+      status: row.status,
+      total: Number(row.total || 0),
+      note: row.note || '',
+      createdAt: new Date(row.created_at).getTime(),
+      updatedAt: new Date(row.updated_at).getTime(),
+      syncStatus: 'cloud'
+    }));
+    return { ok: true, orders };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function updateCloudPurchaseOrderStatus(orderId, status) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.rpc('admin_set_order_status', {
+      p_order_id: orderId,
+      p_status: status
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, order: data };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+function mapMessageToCloud(message) {
+  const m = window.normalizeMessage ? normalizeMessage(message) : message;
+  return {
+    id: m.id,
+    type: m.type || 'general',
+    title: m.title || 'Mensaje',
+    body: m.body || '',
+    sender_user_id: AppState.session.onlineUserId,
+    sender_name: m.senderName || AppState.session.fullName || '',
+    sender_role: m.senderRole || AppState.session.roleName || '',
+    recipient_role: m.recipientRole || 'Administrador',
+    recipient_user_id: m.recipientUserId || null,
+    status: m.status || 'unread',
+    payload: m.payload || {}
+  };
+}
+
+function mapMessageFromCloud(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    senderUserId: row.sender_user_id,
+    senderName: row.sender_name,
+    senderRole: row.sender_role,
+    recipientRole: row.recipient_role,
+    recipientUserId: row.recipient_user_id,
+    status: row.status,
+    payload: row.payload || {},
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime()
+  };
+}
+
+async function insertCloudMessage(message) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('messages').upsert(mapMessageToCloud(message), { onConflict: 'id' });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchCloudInboxMessages() {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: false }).limit(100);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, messages: (data || []).map(mapMessageFromCloud) };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function markCloudMessageRead(messageId) {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('messages').update({ status: 'read' }).eq('id', messageId);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+
+
+async function fetchRepresentativeStockForAdminV725(userId) {
+  try {
+    const sb = await requireClient();
+    const { data: stockRows, error } = await sb.from('representative_stock')
+      .select('product_id,stock,acquisition_cost,updated_at')
+      .eq('representative_user_id', userId);
+    if (error) return { ok: false, message: messageFromError(error) };
+    const productIds = (stockRows || []).map(r => r.product_id).filter(Boolean);
+    let productMap = new Map();
+    if (productIds.length) {
+      const { data: products } = await sb.from('products').select('id,name,category,reseller_price,public_price,market_price,photo_url').in('id', productIds);
+      productMap = new Map((products || []).map(p => [p.id, p]));
+    }
+    const rows = (stockRows || []).map(r => {
+      const p = productMap.get(r.product_id) || {};
+      return { productId: r.product_id, productName: p.name || r.product_id, category: p.category || 'General', stock: Number(r.stock || 0), acquisitionCost: Number(r.acquisition_cost || p.reseller_price || 0), updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(), photo: p.photo_url || '' };
+    });
+    return { ok: true, rows };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+async function fetchRepresentativeOrdersForAdminV725(userId) {
+  try {
+    const sb = await requireClient();
+    const { data, error } = await sb.from('purchase_orders').select('*').eq('representative_user_id', userId).order('created_at', { ascending: false }).limit(50);
+    if (error) return { ok: false, message: messageFromError(error) };
+    return { ok: true, orders: (data || []).map(row => Object.assign({}, row.payload || {}, { id: row.id, status: row.status, total: Number(row.total || 0), createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now() })) };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+// ---------------------------------------------------------------------------
+// ESCRITURA ÚNICA PARA EL ADAPTADOR DE MEMORIA
+// ---------------------------------------------------------------------------
+async function cloudAfterPut(storeName, record) {
+  if (!navigator.onLine) throw new Error('Sin internet. El registro no fue guardado.');
+  if (!AppState.session || AppState.session.pendingApproval || !canOperate()) throw new Error('La cuenta no está habilitada para operar.');
+  let result;
+  if (storeName === 'products') result = await upsertCloudProduct(record);
+  else if (storeName === 'clients') result = await upsertCloudClient(record);
+  else if (storeName === 'sales') result = await insertCloudSale(record);
+  else if (storeName === 'purchaseOrders') result = await insertCloudPurchaseOrder(record);
+  else if (storeName === 'messages') result = await insertCloudMessage(record);
+  else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await upsertGenericCloudRecord(storeName, record);
+  else result = { ok: true, skipped: true };
+  if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó el registro.');
+  setCloudConnectionState('online', `Guardado en Supabase: ${storeName}`);
+  return result;
+}
+
+async function cloudAfterDelete(storeName, id) {
+  if (!navigator.onLine) throw new Error('Sin internet. No se eliminó el registro.');
+  if (!AppState.session || AppState.session.pendingApproval || !canOperate()) throw new Error('La cuenta no está habilitada para operar.');
+  let result;
+  if (storeName === 'products') result = await deleteCloudProduct(id);
+  else if (storeName === 'clients') result = await deleteCloudClient(id);
+  else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await deleteGenericCloudRecord(storeName, id);
+  else result = { ok: true, skipped: true };
+  if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó la eliminación.');
+  setCloudConnectionState('online', `Eliminado en Supabase: ${storeName}`);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// CARGA INICIAL + REALTIME
+// ---------------------------------------------------------------------------
+async function runBackgroundSyncOnce(reason = 'automatic') {
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = (async () => {
+    if (!navigator.onLine) return { ok: false, message: 'Sin internet.' };
+    if (!requireAuth()) return { ok: false, message: 'No hay sesión activa.' };
+    if (AppState.session.pendingApproval) return { ok: true, restricted: true };
+    setCloudConnectionState('connecting', reason);
+    const tasks = [
+      syncCloudProductsToLocal(),
+      syncCloudClientsToLocal(),
+      syncCloudSalesToLocal(),
+      syncGenericCloudRecordsToLocal(),
+      window.fetchAndCachePurchaseOrders ? fetchAndCachePurchaseOrders() : Promise.resolve({ ok: true }),
+      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true }),
+      window.syncProductionCloudToLocalV740 ? syncProductionCloudToLocalV740() : Promise.resolve({ ok: true })
+    ];
+    const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
+    await loadAllState();
+    renderAfterCloudRefresh();
+    if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
+    const failed = results.filter(result => result && result.ok === false);
+    if (failed.length) {
+      const detail = failed.map(item => item.message).filter(Boolean).join(' | ');
+      setCloudConnectionState('error', detail);
+      return { ok: false, message: detail, results };
+    }
+    setCloudConnectionState('online', 'Datos actualizados desde Supabase');
+    return { ok: true, results };
+  })();
+  try { return await _refreshInFlight; }
+  finally { _refreshInFlight = null; }
+}
+
+async function refreshAfterEvent(table) {
+  try {
+    if (table === 'products' || table === 'representative_stock' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
+    else if (table === 'clients') await syncCloudClientsToLocal();
+    else if (table === 'sales') await syncCloudSalesToLocal();
+    else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
+    else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
+    else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
+    else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
+    else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
+    await loadAllState();
+    renderAfterCloudRefresh();
+    if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
+    setCloudConnectionState('online', `Realtime: ${table}`);
+  } catch (error) {
+    console.warn(`Realtime ${table}:`, error);
+    setCloudConnectionState('error', messageFromError(error));
+  }
+}
+
+function scheduleRealtimeRestart(detail = 'Reconectando Realtime') {
+  clearTimeout(_realtimeRestartTimer);
+  if (!navigator.onLine || !requireAuth()) return;
+  setCloudConnectionState('connecting', detail);
+  _realtimeRestartTimer = setTimeout(() => {
+    startRealtimeSubscriptions();
+    if (!AppState.session.pendingApproval) runBackgroundSyncOnce('reconexión').catch(() => {});
+  }, 2500);
+}
+
+function stopRealtimeSubscriptions() {
+  clearTimeout(_realtimeRestartTimer);
+  const sb = getSupabaseClient();
+  if (sb && _realtimeChannel) sb.removeChannel(_realtimeChannel).catch(() => {});
+  _realtimeChannel = null;
+}
+
+function startRealtimeSubscriptions() {
+  const sb = getSupabaseClient();
+  if (!sb || !requireAuth()) return;
+  stopRealtimeSubscriptions();
+  setCloudConnectionState('connecting', 'Abriendo Realtime');
+
+  let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches'].forEach(table => {
+    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => refreshAfterEvent(table));
+  });
+  channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
+    try {
+      const row = payload.new || payload.old || {};
+      if (row.id === AppState.session.onlineUserId && payload.new) {
+        const wasPending = AppState.session.pendingApproval;
+        const current = await getOnlineSessionProfile();
+        if (current && current.user && current.profile) {
+          applyOnlineSession(current.user, current.profile);
+          if (wasPending && !AppState.session.pendingApproval && window.afterLoginSuccess) {
+            showToast('Tu cuenta fue aprobada. Acceso habilitado.');
+            await afterLoginSuccess({ ok: true, user: current.user });
+            return;
+          }
+          if (AppState.session.statusCanonical === 'bloqueado') {
+            showToast('La cuenta fue bloqueada por el administrador.', 'error');
+            await logoutSession();
+            return;
+          }
+        }
+      }
+      if (isAdmin() && AppState.currentTab === 'usuarios' && window.renderUsersFoundation && !shouldDeferCloudRender()) await renderUsersFoundation();
+      else renderAfterCloudRefresh();
+    } catch (error) { console.warn('Realtime profiles:', error); }
+  });
+
+  _realtimeChannel = channel.subscribe((status, error) => {
+    if (status === 'SUBSCRIBED') setCloudConnectionState('online', 'Realtime conectado');
+    else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+      setCloudConnectionState('error', messageFromError(error || status));
+      scheduleRealtimeRestart(status);
+    }
+  });
+}
+
+function startBackgroundSync() {
+  if (_backgroundStarted) return;
+  _backgroundStarted = true;
+  startRealtimeSubscriptions();
+  window.addEventListener('online', () => {
+    setCloudConnectionState('connecting', 'Internet recuperado');
+    startRealtimeSubscriptions();
+    if (requireAuth() && !AppState.session.pendingApproval) runBackgroundSyncOnce('internet recuperado').catch(() => {});
+  });
+  window.addEventListener('offline', () => setCloudConnectionState('offline', 'Sin internet'));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && navigator.onLine && requireAuth()) {
+      startRealtimeSubscriptions();
+      if (!AppState.session.pendingApproval) runBackgroundSyncOnce('aplicación visible').catch(() => {});
+    }
+  });
+}
+
+async function syncAfterLogin() {
+  startBackgroundSync();
+  startRealtimeSubscriptions();
+  if (AppState.session && AppState.session.pendingApproval) return { ok: true, mode: 'restricted-realtime' };
+  return runBackgroundSyncOnce('inicio de sesión');
+}
+
+async function runFullAdminSync() {
+  return runBackgroundSyncOnce('lectura automática');
+}
+
+async function flushPendingSyncQueue() {
+  return { ok: true, sent: 0, failed: 0, pending: 0, mode: 'disabled' };
+}
+
+async function testOnlineConnection() {
+  try {
+    const sb = await requireClient();
+    const { error } = await sb.from('app_config').select('key').limit(1);
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, message: 'Supabase responde correctamente.' };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
+}
+
+// Compatibilidad deliberada: las funciones antiguas ya no hacen respaldo,
+// publicación masiva ni mezcla con datos locales.
+async function createPreSyncLocalSnapshot() { return null; }
+async function openSafeCloudSyncSheet() { showToast('La actualización es automática mediante Realtime.'); }
+
+Object.assign(window, {
+  CloudConnection,
+  shouldDeferCloudRender,
+  renderAfterCloudRefresh,
+  flushDeferredCloudRender,
+  effectiveOnlineConfig,
+  getSavedOnlineConfig,
+  getOnlineConfigValue,
+  saveOnlineConfig,
+  isOnlineConfigured,
+  getSupabaseClient,
+  setCloudConnectionState,
+  onlineSignIn,
+  onlineSignOut,
+  getOnlineSessionProfile,
+  upsertCloudProfileForUser,
+  signUpEmailAccount,
+  sendPasswordRecoveryEmail,
+  waitForPasswordRecoverySession,
+  updateCurrentUserPassword,
+  touchLastLogin,
+  setProfileStatus,
+  fetchAllProfilesForAdmin,
+  fetchCloudProfiles,
+  updateCloudProfileStatus,
+  uploadProductPhotoIfNeeded,
+  syncCloudProductsToLocal,
+  pushLocalProductsToCloud,
+  adjustRepresentativeStockRemote,
+  queueRepresentativeStockDelta,
+  updateRepresentativeInventoryRemote,
+  fetchRepresentativeStockForAdminV725,
+  fetchRepresentativeOrdersForAdminV725,
+  fetchRepresentativeStockMap,
+  upsertCloudClient,
+  deleteCloudClient,
+  syncCloudClientsToLocal,
+  syncCloudSalesToLocal,
+  syncGenericCloudRecordsToLocal,
+  insertCloudMessage,
+  fetchCloudInboxMessages,
+  markCloudMessageRead,
+  insertCloudPurchaseOrder,
+  fetchCloudPurchaseOrders,
+  updateCloudPurchaseOrderStatus,
+  cloudAfterPut,
+  cloudAfterDelete,
+  runBackgroundSyncOnce,
+  startRealtimeSubscriptions,
+  stopRealtimeSubscriptions,
+  startBackgroundSync,
+  syncAfterLogin,
+  runFullAdminSync,
+  flushPendingSyncQueue,
+  testOnlineConnection,
+  createPreSyncLocalSnapshot,
+  openSafeCloudSyncSheet
+});

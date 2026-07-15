@@ -1,720 +1,258 @@
-/* catalog-pdf.js — Catálogo comercial PDF para clientes: diseño limpio, sin imágenes de referencia distorsionadas, con compartir inmediato. */
+/* inbox.js — Buzón conectado directamente a Supabase. */
 
-const NATURA_BRAND_LOGO = 'img/brand/natura-vida-logo.jpeg';
-let _lastCatalogPdf = null;
-
-function catalogVisibleProducts() {
-  const resellerCatalog = window.isReseller && isReseller();
-  return (AppState.products || [])
-    .filter(p => p.status !== 'archived')
-    .sort((a, b) => String(a.category || 'General').localeCompare(String(b.category || 'General')) || String(a.name || '').localeCompare(String(b.name || '')));
-}
-
-function catalogPrimaryPrice(product) {
-  return window.isReseller && isReseller() ? resellerLocalUnitPrice(product) : publicPrice(product);
-}
-
-function catalogSecondaryPrice(product) {
-  return window.isReseller && isReseller() ? resellerLocalWholesalePrice(product) : marketPrice(product);
-}
-
-function catalogPrimaryLabel() {
-  return window.isReseller && isReseller() ? 'Precio unitario' : 'Precio unitario';
-}
-
-function catalogSecondaryLabel() {
-  return 'Mayorista';
-}
-
-function cleanPdfText(value, max = 500) {
-  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-}
-
-function safePdfMoney(value) {
-  return fmtMoney(Number(value || 0));
-}
-
-function pdfImageType(dataUrl) {
-  return String(dataUrl || '').includes('image/png') ? 'PNG' : 'JPEG';
-}
-
-async function imageForPdf(src) {
-  if (!src || typeof src !== 'string') return null;
-  if (src.startsWith('data:image/')) return src;
+let _lastUnreadV725 = 0;
+function playNotificationBeatV725() {
   try {
-    const res = await fetch(src);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const start = ctx.currentTime;
+    [0, 0.16].forEach((offset, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = idx ? 2300 : 1950;
+      gain.gain.setValueAtTime(0.0001, start + offset);
+      gain.gain.exponentialRampToValueAtTime(0.42, start + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.135);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(start + offset); osc.stop(start + offset + 0.145);
     });
-  } catch (_) {
-    return null;
-  }
+    setTimeout(()=>ctx.close && ctx.close(), 600);
+  } catch (_) {}
 }
 
-async function imageInfoForPdf(src) {
-  const data = await imageForPdf(src);
-  if (!data) return null;
-  return await new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const w = img.naturalWidth || 1, h = img.naturalHeight || 1;
-        const maxEdge = 820;
-        if (Math.max(w, h) <= maxEdge && String(data).length < 550000) return resolve({ data, type: pdfImageType(data), width: w, height: h });
-        const ratio = Math.min(1, maxEdge / Math.max(w, h));
-        const cw = Math.max(1, Math.round(w * ratio));
-        const ch = Math.max(1, Math.round(h * ratio));
-        const canvas = document.createElement('canvas');
-        canvas.width = cw; canvas.height = ch;
-        const ctx = canvas.getContext('2d', { alpha: false });
-        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cw,ch);
-        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img,0,0,cw,ch);
-        resolve({ data: canvas.toDataURL('image/jpeg', 0.82), type: 'JPEG', width: cw, height: ch });
-      } catch (_) { resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 }); }
-    };
-    img.onerror = () => resolve({ data, type: pdfImageType(data), width: 1, height: 1 });
-    img.src = data;
+
+function normalizeMessage(m = {}) {
+  const now = Date.now();
+  return {
+    id: m.id || uid('msg'),
+    type: m.type || 'general',
+    title: m.title || 'Mensaje',
+    body: m.body || '',
+    senderUserId: m.senderUserId || m.sender_user_id || null,
+    senderName: m.senderName || m.sender_name || '',
+    senderRole: m.senderRole || m.sender_role || '',
+    recipientRole: m.recipientRole || m.recipient_role || 'Administrador',
+    recipientUserId: m.recipientUserId || m.recipient_user_id || null,
+    status: m.status || 'unread',
+    payload: m.payload || {},
+    createdAt: Number(m.createdAt || (m.created_at ? new Date(m.created_at).getTime() : now)),
+    updatedAt: Number(m.updatedAt || (m.updated_at ? new Date(m.updated_at).getTime() : now))
+  };
+}
+
+function messageVisibleForCurrentUser(message) {
+  if (!requireAuth()) return false;
+  const m = normalizeMessage(message);
+  if (isAdmin && isAdmin()) return m.recipientRole === 'Administrador' || !m.recipientRole || m.recipientUserId === AppState.session.userId || m.recipientUserId === AppState.session.onlineUserId;
+  const uid = AppState.session.userId;
+  const onlineId = AppState.session.onlineUserId;
+  return m.recipientUserId === uid || m.recipientUserId === onlineId || m.senderUserId === uid || m.senderUserId === onlineId || m.recipientRole === AppState.session.roleName;
+}
+
+async function saveLocalMessage(message) {
+  const msg = normalizeMessage(message);
+  await DB.put('messages', msg);
+  AppState.messages = await DB.getAll('messages');
+  return msg;
+}
+
+async function sendAdminMessage(type, title, body, payload = {}) {
+  const msg = normalizeMessage({
+    type,
+    title,
+    body,
+    senderUserId: AppState.session ? (AppState.session.onlineUserId || AppState.session.userId) : null,
+    senderName: AppState.session ? (AppState.session.fullName || AppState.session.username) : '',
+    senderRole: AppState.session ? AppState.session.roleName : '',
+    recipientRole: 'Administrador',
+    status: 'unread',
+    payload
   });
+  // El envío inmediato hacia Supabase ahora ocurre dentro de saveLocalMessage
+  // conexión en este momento.
+  await saveLocalMessage(msg);
+  await refreshInboxBadge({ silent: true }).catch(() => {});
+  return msg;
 }
 
-async function imageCoverInfoForPdf(src, outputWidth = 900, outputHeight = 900) {
-  const data = await imageForPdf(src);
-  if (!data) return null;
-  return await new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = outputWidth;
-        canvas.height = outputHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, outputWidth, outputHeight);
-        const scale = Math.max(outputWidth / (img.naturalWidth || 1), outputHeight / (img.naturalHeight || 1));
-        const width = (img.naturalWidth || 1) * scale;
-        const height = (img.naturalHeight || 1) * scale;
-        ctx.drawImage(img, (outputWidth - width) / 2, (outputHeight - height) / 2, width, height);
-        const cover = canvas.toDataURL('image/jpeg', 0.88);
-        resolve({ data: cover, type: 'JPEG', width: outputWidth, height: outputHeight });
-      } catch (_) { resolve({ data, type: pdfImageType(data), width: img.naturalWidth || 1, height: img.naturalHeight || 1 }); }
-    };
-    img.onerror = () => resolve(null);
-    img.src = data;
-  });
+async function syncInboxFromCloud() {
+  if (!isOnlineConfigured() || !window.fetchCloudInboxMessages) return { ok: true, count: 0, localOnly: true };
+  const res = await fetchCloudInboxMessages().catch(err => ({ ok: false, message: err.message }));
+  if (!res.ok) return res;
+  const rows = (res.messages || []).map(normalizeMessage);
+  await DB.clear('messages').catch(() => {});
+  if (rows.length) await DB.bulkPut('messages', rows, { silent: true }).catch(() => {});
+  AppState.messages = await DB.getAll('messages').catch(() => []);
+  return { ok: true, count: rows.length };
 }
 
-function drawImageContain(doc, img, x, y, w, h) {
-  if (!img || !img.data) return false;
-  const ratio = Math.min(w / img.width, h / img.height);
-  const nw = img.width * ratio;
-  const nh = img.height * ratio;
-  const nx = x + (w - nw) / 2;
-  const ny = y + (h - nh) / 2;
-  try {
-    doc.addImage(img.data, img.type, nx, ny, nw, nh, undefined, 'FAST');
-    return true;
-  } catch (_) {
-    return false;
-  }
+async function refreshInboxBadge(options = {}) {
+  // Para evitar congelamientos, el buzón no consulta Supabase en cada render.
+  // Sólo actualiza online si se solicita explícitamente con forceCloud.
+  if (options.forceCloud && requireAuth()) await syncInboxFromCloud().catch(() => {});
+  const messages = (await DB.getAll('messages').catch(() => [])).map(normalizeMessage);
+  AppState.messages = messages;
+  const unread = messages.filter(m => messageVisibleForCurrentUser(m) && m.status !== 'read').length;
+  const btn = document.getElementById('inboxFloatBtn');
+  const dot = document.getElementById('inboxDot');
+  const count = document.getElementById('inboxCount');
+  if (btn) btn.classList.toggle('hidden', !requireAuth());
+  if (dot) dot.classList.toggle('hidden', unread === 0);
+  if (count) count.textContent = unread ? String(unread) : '';
+  if (!options.silent && unread > _lastUnreadV725) playNotificationBeatV725();
+  _lastUnreadV725 = unread;
+  return unread;
 }
 
-function addWrappedText(doc, text, x, y, maxWidth, lineHeight, maxLines) {
-  const lines = doc.splitTextToSize(cleanPdfText(text), maxWidth);
-  const visible = lines.slice(0, maxLines);
-  visible.forEach((line, idx) => doc.text(line, x, y + (idx * lineHeight)));
-  return y + (visible.length * lineHeight);
+function installInboxButton() {
+  const stamp = document.getElementById('dateStamp');
+  if (!stamp || document.getElementById('inboxFloatBtn')) return;
+  const btn = document.createElement('button');
+  btn.id = 'inboxFloatBtn';
+  btn.className = 'inboxFloatBtn hidden';
+  btn.type = 'button';
+  btn.innerHTML = `<span class="mailIcon">✉</span><span id="inboxDot" class="inboxDot hidden"></span><span id="inboxCount" class="inboxCount"></span>`;
+  btn.title = 'Buzón de mensajes y pedidos';
+  stamp.insertAdjacentElement('afterend', btn);
+  btn.addEventListener('click', () => openInboxPanel(true));
 }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2500);
+async function markLocalMessageRead(id) {
+  const msg = await DB.get('messages', id).catch(() => null);
+  if (!msg) return;
+  msg.status = 'read';
+  msg.updatedAt = Date.now();
+  await DB.put('messages', msg, { silent: true });
+  if (window.markCloudMessageRead && isOnlineConfigured()) await markCloudMessageRead(id).catch(() => {});
 }
 
-function drawLeaf(doc, cx, cy, w, h, rotate = 0, color = [132, 178, 65]) {
-  doc.setFillColor(...color);
-  doc.ellipse(cx, cy, w, h, 'F');
-  doc.setDrawColor(255, 255, 255);
-  doc.setLineWidth(1.1);
-  doc.line(cx - w * .55, cy + h * .08, cx + w * .48, cy - h * .12);
-}
-
-function drawLeafCluster(doc, x, y, scale = 1) {
-  drawLeaf(doc, x, y, 16 * scale, 8 * scale, 0, [132, 178, 65]);
-  drawLeaf(doc, x + 30 * scale, y + 12 * scale, 14 * scale, 7 * scale, 0, [1, 119, 59]);
-  drawLeaf(doc, x - 22 * scale, y + 20 * scale, 12 * scale, 6 * scale, 0, [168, 199, 36]);
-  drawLeaf(doc, x + 4 * scale, y + 33 * scale, 11 * scale, 5 * scale, 0, [216, 142, 30]);
-}
-
-function drawBenefitIcon(doc, kind, x, y, color) {
-  doc.setDrawColor(...color);
-  doc.setFillColor(...color);
-  doc.setLineWidth(2);
-  doc.circle(x, y, 16, 'S');
-  if (kind === 'energy') {
-    doc.line(x - 2, y - 11, x - 9, y + 1);
-    doc.line(x - 9, y + 1, x + 2, y + 1);
-    doc.line(x + 2, y + 1, x - 2, y + 12);
-    doc.line(x - 2, y + 12, x + 10, y - 3);
-  } else if (kind === 'skin') {
-    doc.circle(x - 5, y - 3, 1.4, 'F');
-    doc.circle(x + 5, y - 3, 1.4, 'F');
-    doc.line(x - 7, y + 6, x - 2, y + 9);
-    doc.line(x - 2, y + 9, x + 4, y + 9);
-    doc.line(x + 4, y + 9, x + 8, y + 6);
-  } else if (kind === 'hair') {
-    doc.line(x - 10, y - 6, x - 4, y - 13);
-    doc.line(x - 4, y - 13, x + 6, y - 11);
-    doc.line(x + 6, y - 11, x + 10, y - 4);
-    doc.line(x - 8, y + 2, x - 8, y + 13);
-    doc.line(x, y + 2, x, y + 13);
-    doc.line(x + 8, y + 2, x + 8, y + 13);
-  } else {
-    doc.line(x - 8, y - 1, x + 8, y - 1);
-    doc.line(x - 6, y + 5, x - 1, y + 9);
-    doc.line(x - 1, y + 9, x + 6, y + 5);
-  }
-}
-
-function drawProductPlaceholder(doc, x, y, w, h) {
-  doc.setFillColor(239, 247, 241);
-  doc.roundedRect(x, y, w, h, 16, 16, 'F');
-  doc.setDrawColor(215, 231, 220);
-  doc.roundedRect(x + 7, y + 7, w - 14, h - 14, 14, 14, 'S');
-  doc.setFillColor(1, 119, 59);
-  doc.circle(x + w / 2, y + h / 2 - 6, 19, 'F');
-  drawLeaf(doc, x + w / 2 + 20, y + h / 2 - 27, 17, 8, 0, [132, 178, 65]);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(255, 255, 255);
-  doc.text('NV', x + w / 2, y + h / 2 - 1, { align: 'center' });
-}
-
-function catalogFileName() {
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  return `NVB_CATALOGO_PRODUCTOS_${stamp}.pdf`;
-}
-
-function catalogContactLine(custom = '') {
-  if (custom) return custom;
-  const pieces = [];
-  if (AppState.settings.contactName) pieces.push(AppState.settings.contactName);
-  if (AppState.settings.contactPhone) pieces.push(`WhatsApp ${AppState.settings.contactPhone}`);
-  if (AppState.settings.contactCity) pieces.push(AppState.settings.contactCity);
-  if (pieces.length) return pieces.join(' · ');
-  if (AppState.session && AppState.session.fullName) return AppState.session.fullName;
-  return '';
-}
-
-async function shareCatalogPdf() {
-  if (!_lastCatalogPdf || !_lastCatalogPdf.blob) {
-    showToast('Primero genera el catálogo PDF.', 'error');
+async function openMessageComposer(options = {}) {
+  if (!requireAuth()) return;
+  const adminMode = isAdmin && isAdmin();
+  const replyTo = options.replyTo || null;
+  const recipientUserId = options.recipientUserId || (replyTo ? replyTo.senderUserId : null);
+  const recipientName = options.recipientName || (replyTo ? replyTo.senderName : 'Administrador');
+  if (adminMode && !recipientUserId) {
+    showToast('Abre un mensaje de un representante para responderle.', 'error');
     return;
   }
-  if (window.shareBlobFile) {
-    return shareBlobFile(
-      _lastCatalogPdf.blob,
-      _lastCatalogPdf.filename,
-      'application/pdf',
-      'Catálogo Natura Vida',
-      'Catálogo de productos Natura Vida - Te cuida por dentro y por fuera.'
-    );
-  }
-  const file = new File([_lastCatalogPdf.blob], _lastCatalogPdf.filename, { type: 'application/pdf' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: 'Catálogo Natura Vida', text: 'Catálogo de productos Natura Vida.' });
-      return;
-    } catch (_) {}
-  }
-  downloadBlob(_lastCatalogPdf.blob, _lastCatalogPdf.filename);
-  showToast('Catálogo descargado. Puedes adjuntarlo en cualquier aplicación compatible.');
-}
-
-function openCatalogResultSheet(blob, filename, productsCount) {
-  if (_lastCatalogPdf && _lastCatalogPdf.url) URL.revokeObjectURL(_lastCatalogPdf.url);
-  const url = URL.createObjectURL(blob);
-  _lastCatalogPdf = { blob, filename, url, createdAt: Date.now() };
-
+  const suggestedTitle = replyTo ? `Respuesta: ${String(replyTo.title || 'Mensaje').replace(/^Respuesta:\s*/i, '')}` : 'Consulta al administrador';
   openSheet(`
-    <h2>Catálogo listo <span class="x" id="closeSheet">✕</span></h2>
-    <div class="catalogReadyHero">
-      <div class="readyMark">✓</div>
-      <div>
-        <div class="eyebrow">PDF generado correctamente</div>
-        <h3>${escapeHtml(filename)}</h3>
-        <p>${productsCount} producto(s) incluidos. Comparte de inmediato o revisa la vista previa.</p>
-      </div>
-    </div>
-    <div class="pdfPreviewBox">
-      <iframe src="${url}" class="pdfPreviewFrame" title="Vista previa del catálogo"></iframe>
-    </div>
-    <div class="exportRow catalogExportRow">
-      <div class="exportBtn primaryShare" id="btnShareCatalog"><span class="ic">↗</span><span class="lbl">Compartir</span><span class="sub">Cualquier aplicación</span></div>
-      <div class="exportBtn" id="btnOpenCatalog"><span class="ic">◫</span><span class="lbl">Previsualizar</span><span class="sub">Abrir PDF</span></div>
-    </div>
-    <div class="exportRow catalogExportRow">
-      <div class="exportBtn" id="btnDownloadCatalog"><span class="ic">↓</span><span class="lbl">Descargar</span><span class="sub">Guardar archivo</span></div>
-      <div class="exportBtn" id="btnCloseCatalog"><span class="ic">×</span><span class="lbl">Cerrar</span><span class="sub">Volver</span></div>
-    </div>
-    <div class="banner catalogShareNote">En celular, <strong>Compartir</strong> abre el menú nativo para elegir WhatsApp, Gmail, Telegram, Drive u otra aplicación. Si el navegador no lo permite, descargará el PDF.</div>
+    <h2>${replyTo ? 'Responder mensaje' : 'Escribir al administrador'} <span class="x" id="closeSheet">✕</span></h2>
+    <div class="v7CashNotice">Destino: <strong>${escapeHtml(recipientName || (adminMode ? 'Representante' : 'Administrador'))}</strong>. Este buzón es para pedidos, consultas breves y coordinación comercial.</div>
+    <div class="field"><label>Tipo de mensaje</label><select id="messageType"><option value="general">Consulta general</option><option value="pedido">Pedido o producto</option><option value="soporte">Problema con la aplicación</option><option value="pago">Pago o comprobante</option></select></div>
+    <div class="field"><label>Asunto</label><input id="messageTitle" maxlength="100" value="${escapeHtml(suggestedTitle)}" placeholder="Resume el motivo"></div>
+    <div class="field"><label>Mensaje</label><textarea id="messageBody" rows="6" maxlength="1200" placeholder="Escribe aquí el detalle necesario…"></textarea></div>
+    <div class="nvSheetActions"><button class="btn block" id="sendDirectMessage">Enviar mensaje</button></div>
   `, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', close);
-    $('#btnCloseCatalog', overlay).addEventListener('click', close);
-    $('#btnShareCatalog', overlay).addEventListener('click', shareCatalogPdf);
-    $('#btnOpenCatalog', overlay).addEventListener('click', () => window.open(url, '_blank'));
-    $('#btnDownloadCatalog', overlay).addEventListener('click', () => {
-      downloadBlob(blob, filename);
-      showToast('Catálogo descargado.');
-    });
-    if (navigator.canShare) {
-      const shareFile = new File([blob], filename, { type: 'application/pdf' });
-      if (navigator.canShare({ files: [shareFile] })) setTimeout(() => shareCatalogPdf(), 500);
-    }
-  });
-}
-
-async function generateCatalogPdf(options = {}) {
-  const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPDFCtor) {
-    showToast('No se pudo cargar el generador PDF. Revisa conexión o librería jsPDF.', 'error');
-    return null;
-  }
-  const products = catalogVisibleProducts();
-  if (!products.length) {
-    showToast('No hay productos activos para generar catálogo.', 'error');
-    return null;
-  }
-
-  const includePrices = options.includePrices !== false;
-  const includeStock = !!options.includeStock;
-  const includeResellerPrice = !!options.includeWholesalePrice;
-  const title = cleanPdfText(options.title || `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`, 120);
-  const subtitle = cleanPdfText(options.subtitle || AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera', 160);
-  const contact = cleanPdfText(catalogContactLine(options.contact || AppState.settings.catalogContact || ''), 180);
-  const note = cleanPdfText(options.note || 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.', 240);
-
-  const doc = new jsPDFCtor({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const margin = 34;
-  const green = [1, 119, 59];
-  const deepGreen = [0, 91, 48];
-  const leaf = [132, 178, 65];
-  const orange = [216, 142, 30];
-  const dark = [22, 34, 27];
-  const gray = [96, 108, 100];
-  const soft = [246, 251, 247];
-  const line = [222, 234, 225];
-  const brandLogo = await imageInfoForPdf(NATURA_BRAND_LOGO) || await imageInfoForPdf(AppState.settings.logo);
-  const commercialProfile = window.myCommercialProfile ? myCommercialProfile() : null;
-  const includePaymentQr = options.includePaymentQr !== false;
-  const paymentQr = includePaymentQr && commercialProfile && commercialProfile.qrUrl
-    ? await imageInfoForPdf(commercialProfile.qrUrl)
-    : null;
-
-  function footer(pageNo) {
-    doc.setDrawColor(...line);
-    doc.line(margin, pageH - 34, pageW - margin, pageH - 34);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.2);
-    doc.setTextColor(95, 108, 100);
-    doc.text(`${AppState.settings.businessName || 'NATURA VIDA'} · ${subtitle}`, margin, pageH - 18, { maxWidth: pageW - 145 });
-    doc.text(String(pageNo), pageW - margin, pageH - 18, { align: 'right' });
-  }
-
-  function header(label) {
-    doc.setFillColor(...soft);
-    doc.roundedRect(margin, 22, pageW - margin * 2, 54, 18, 18, 'F');
-    if (brandLogo) drawImageContain(doc, brandLogo, margin + 12, 29, 62, 38);
-    doc.setTextColor(...deepGreen);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text(AppState.settings.businessName || 'NATURA VIDA', margin + 84, 44);
-    doc.setTextColor(...orange);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.8);
-    doc.text(label, margin + 84, 60);
-    drawLeafCluster(doc, pageW - margin - 55, 40, .82);
-  }
-
-  function chip(x, y, w, txt, fillRgb, textRgb) {
-    doc.setFillColor(...fillRgb);
-    doc.roundedRect(x, y, w, 24, 12, 12, 'F');
-    doc.setTextColor(...textRgb);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.3);
-    doc.text(txt, x + w / 2, y + 15.5, { align: 'center' });
-  }
-
-  // Portada sin usar fotos de referencia pegadas/distorsionadas.
-  doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, pageW, pageH, 'F');
-  doc.setFillColor(245, 251, 246);
-  doc.rect(0, 0, pageW, pageH, 'F');
-  doc.setFillColor(233, 245, 237);
-  doc.circle(pageW + 18, 92, 132, 'F');
-  doc.setFillColor(255, 247, 232);
-  doc.circle(-24, pageH - 70, 142, 'F');
-  for (let i = 0; i < 20; i++) {
-    const lx = 55 + (i % 5) * 100 + (i % 2) * 20;
-    const ly = 35 + Math.floor(i / 5) * 38;
-    drawLeaf(doc, lx, ly, 11 + (i % 3), 5.5, 0, i % 2 ? leaf : green);
-  }
-  drawLeafCluster(doc, pageW - 90, 78, 1.4);
-  drawLeafCluster(doc, 80, pageH - 120, 1.25);
-
-  doc.setFillColor(255,255,255);
-  doc.setDrawColor(...line);
-  doc.roundedRect(46, 80, pageW - 92, 422, 30, 30, 'FD');
-  if (brandLogo) drawImageContain(doc, brandLogo, pageW / 2 - 138, 112, 276, 136);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...deepGreen);
-  doc.setFontSize(30);
-  doc.text('Catálogo de Productos', pageW / 2, 305, { align: 'center' });
-  doc.setFont('helvetica', 'italic');
-  doc.setTextColor(...orange);
-  doc.setFontSize(15);
-  doc.text(subtitle, pageW / 2, 333, { align: 'center', maxWidth: pageW - 120 });
-
-  chip(pageW / 2 - 190, 370, 120, '100% natural', [235, 245, 238], [0, 91, 48]);
-  chip(pageW / 2 - 60, 370, 100, 'Orgánico', [1, 119, 59], [255, 255, 255]);
-  chip(pageW / 2 + 50, 370, 140, `${products.length} producto(s)`, [255, 248, 235], [216, 142, 30]);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11.2);
-  doc.setTextColor(...gray);
-  addWrappedText(doc, note, 86, 425, pageW - 172, 14, 4);
-
-  const featY = 540;
-  const featW = (pageW - 116) / 3;
-  const feats = [
-    ['Belleza natural', 'Ideal para cuidado de piel, cabello y rutina diaria.'],
-    ['Bienestar integral', 'Productos pensados para acompañar tu salud y energía.'],
-    ['Presentaciones', 'Consulta tamaños, disponibilidad y recomendaciones.']
-  ];
-  feats.forEach((f, idx) => {
-    const fx = 50 + idx * (featW + 8);
-    doc.setFillColor(255,255,255);
-    doc.setDrawColor(...line);
-    doc.roundedRect(fx, featY, featW, 88, 18, 18, 'FD');
-    drawBenefitIcon(doc, idx === 0 ? 'skin' : idx === 1 ? 'energy' : 'hair', fx + 30, featY + 32, idx === 2 ? orange : green);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(10.4);
-    doc.setTextColor(...deepGreen);
-    doc.text(f[0], fx + 56, featY + 26, { maxWidth: featW - 64 });
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...gray);
-    addWrappedText(doc, f[1], fx + 56, featY + 43, featW - 68, 10.5, 4);
-  });
-
-  if (contact) {
-    doc.setFillColor(255, 248, 235);
-    doc.setDrawColor(244, 217, 169);
-    doc.roundedRect(78, 668, pageW - 156, 50, 16, 16, 'FD');
-    doc.setTextColor(...orange);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11.4);
-    doc.text('Pedidos y consultas', pageW / 2, 688, { align: 'center' });
-    doc.setTextColor(...dark);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10.5);
-    doc.text(contact, pageW / 2, 706, { align: 'center', maxWidth: pageW - 190 });
-  }
-  footer(1);
-
-  // Página de beneficios para cliente.
-  doc.addPage();
-  let pageNo = 2;
-  header('Beneficios y usos');
-  doc.setTextColor(...deepGreen);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(24);
-  doc.text('Beneficios que se sienten', margin, 116);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.setTextColor(...gray);
-  addWrappedText(doc, 'Elige productos naturales para complementar tu bienestar, tu belleza y tu cuidado diario. Consulta siempre disponibilidad y recomendaciones de uso.', margin, 140, pageW - margin * 2, 14, 3);
-
-  const benefitRows = [
-    ['Fuente de energía natural', 'Acompaña tu rutina diaria con alternativas naturales y prácticas.', 'energy'],
-    ['Piel hidratada y radiante', 'Ayuda al cuidado de la piel y aporta sensación de suavidad.', 'skin'],
-    ['Cabello fuerte y brillante', 'Ideal para rutinas de cuidado personal y bienestar capilar.', 'hair'],
-    ['Apoyo al bienestar digestivo', 'Productos seleccionados para acompañar hábitos saludables.', 'digest']
-  ];
-  let by = 204;
-  benefitRows.forEach((b, idx) => {
-    doc.setFillColor(idx % 2 ? 255 : 248, idx % 2 ? 255 : 252, idx % 2 ? 255 : 249);
-    doc.setDrawColor(...line);
-    doc.roundedRect(margin, by, pageW - margin * 2, 74, 18, 18, 'FD');
-    drawBenefitIcon(doc, b[2], margin + 36, by + 37, idx === 3 ? orange : green);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(13);
-    doc.setTextColor(...deepGreen);
-    doc.text(b[0], margin + 72, by + 27);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(...gray);
-    addWrappedText(doc, b[1], margin + 72, by + 45, pageW - margin * 2 - 92, 11.5, 2);
-    by += 88;
-  });
-
-  doc.setFillColor(...green);
-  doc.roundedRect(margin, 592, pageW - margin * 2, 54, 20, 20, 'F');
-  doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(14);
-  doc.text('Sin químicos · Sin conservantes · Natural', pageW / 2, 624, { align: 'center' });
-  doc.setFont('helvetica','italic');
-  doc.setFontSize(12);
-  doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 690, { align: 'center' });
-  footer(pageNo++);
-
-  // Productos: V7.1.2 prioriza imagen completa y texto más compacto.
-  doc.addPage();
-  header('Productos disponibles');
-  const cardW = pageW - margin * 2;
-  const cardH = 292;
-  let y = 94;
-
-  for (let i = 0; i < products.length; i++) {
-    const p = products[i];
-    if (y + cardH > pageH - 48) {
-      footer(pageNo++);
-      doc.addPage();
-      header('Productos disponibles');
-      y = 94;
-    }
-
-    doc.setFillColor(255,255,255);
-    doc.setDrawColor(...line);
-    doc.roundedRect(margin, y, cardW, cardH, 24, 24, 'FD');
-    doc.setFillColor(...green);
-    doc.roundedRect(margin, y, 8, cardH, 6, 6, 'F');
-
-    const imgX = margin + 22, imgY = y + 22, imgW = 190, imgH = 190;
-    doc.setFillColor(248, 252, 249);
-    doc.roundedRect(imgX, imgY, imgW, imgH, 22, 22, 'F');
-    const img = await imageCoverInfoForPdf(p.photo, 900, 900);
-    if (!drawImageContain(doc, img, imgX + 10, imgY + 10, imgW - 20, imgH - 20)) drawProductPlaceholder(doc, imgX, imgY, imgW, imgH);
-    if (Number(p.stock || 0) <= 0) {
-      doc.setFillColor(230,91,91);
-      doc.roundedRect(imgX + imgW - 82, imgY + 12, 68, 22, 11, 11, 'F');
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(8.2);
-      doc.setTextColor(255,255,255);
-      doc.text('AGOTADO', imgX + imgW - 48, imgY + 27, { align: 'center' });
-    }
-
-    let tx = imgX + imgW + 24;
-    let ty = y + 34;
-    doc.setFillColor(232,244,236);
-    doc.roundedRect(tx, ty - 13, Math.min(160, cardW - 250), 22, 11, 11, 'F');
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(8.2);
-    doc.setTextColor(...green);
-    doc.text(cleanPdfText(p.category || 'General', 32).toUpperCase(), tx + 10, ty + 2);
-
-    ty += 32;
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(18);
-    doc.setTextColor(...dark);
-    ty = addWrappedText(doc, cleanPdfText(p.name, 95), tx, ty, cardW - 250, 21, 2) + 8;
-
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(10.2);
-    doc.setTextColor(...gray);
-    ty = addWrappedText(doc, cleanPdfText(p.description || 'Producto natural disponible. Consulta presentación y recomendaciones de uso.', 260), tx, ty, cardW - 250, 13, 4);
-
-    const priceY = y + cardH - 72;
-    if (includePrices) {
-      doc.setFillColor(...green);
-      doc.roundedRect(tx, priceY, cardW - 250, 42, 20, 20, 'F');
-      doc.setTextColor(255,255,255);
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(15.5);
-      doc.text(`${catalogPrimaryLabel()}: ${safePdfMoney(catalogPrimaryPrice(p))}`, tx + (cardW - 250) / 2, priceY + 27, { align: 'center' });
-      if (includeResellerPrice) {
-        doc.setTextColor(...orange);
-        doc.setFont('helvetica','bold');
-        doc.setFontSize(8.2);
-        doc.text(`${catalogSecondaryLabel()}: ${safePdfMoney(catalogSecondaryPrice(p))}`, tx, y + cardH - 14);
-      }
-    } else {
-      doc.setFillColor(255,248,235);
-      doc.roundedRect(tx, priceY, cardW - 250, 42, 20, 20, 'F');
-      doc.setTextColor(...orange);
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(13);
-      doc.text('Consultar precio', tx + (cardW - 250) / 2, priceY + 27, { align: 'center' });
-    }
-    if (includeStock) {
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...gray);
-      doc.text(`Stock ref.: ${Number(p.stock || 0)}`, margin + cardW - 24, y + cardH - 14, { align: 'right' });
-    }
-    y += cardH + 16;
-  }
-  footer(pageNo++);
-
-  // Cierre.
-  doc.addPage();
-  header('Contacto');
-  doc.setFillColor(255,255,255);
-  doc.setDrawColor(...line);
-  doc.roundedRect(margin, 112, pageW - margin * 2, 380, 28, 28, 'FD');
-  drawLeafCluster(doc, margin + 55, 155, 1.5);
-  drawLeafCluster(doc, pageW - margin - 70, 392, 1.4);
-  if (brandLogo) drawImageContain(doc, brandLogo, pageW / 2 - 126, 150, 252, 112);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(22);
-  doc.setTextColor(...deepGreen);
-  doc.text('Gracias por elegir Natura Vida', pageW / 2, 302, { align: 'center' });
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(11.2);
-  doc.setTextColor(...gray);
-  addWrappedText(doc, 'Nuestros productos están pensados para acompañar tu bienestar y tu rutina de belleza de manera natural. Escríbenos para conocer disponibilidad, presentaciones y recomendaciones.', margin + 42, 332, pageW - margin * 2 - 84, 14, 5);
-  chip(pageW / 2 - 156, 420, 92, 'Orgánico', [235,245,238], [0,91,48]);
-  chip(pageW / 2 - 54, 420, 108, 'Sin químicos', [235,245,238], [0,91,48]);
-  chip(pageW / 2 + 64, 420, 92, 'Bienestar', [235,245,238], [0,91,48]);
-  if (paymentQr) {
-    const qrX = margin + 28;
-    const qrY = 510;
-    const qrSize = 112;
-    doc.setFillColor(255,255,255);
-    doc.setDrawColor(...line);
-    doc.roundedRect(qrX, qrY, qrSize, qrSize, 16, 16, 'FD');
-    drawImageContain(doc, paymentQr, qrX + 9, qrY + 9, qrSize - 18, qrSize - 18);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(8.8);
-    doc.setTextColor(...green);
-    doc.text('QR para pagos', qrX + qrSize / 2, qrY + qrSize + 18, { align: 'center' });
-    if (contact) {
-      const cx = qrX + qrSize + 18;
-      const cw = pageW - margin - 28 - cx;
-      doc.setFillColor(255,248,235);
-      doc.setDrawColor(244,217,169);
-      doc.roundedRect(cx, qrY + 8, cw, 94, 18, 18, 'FD');
-      doc.setTextColor(...orange);
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(11.2);
-      doc.text('Pide información o realiza tu pedido', cx + cw / 2, qrY + 36, { align: 'center', maxWidth: cw - 26 });
-      doc.setTextColor(...dark);
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(10.2);
-      doc.text(contact, cx + cw / 2, qrY + 68, { align: 'center', maxWidth: cw - 30 });
-    }
-  } else if (contact) {
-    doc.setFillColor(255,248,235);
-    doc.setDrawColor(244,217,169);
-    doc.roundedRect(margin + 28, 532, pageW - margin * 2 - 56, 58, 18, 18, 'FD');
-    doc.setTextColor(...orange);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(11.5);
-    doc.text('Pide más información o realiza tu pedido', pageW / 2, 554, { align: 'center' });
-    doc.setTextColor(...dark);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(10.8);
-    doc.text(contact, pageW / 2, 574, { align: 'center', maxWidth: pageW - 170 });
-  }
-  doc.setFont('helvetica','italic');
-  doc.setFontSize(14);
-  doc.setTextColor(...green);
-  doc.text('Natura Vida, tu bienestar es natural.', pageW / 2, 656, { align: 'center' });
-  footer(pageNo);
-
-  const filename = catalogFileName();
-  const blob = doc.output('blob');
-  openCatalogResultSheet(blob, filename, products.length);
-  showToast('Catálogo PDF generado correctamente.');
-  return { blob, filename };
-}
-
-function openCatalogPdfOptions() {
-  const defaultTitle = `Catálogo ${AppState.settings.businessName || 'NATURA VIDA'}`;
-  const currentCommercialProfile = window.myCommercialProfile ? myCommercialProfile() : null;
-  const hasPaymentQr = !!(currentCommercialProfile && currentCommercialProfile.qrUrl);
-  openSheet(`
-    <h2>Catálogo PDF para compartir <span class="x" id="closeSheet">✕</span></h2>
-    <div class="catalogOptionsHero">
-      <img src="${NATURA_BRAND_LOGO}" alt="Natura Vida">
-      <div>
-        <div class="eyebrow">Pieza comercial</div>
-        <h3>Genera un catálogo listo para enviar</h3>
-        <p>${isReseller() ? 'PDF con los productos de tu inventario propio y tus precios unitario y mayorista.' : 'PDF con identidad Natura Vida, beneficios, fotos reales, descripción y precios comerciales.'} Sin textos internos ni explicación técnica.</p>
-      </div>
-    </div>
-    <div class="field">
-      <label>Título del catálogo</label>
-      <input type="text" id="cat_title" value="${escapeHtml(defaultTitle)}">
-    </div>
-    <div class="field">
-      <label>Subtítulo / mensaje comercial</label>
-      <input type="text" id="cat_subtitle" value="${escapeHtml(AppState.settings.businessSlogan || 'Te cuida por dentro y por fuera')}">
-    </div>
-    <div class="field">
-      <label>Contacto para pedidos</label>
-      <input type="text" id="cat_contact" placeholder="Ej.: WhatsApp 7xxxxxxx" value="${escapeHtml(catalogContactLine(AppState.settings.catalogContact || ''))}">
-    </div>
-    <div class="field">
-      <label>Mensaje breve de presentación</label>
-      <textarea id="cat_note" placeholder="Ej.: Productos naturales para bienestar y belleza.">${escapeHtml(AppState.settings.catalogNote || 'Productos naturales para bienestar, belleza y cuidado integral. Consulta presentaciones disponibles y recomendaciones de uso.')}</textarea>
-    </div>
-    <div class="catalogOptionRow">
-      <label><input type="checkbox" id="cat_prices" checked> ${isReseller() ? 'Mostrar mis precios' : 'Mostrar precio público'}</label>
-      <label><input type="checkbox" id="cat_stock"> Mostrar stock referencial</label>
-      ${isAdmin() ? `<label><input type="checkbox" id="cat_wholesale" checked> Incluir precio mayorista</label>` : ''}
-      ${hasPaymentQr ? `<label><input type="checkbox" id="cat_payment_qr" checked> Incluir mi QR de pago</label>` : ''}
-    </div>
-    <button class="btn block" id="generateCatalogBtn">Generar catálogo y compartir</button>
-  `, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', close);
-    $('#generateCatalogBtn', overlay).addEventListener('click', async () => {
-      const contact = $('#cat_contact', overlay).value.trim();
-      const note = $('#cat_note', overlay).value.trim();
-      AppState.settings.catalogContact = contact;
-      AppState.settings.catalogNote = note;
-      await saveSettings().catch(() => {});
-      const btn = $('#generateCatalogBtn', overlay);
+    const body = $('#messageBody', overlay);
+    setTimeout(() => body && body.focus(), 120);
+    $('#sendDirectMessage', overlay).addEventListener('click', async () => {
+      if (!navigator.onLine) return showToast('Necesitas internet para enviar el mensaje.', 'error');
+      const title = $('#messageTitle', overlay).value.trim();
+      const text = body.value.trim();
+      if (title.length < 3) return showToast('Escribe un asunto breve.', 'error');
+      if (text.length < 3) return showToast('Escribe el mensaje.', 'error');
+      const btn = $('#sendDirectMessage', overlay);
       btn.disabled = true;
-      btn.textContent = 'Generando catálogo… puede tardar por las fotos';
-      const result = await generateCatalogPdf({
-        title: $('#cat_title', overlay).value.trim(),
-        subtitle: $('#cat_subtitle', overlay).value.trim(),
-        contact,
-        note,
-        includePrices: $('#cat_prices', overlay).checked,
-        includeStock: $('#cat_stock', overlay).checked,
-        includeWholesalePrice: isAdmin() && $('#cat_wholesale', overlay) ? $('#cat_wholesale', overlay).checked : false,
-        includePaymentQr: hasPaymentQr && $('#cat_payment_qr', overlay) ? $('#cat_payment_qr', overlay).checked : false
-      }).catch(err => {
-        console.error(err);
-        showToast('No se pudo generar el catálogo.', 'error');
-        return null;
-      });
-      if (result) close();
-      else {
+      btn.textContent = 'Enviando…';
+      try {
+        await saveLocalMessage({
+          id: uid('msg'),
+          type: $('#messageType', overlay).value,
+          title,
+          body: text,
+          senderUserId: AppState.session.onlineUserId || AppState.session.userId,
+          senderName: AppState.session.fullName || AppState.session.email || '',
+          senderRole: AppState.session.roleName || '',
+          recipientRole: adminMode ? 'Representante' : 'Administrador',
+          recipientUserId: adminMode ? recipientUserId : null,
+          status: 'unread',
+          payload: replyTo ? { replyToMessageId: replyTo.id } : {}
+        });
+        await syncInboxFromCloud().catch(() => {});
+        await refreshInboxBadge({ silent: true }).catch(() => {});
+        close();
+        showToast('Mensaje enviado correctamente.');
+        setTimeout(() => openInboxPanel(), 80);
+      } catch (error) {
         btn.disabled = false;
-        btn.textContent = 'Generar catálogo y compartir';
+        btn.textContent = 'Reintentar envío';
+        showToast((window.messageFromError ? messageFromError(error) : error.message) || 'No se pudo enviar el mensaje.', 'error');
       }
     });
   });
 }
 
-window.generateCatalogPdf = generateCatalogPdf;
-window.openCatalogPdfOptions = openCatalogPdfOptions;
-window.shareCatalogPdf = shareCatalogPdf;
+async function openInboxPanel() {
+  if (navigator.onLine && requireAuth() && window.syncInboxFromCloud) {
+    await syncInboxFromCloud().catch(() => {});
+  }
+  const messages = (await DB.getAll('messages').catch(() => [])).map(normalizeMessage)
+    .filter(messageVisibleForCurrentUser)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 80);
+  const unread = messages.filter(m => m.status !== 'read').length;
+  openSheet(`
+    <h2>Buzón <span class="x" id="closeSheet">✕</span></h2>
+    <div class="inboxHero">
+      <div class="mailBig">✉</div>
+      <div>
+        <div class="eyebrow">Mensajes, pedidos y avisos</div>
+        <h3>${unread} pendiente(s)</h3>
+        <p>${isAdmin() ? 'Aquí verás pedidos de representantes, avisos de actualización y mensajes del servidor.' : 'Aquí verás respuestas, avisos o confirmaciones del administrador.'}</p>
+      </div>
+    </div>
+    <div class="livePill inboxLivePill">Mensajes en tiempo real</div>
+    ${!isAdmin() ? '<button class="btn block inboxComposeBtn" id="composeAdminMessage">Escribir al administrador</button>' : ''}
+    ${messages.length ? messages.map(m => `
+      <div class="messageCard ${m.status !== 'read' ? 'unread' : ''}">
+        <div class="messageTop">
+          <strong>${escapeHtml(m.title)}</strong>
+          <span>${fmtDate(m.createdAt)}</span>
+        </div>
+        <p>${escapeHtml(m.body)}</p>
+        <div class="messageMeta">${escapeHtml(m.senderName || 'Sistema')} · ${escapeHtml(m.senderRole || '')} · ${escapeHtml(m.type)}</div>
+        <div class="messageActions">
+          ${m.status !== 'read' ? `<button class="btn sm outline markReadBtn" data-id="${m.id}">Marcar leído</button>` : `<span class="tinytag">Leído</span>`}
+          ${m.type === 'purchase_order' && isAdmin() ? `<button class="btn sm openOrdersBtn">Ver pedidos</button>` : ''}
+          ${isAdmin() && m.senderUserId && m.senderUserId !== (AppState.session.onlineUserId || AppState.session.userId) ? `<button class="btn sm replyMessageBtn" data-id="${m.id}">Responder</button>` : ''}
+        </div>
+      </div>
+    `).join('') : `<div class="empty compact"><span class="ic">📭</span><h3>Sin mensajes</h3><p>Cuando llegue un pedido o aviso aparecerá aquí.</p></div>`}
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    const composeBtn = $('#composeAdminMessage', overlay);
+    if (composeBtn) composeBtn.addEventListener('click', () => { close(); setTimeout(() => openMessageComposer(), 80); });
+    $all('.replyMessageBtn', overlay).forEach(b => b.addEventListener('click', () => {
+      const message = messages.find(m => m.id === b.dataset.id);
+      if (!message) return;
+      close();
+      setTimeout(() => openMessageComposer({ replyTo: message, recipientUserId: message.senderUserId, recipientName: message.senderName }), 80);
+    }));
+    $all('.markReadBtn', overlay).forEach(b => b.addEventListener('click', async () => {
+      await markLocalMessageRead(b.dataset.id);
+      await refreshInboxBadge({ silent: true });
+      close();
+      await openInboxPanel();
+    }));
+    $all('.openOrdersBtn', overlay).forEach(b => b.addEventListener('click', () => { close(); navigateTo(isAdmin() ? 'pedidos' : 'compra'); }));
+  });
+  await refreshInboxBadge({ silent: true }).catch(() => {});
+}
+
+window.normalizeMessage = normalizeMessage;
+window.messageVisibleForCurrentUser = messageVisibleForCurrentUser;
+window.saveLocalMessage = saveLocalMessage;
+window.sendAdminMessage = sendAdminMessage;
+window.syncInboxFromCloud = syncInboxFromCloud;
+window.refreshInboxBadge = refreshInboxBadge;
+window.installInboxButton = installInboxButton;
+window.openInboxPanel = openInboxPanel;
+window.markLocalMessageRead = markLocalMessageRead;
+window.openMessageComposer = openMessageComposer;
+
+window.fetchAndCacheInboxMessages = syncInboxFromCloud;

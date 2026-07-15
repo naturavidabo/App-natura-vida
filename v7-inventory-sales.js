@@ -1,510 +1,359 @@
-/* sales.js — Venta con precios flexibles por producto.
-   V7.2.3: precio normal, precio por grupo y precio manual por línea. */
+/* ui-helpers.js — Utilidades de interfaz reutilizadas por todos los módulos. */
 
-let _saleType = 'unit';
-let _saleSelectedGroup = null;
-let _saleSearch = '';
-let _cart = {};       // { productId: qty }
-let _cartPrices = {}; // { productId: manual pricing entry }
+function $(sel, ctx) { return (ctx || document).querySelector(sel); }
+function $all(sel, ctx) { return Array.from((ctx || document).querySelectorAll(sel)); }
 
-function cartCount() {
-  return Object.values(_cart).reduce((s, q) => s + Number(q || 0), 0);
+function escapeHtml(s) {
+  return (s || '').toString().replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
 }
 
-function sellerMode() {
-  return window.isReseller && isReseller();
+function showToast(msg, kind) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (kind === 'error' ? ' toast-error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
 }
 
-function applyPercentGroup(base, groupId) {
-  const g = AppState.priceGroups.find(pg => pg.id === groupId);
-  const cleanBase = roundBs(base);
-  if (!g) return cleanBase;
-  const pct = Number(g.percent) || 0;
-  if (g.mode === 'discount') return roundBs(Math.max(0, cleanBase - (cleanBase * pct / 100)));
-  return roundBs(cleanBase + (cleanBase * pct / 100));
-}
+function openSheet(innerHtml, onMount) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${innerHtml}</div>`;
+  const sheet = overlay.firstElementChild;
+  document.body.appendChild(overlay);
+  document.body.classList.add('nv-sheet-open');
 
-function saleGroupInfoV7(groupId) {
-  return AppState.priceGroups.find(pg => pg.id === groupId) || null;
-}
-
-function saleManualEntryV7(entry) {
-  if (!entry) return null;
-  if (typeof entry === 'number') return { manualPrice: roundBs(entry), mode: 'final', value: roundBs(entry), reason: '' };
-  const price = Number(entry.manualPrice ?? entry.price ?? entry.unitPrice ?? entry.value);
-  if (!Number.isFinite(price) || price <= 0) return null;
-  return Object.assign({}, entry, { manualPrice: roundBs(price) });
-}
-
-function basePriceForModeV7(product, saleType, isSeller) {
-  if (isSeller) {
-    if (saleType === 'reseller_wholesale') return roundBs(resellerLocalWholesalePrice(product) || marketPrice(product) || publicPrice(product));
-    return roundBs(resellerLocalUnitPrice(product) || publicPrice(product) || marketPrice(product));
-  }
-  if (saleType === 'unit') return roundBs(unitPrice(product));
-  if (saleType === 'representative_transfer') return roundBs(representativePrice(product));
-  return roundBs(marketPrice(product));
-}
-
-function groupPriceForModeV7(product, saleType, groupId, isSeller) {
-  const base = basePriceForModeV7(product, saleType, isSeller);
-  if (!groupId) return base;
-  if (isSeller) return applyPercentGroup(base, groupId);
-  if (saleType === 'market' || saleType === 'representative_transfer') return priceForGroup(product, groupId);
-  return base;
-}
-
-function buildSalePriceBreakdownV7(product, opts = {}) {
-  const saleType = opts.saleType || _saleType;
-  const groupId = opts.groupId || null;
-  const manual = saleManualEntryV7(opts.manual);
-  const isSeller = !!opts.seller;
-  const basePrice = roundBs(Number(opts.basePrice ?? basePriceForModeV7(product, saleType, isSeller)) || 0);
-  const groupPrice = roundBs(Number(opts.groupPrice ?? groupPriceForModeV7(product, saleType, groupId, isSeller)) || 0);
-  const referencePrice = groupId ? groupPrice : basePrice;
-  const unitPrice = manual ? roundBs(manual.manualPrice) : referencePrice;
-  const diffFromBase = roundBs(unitPrice - basePrice);
-  const diffFromReference = roundBs(unitPrice - referencePrice);
-  let source = 'normal';
-  if (manual) source = 'manual';
-  else if (groupId && Math.abs(groupPrice - basePrice) > 0.0001) source = 'group';
-  const sign = diffFromBase < 0 ? 'discount' : diffFromBase > 0 ? 'surcharge' : 'none';
-  return {
-    basePrice,
-    groupPrice,
-    referencePrice,
-    unitPrice,
-    manual,
-    source,
-    sign,
-    groupId: groupId || null,
-    groupName: groupId ? ((saleGroupInfoV7(groupId) || {}).name || '') : '',
-    adjustmentAmount: roundBs(Math.abs(diffFromBase)),
-    adjustmentSigned: diffFromBase,
-    referenceAdjustmentSigned: diffFromReference,
-    adjustmentPercent: basePrice ? roundBs((diffFromBase / basePrice) * 100) : 0,
-    manualReason: manual ? (manual.reason || '') : ''
+  const viewport = window.visualViewport;
+  let closed = false;
+  const syncViewport = () => {
+    const height = Math.max(320, Math.round(viewport ? viewport.height : window.innerHeight));
+    const top = Math.max(0, Math.round(viewport ? viewport.offsetTop : 0));
+    overlay.style.setProperty('--nv-visual-height', `${height}px`);
+    overlay.style.transform = `translateY(${top}px)`;
+    sheet.classList.toggle('keyboard-open', height < window.innerHeight * 0.82);
   };
-}
-
-function salePriceBadgeV7(b) {
-  if (!b) return '';
-  if (b.source === 'manual') {
-    const cls = b.sign === 'discount' ? 'discount' : b.sign === 'surcharge' ? 'surcharge' : 'manual';
-    return `<span class="priceBadge ${cls}">Manual</span>`;
-  }
-  if (b.source === 'group') return `<span class="priceBadge group">Grupo</span>`;
-  return '';
-}
-
-function salePriceLabelV7(b) {
-  if (!b) return 'Normal';
-  if (b.source === 'manual') {
-    if (b.sign === 'discount') return `Manual · rebaja ${fmtMoney(b.adjustmentAmount)}`;
-    if (b.sign === 'surcharge') return `Manual · recargo ${fmtMoney(b.adjustmentAmount)}`;
-    return 'Manual';
-  }
-  if (b.source === 'group') return `Grupo${b.groupName ? ': ' + b.groupName : ''}`;
-  return 'Normal';
-}
-
-function openSalePriceEditorV7(options = {}) {
-  const p = options.product;
-  if (!p) return;
-  const current = options.breakdown || buildSalePriceBreakdownV7(p, options);
-  const existing = saleManualEntryV7(options.manual) || null;
-  openSheet(`
-    <h2>Editar precio <span class="x" id="closeSheet">✕</span></h2>
-    <div class="v7ProductMini"><div>${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async">` : 'NV'}</div><span><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category || 'General')}</small></span></div>
-    <div class="manualPriceGrid">
-      <div><span>Precio de lista</span><strong>${fmtMoney(current.basePrice)}</strong></div>
-      <div><span>Precio por grupo</span><strong>${fmtMoney(current.groupPrice)}</strong></div>
-      <div><span>Precio actual</span><strong>${fmtMoney(current.unitPrice)}</strong></div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>Tipo de ajuste</label><select id="manualMode"><option value="final">Precio final</option><option value="discount_amount">Rebaja Bs</option><option value="discount_percent">Rebaja %</option><option value="surcharge_amount">Recargo Bs</option><option value="surcharge_percent">Recargo %</option></select></div>
-      <div class="field"><label>Valor</label><input id="manualValue" type="number" inputmode="decimal" step="0.01" value=""></div>
-    </div>
-    <div class="field"><label>Precio final manual</label><input id="manualFinal" type="number" inputmode="decimal" step="0.01" value="${existing ? existing.manualPrice : current.unitPrice}"></div>
-    <div class="field"><label>Motivo opcional</label><input id="manualReason" value="${escapeHtml(existing ? (existing.reason || '') : '')}" placeholder="Ej.: entrega, cliente antiguo, promoción"></div>
-    <div class="v7PricePreview"><span>Diferencia frente al precio de lista</span><strong id="manualDiff"></strong></div>
-    <div class="actions two"><button class="btn outline" id="resetManualPrice">Restablecer precio del grupo</button><button class="btn" id="applyManualPrice">Aplicar</button></div>
-  `, (overlay, close) => {
-    const mode = $('#manualMode', overlay);
-    const value = $('#manualValue', overlay);
-    const final = $('#manualFinal', overlay);
-    const reason = $('#manualReason', overlay);
-    if (existing && existing.mode) mode.value = existing.mode;
-    if (existing && existing.rawValue != null) value.value = existing.rawValue;
-    const reference = current.groupId ? current.groupPrice : current.basePrice;
-    function computeFinalFromAdjustment() {
-      const v = Number(value.value || 0);
-      let next = Number(final.value || 0);
-      if (mode.value === 'final') next = Number(final.value || 0);
-      if (mode.value === 'discount_amount') next = reference - v;
-      if (mode.value === 'discount_percent') next = reference - (reference * v / 100);
-      if (mode.value === 'surcharge_amount') next = reference + v;
-      if (mode.value === 'surcharge_percent') next = reference + (reference * v / 100);
-      if (mode.value !== 'final') final.value = Math.max(0, roundBs(next));
-      updateDiff();
+  const keepFocusedVisible = event => {
+    const target = event.target;
+    if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    setTimeout(() => {
+      try { target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); }
+      catch (_) { target.scrollIntoView(false); }
+    }, 220);
+  };
+  const cleanup = () => {
+    if (viewport) {
+      viewport.removeEventListener('resize', syncViewport);
+      viewport.removeEventListener('scroll', syncViewport);
     }
-    function updateDiff() {
-      const price = roundBs(Number(final.value || 0));
-      const diff = roundBs(price - current.basePrice);
-      const el = $('#manualDiff', overlay);
-      if (!el) return;
-      if (diff > 0) el.textContent = `Recargo ${fmtMoney(diff)}`;
-      else if (diff < 0) el.textContent = `Rebaja ${fmtMoney(Math.abs(diff))}`;
-      else el.textContent = 'Sin diferencia';
-    }
-    $('#closeSheet', overlay).addEventListener('click', close);
-    mode.addEventListener('change', () => { if (mode.value === 'final') value.value = ''; computeFinalFromAdjustment(); });
-    value.addEventListener('input', computeFinalFromAdjustment);
-    final.addEventListener('input', () => { mode.value = 'final'; value.value = ''; updateDiff(); });
-    $('#resetManualPrice', overlay).addEventListener('click', () => { if (typeof options.onReset === 'function') options.onReset(); close(); });
-    $('#applyManualPrice', overlay).addEventListener('click', () => {
-      const manualPrice = roundBs(Number(final.value || 0));
-      if (!Number.isFinite(manualPrice) || manualPrice <= 0) return showToast('Ingresa un precio final válido.', 'error');
-      const entry = {
-        manualPrice,
-        mode: mode.value,
-        rawValue: value.value === '' ? null : Number(value.value || 0),
-        reason: reason.value.trim(),
-        basePrice: current.basePrice,
-        groupPrice: current.groupPrice,
-        groupId: current.groupId || null,
-        groupName: current.groupName || '',
-        createdAt: Date.now()
-      };
-      if (typeof options.onApply === 'function') options.onApply(entry);
-      close();
-    });
-    updateDiff();
-  });
-}
-
-function priceForCurrentMode(p) {
-  const b = buildSalePriceBreakdownV7(p, {
-    saleType: _saleType,
-    groupId: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? _saleSelectedGroup : null,
-    manual: _cartPrices[p.id],
-    seller: sellerMode()
-  });
-  return b.unitPrice;
-}
-
-function sellerBaseCost(p) {
-  return window.resellerEffectiveCost ? resellerEffectiveCost(p) : representativePrice(p);
-}
-
-function sellerUnitMargin(p) {
-  return roundBs(priceForCurrentMode(p) - sellerBaseCost(p));
-}
-
-function manualCountV7() {
-  return Object.keys(_cartPrices || {}).filter(id => saleManualEntryV7(_cartPrices[id])).length;
-}
-
-function renderVender() {
-  $('#fabAdd').classList.add('hidden');
-  const main = $('#mainArea');
-  if (sellerMode() && !['reseller_unit', 'reseller_wholesale'].includes(_saleType)) _saleType = 'reseller_unit';
-  if (AppState.products.length === 0) {
-    main.innerHTML = `<div class="empty"><span class="ic">💵</span><h3>No hay productos</h3><p>Actualiza el catálogo o espera a que el administrador cargue productos.</p></div>`;
-    return;
+    overlay.removeEventListener('focusin', keepFocusedVisible);
+    if (!document.querySelector('.overlay')) document.body.classList.remove('nv-sheet-open');
+  };
+  function close() {
+    if (closed) return;
+    closed = true;
+    overlay.remove();
+    cleanup();
   }
-  const groupsEnabled = AppState.settings.priceGroupsEnabled && AppState.priceGroups.length > 0;
-  main.innerHTML = `
-    ${sellerMode() ? `
-      <section class="salesCleanHeader"><div><span class="eyebrow">Ventas</span><h1>Registrar venta</h1></div><small>Puedes negociar precios por producto.</small></section>
-      <div class="saletoggle salesChannelToggle cleanSaleToggle"><button data-type="reseller_unit" class="${_saleType === 'reseller_unit' ? 'active' : ''}">Unitaria</button><button data-type="reseller_wholesale" class="${_saleType === 'reseller_wholesale' ? 'active' : ''}">Mayorista</button></div>` : `
-      <section class="salesCleanHeader"><div><span class="eyebrow">Ventas</span><h1>Registrar venta</h1></div><small>Precio base, grupo o precio manual por producto.</small></section>
-      <div class="saletoggle salesChannelToggle cleanSaleToggle"><button data-type="unit" class="${_saleType === 'unit' ? 'active' : ''}">Unitaria</button><button data-type="market" class="${_saleType === 'market' ? 'active' : ''}">Mayorista</button><button data-type="representative_transfer" class="${_saleType === 'representative_transfer' ? 'active' : ''}">Representantes</button></div>`}
-    ${((_saleType === 'market' || _saleType === 'representative_transfer') || sellerMode()) && groupsEnabled ? `
-    <div class="field" style="margin-bottom:14px;"><label>Grupo / zona de venta (opcional)</label><select id="s_group"><option value="">Sin grupo / precio base</option>${AppState.priceGroups.map(g => `<option value="${g.id}" ${_saleSelectedGroup === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}</select><small>Los precios manuales se mantienen como excepción.</small></div>` : ''}
-    <div class="toolrow"><input type="text" id="searchInput" placeholder="Buscar producto..." value="${escapeHtml(_saleSearch)}"></div>
-    <div class="catalogGrid" id="catalogGrid"></div>
-  `;
-  $all('.saletoggle button').forEach(b => b.addEventListener('click', () => {
-    _saleType = b.dataset.type;
-    _cartPrices = {};
-    renderVender();
-  }));
-  const groupSel = $('#s_group');
-  if (groupSel) groupSel.addEventListener('change', () => {
-    const count = manualCountV7();
-    const next = groupSel.value || null;
-    if (count > 0) {
-      const keep = window.confirm(`Hay ${count} producto(s) con precio manual.\n\nAceptar: mantener precios manuales.\nCancelar: reemplazar todos con el grupo.`);
-      if (!keep) _cartPrices = {};
-    }
-    _saleSelectedGroup = next;
-    renderVender();
-  });
-  $('#searchInput').addEventListener('input', e => { _saleSearch = e.target.value; renderCatalogGrid(); });
-  renderCatalogGrid();
-  renderCartBar();
+
+  syncViewport();
+  if (viewport) {
+    viewport.addEventListener('resize', syncViewport);
+    viewport.addEventListener('scroll', syncViewport);
+  }
+  overlay.addEventListener('focusin', keepFocusedVisible);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  if (onMount) onMount(overlay, close);
+  return { overlay, close, sheet };
 }
 
-function renderCatalogGrid() {
-  const grid = $('#catalogGrid');
-  if (!grid) return;
-  const filtered = AppState.products.filter(p => p.status !== 'archived' && matchesSearch(p.name, _saleSearch));
-  grid.innerHTML = filtered.map(p => {
-    const b = buildSalePriceBreakdownV7(p, {
-      saleType: _saleType,
-      groupId: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? _saleSelectedGroup : null,
-      manual: _cartPrices[p.id],
-      seller: sellerMode()
-    });
-    const qty = _cart[p.id] || 0;
-    const low = p.stock <= AppState.settings.lowStockThreshold;
-    return `
-    <div class="catalogCard cleanSaleCard ${sellerMode() ? 'resellerCatalogCard' : ''} price-${b.source} adjust-${b.sign}" data-id="${p.id}">
-      <div class="catalogPhoto cleanSalePhoto">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async">` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}${salePriceBadgeV7(b)}</div>
-      <div class="catalogBody cleanSaleBody">
-        <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span><em>${salePriceLabelV7(b)}</em></div>
-        <div class="catalogName">${escapeHtml(p.name)}</div>
-        <div class="cleanSaleLine"><span class="catalogPrice cleanSalePrice">${fmtMoney(b.unitPrice)}</span><span class="catalogStock ${low ? 'low' : ''}">Stock: ${p.stock}</span></div>
-        ${b.source !== 'normal' ? `<div class="priceTrace">Lista ${fmtMoney(b.basePrice)}${b.source === 'group' ? ` → Grupo ${fmtMoney(b.groupPrice)}` : ` → Final ${fmtMoney(b.unitPrice)}`}</div>` : ''}
-        <div class="qtyStepper cleanQtyStepper"><button class="qtyMinus" data-id="${p.id}">−</button><span class="qtyVal" data-id="${p.id}">${qty}</span><button class="qtyPlus" data-id="${p.id}">+</button></div>
-        ${qty > 0 ? `<button class="miniEditPrice" data-edit-price="${p.id}">✎ Editar precio</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-  $all('.qtyPlus', grid).forEach(b => b.addEventListener('click', () => changeQty(b.dataset.id, 1)));
-  $all('.qtyMinus', grid).forEach(b => b.addEventListener('click', () => changeQty(b.dataset.id, -1)));
-  $all('[data-edit-price]', grid).forEach(b => b.addEventListener('click', () => openCartPriceEditor(b.dataset.editPrice)));
+function confirmDialog(message) {
+  return window.confirm(message);
 }
 
-function changeQty(productId, delta) {
-  const p = AppState.products.find(x => x.id === productId);
-  if (!p) return;
-  const current = _cart[productId] || 0;
-  let next = current + delta;
-  if (next < 0) next = 0;
-  if (next > p.stock) { showToast(`⚠️ Stock referencial: ${p.stock}`, 'error'); next = p.stock; }
-  if (next === 0) { delete _cart[productId]; delete _cartPrices[productId]; }
-  else _cart[productId] = next;
-  renderCatalogGrid();
-  renderCartBar();
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-function openCartPriceEditor(productId) {
-  const p = AppState.products.find(x => x.id === productId);
-  if (!p || !_cart[productId]) return showToast('Agrega primero el producto al carrito.', 'error');
-  const groupId = (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? _saleSelectedGroup : null;
-  const breakdown = buildSalePriceBreakdownV7(p, { saleType: _saleType, groupId, manual: _cartPrices[p.id], seller: sellerMode() });
-  openSalePriceEditorV7({
-    product: p,
-    breakdown,
-    manual: _cartPrices[p.id],
-    onApply: entry => { _cartPrices[p.id] = entry; renderCatalogGrid(); renderCartBar(); showToast('Precio manual aplicado.'); },
-    onReset: () => { delete _cartPrices[p.id]; renderCatalogGrid(); renderCartBar(); showToast('Precio restablecido.'); }
+function fmtDate(isoOrTimestamp) {
+  const d = typeof isoOrTimestamp === 'number' ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp);
+  return d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function fmtDateTime(timestamp) {
+  const d = new Date(timestamp);
+  return d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+    ' ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
+}
+
+/* Lee un archivo de imagen (input file) y devuelve un dataURL, con manejo de errores.
+   V7.1.2: también puede optimizar imágenes grandes sin destruir calidad.
+   Para productos se usa alta calidad porque se reutilizan en catálogo PDF. */
+function imageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo abrir la imagen'));
+    img.src = dataUrl;
   });
 }
 
-function renderCartBar() {
-  let bar = $('#cartBar');
-  const count = cartCount();
-  if (!bar) { bar = document.createElement('div'); bar.id = 'cartBar'; bar.className = 'cartBar'; document.getElementById('app').appendChild(bar); }
-  if (count === 0) { bar.classList.add('hidden'); return; }
-  bar.classList.remove('hidden');
-  const total = Object.entries(_cart).reduce((s, [id, qty]) => {
-    const p = AppState.products.find(x => x.id === id);
-    return s + (p ? priceForCurrentMode(p) * qty : 0);
-  }, 0);
-  const manual = manualCountV7();
-  bar.innerHTML = `<div class="cartBarInfo"><span class="cartCount">${count} ítem(s)${manual ? ` · ${manual} manual` : ''}</span><span class="cartTotal">${fmtMoney(total)}</span></div><button class="btn" id="goToCheckout">Continuar</button>`;
-  $('#goToCheckout', bar).addEventListener('click', openCheckoutSheet);
+function canvasToDataUrl(canvas, mimeType = 'image/jpeg', quality = 0.9) {
+  try { return canvas.toDataURL(mimeType, quality); }
+  catch (_) { return canvas.toDataURL('image/jpeg', quality); }
 }
 
-function buildSaleItemsFromCartV7(items) {
-  return items.map(it => {
-    const product = it.product;
-    const groupId = (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? _saleSelectedGroup : null;
-    const b = buildSalePriceBreakdownV7(product, { saleType: _saleType, groupId, manual: _cartPrices[product.id], seller: sellerMode() });
-    const resellerBase = representativePrice(product);
-    const resellerRealCost = sellerMode() ? sellerBaseCost(product) : resellerBase;
-    const unitCost = sellerMode() ? resellerRealCost : grossCost(product);
-    const sellerUnitProfit = sellerMode() ? (b.unitPrice - resellerRealCost) : 0;
-    return {
-      productId: product.id,
-      productName: product.name,
-      category: product.category || 'General',
-      qty: it.qty,
-      unitCost,
-      resellerBase,
-      suggestedPublicPrice: publicPrice(product),
-      marketPrice: marketPrice(product),
-      representativePrice: representativePrice(product),
-      resellerRealCost,
-      resellerSaleChannel: sellerMode() ? _saleType : null,
-      originalUnitPrice: b.basePrice,
-      groupUnitPrice: b.groupPrice,
-      manualUnitPrice: b.manual ? b.unitPrice : null,
-      unitPrice: b.unitPrice,
-      priceSource: b.source,
-      priceAdjustmentType: b.sign,
-      priceAdjustmentAmount: b.adjustmentAmount,
-      priceAdjustmentSigned: b.adjustmentSigned,
-      priceAdjustmentPercent: b.adjustmentPercent,
-      manualPriceReason: b.manualReason || '',
-      groupId: b.groupId,
-      groupName: b.groupName,
-      subtotal: roundBs(b.unitPrice * it.qty),
-      originalSubtotal: roundBs(b.basePrice * it.qty),
-      groupSubtotal: roundBs(b.groupPrice * it.qty),
-      discountAmount: b.adjustmentSigned < 0 ? roundBs(Math.abs(b.adjustmentSigned) * it.qty) : 0,
-      surchargeAmount: b.adjustmentSigned > 0 ? roundBs(b.adjustmentSigned * it.qty) : 0,
-      profit: roundBs((b.unitPrice - unitCost) * it.qty),
-      sellerUnitProfit,
-      sellerProfit: roundBs(sellerUnitProfit * it.qty)
-    };
-  });
+async function optimizeImageDataUrl(dataUrl, options = {}) {
+  const maxEdge = Number(options.maxEdge || 1800);
+  const quality = Number(options.quality || 0.9);
+  const mimeType = options.mimeType || 'image/jpeg';
+  const img = await imageFromDataUrl(dataUrl);
+  const width = img.naturalWidth || img.width || 1;
+  const height = img.naturalHeight || img.height || 1;
+  const largest = Math.max(width, height);
+  if (!options.force && largest <= maxEdge && String(dataUrl).length < 950000) {
+    return { dataUrl, width, height, optimized: false };
+  }
+  const ratio = Math.min(1, maxEdge / largest);
+  const targetW = Math.max(1, Math.round(width * ratio));
+  const targetH = Math.max(1, Math.round(height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, targetW, targetH);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+  return { dataUrl: canvasToDataUrl(canvas, mimeType, quality), width: targetW, height: targetH, optimized: true };
 }
 
-function openCheckoutSheet() {
-  if (window.canOperate && !canOperate()) { showToast('Tu cuenta aún no fue aprobada por el administrador. No puedes registrar ventas.', 'error'); return; }
-  const rawItems = Object.entries(_cart).map(([id, qty]) => ({ product: AppState.products.find(x => x.id === id), qty: Number(qty || 0) })).filter(i => i.product && i.qty > 0);
-  if (!rawItems.length) return showToast('Selecciona al menos un producto.', 'error');
-  const saleItemsPreview = buildSaleItemsFromCartV7(rawItems);
-  const total = saleItemsPreview.reduce((sum, item) => sum + item.subtotal, 0);
-  const sellerProfit = sellerMode() ? saleItemsPreview.reduce((sum, item) => sum + Number(item.sellerProfit || 0), 0) : 0;
-  const discounts = saleItemsPreview.reduce((s, i) => s + Number(i.discountAmount || 0), 0);
-  const surcharges = saleItemsPreview.reduce((s, i) => s + Number(i.surchargeAmount || 0), 0);
-  const operation = { id: uid('sale'), documentNumber: '', client: null, sale: null, submitting: false };
-  const html = `
-    <h2>Confirmar venta <span class="x" id="closeSheet">✕</span></h2>
-    <div class="sectiontitle2"><span>Productos (${saleItemsPreview.length})</span></div>
-    ${saleItemsPreview.map(i => `<div class="histitem priceLine ${i.priceSource}"><div class="l"><div class="pname">${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource, sign:i.priceAdjustmentType})}</div><div class="meta">${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource, sign:i.priceAdjustmentType, adjustmentAmount:i.priceAdjustmentAmount, groupName:i.groupName})}</div>${i.manualPriceReason ? `<small class="priceReason">${escapeHtml(i.manualPriceReason)}</small>` : ''}</div><div class="r">${fmtMoney(i.subtotal)}</div></div>`).join('')}
-    ${(discounts || surcharges) ? `<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>` : ''}
-    <div class="sectiontitle2"><span>Datos del cliente</span></div>
-    <div class="field"><label>Nombre del cliente</label><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><small>${(_saleType === 'market' || _saleType === 'representative_transfer') ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
-    <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
-    ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
-    <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
-    <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" readonly value="0"></div></div>
-    <div class="field"><label>Motivo si queda saldo pendiente</label><input id="ck_pendingReason" placeholder="Ej.: faltó cambio, transferencia pendiente, saldo por cobrar"></div>
-    <div class="v7CashNotice">Si el pago queda incompleto, la venta se registrará y aparecerá en Ventas por cobrar.</div>
-    <div class="v7CashNotice">La operación usa un identificador único. Si se corta la conexión, se verificará primero si la venta ya quedó guardada para evitar duplicarla.</div>
-    <div class="actions stickyActions"><button class="btn block" id="confirmSale">Confirmar venta y generar recibo</button></div>`;
-  openSheet(html, (overlay, close) => {
-    $('#closeSheet', overlay).addEventListener('click', () => { if (!operation.submitting) close(); });
-    const fillClientV723 = (c) => {
-      if (!c) return;
-      operation.client = c;
-      $('#ck_clientname', overlay).value = c.name || '';
-      $('#ck_clientphone', overlay).value = c.phone || '';
-      if (c.priceGroupId && (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) && c.priceGroupId !== _saleSelectedGroup) {
-        const g = AppState.priceGroups.find(x => x.id === c.priceGroupId);
-        if (g && window.confirm(`Este cliente tiene beneficio/grupo: ${g.name}. ¿Aplicarlo a esta venta?`)) {
-          _saleSelectedGroup = c.priceGroupId;
-          close();
-          setTimeout(openCheckoutSheet, 80);
-        }
-      }
-    };
-    $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
-    if ($('#registerWholesaleV725', overlay)) $('#registerWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#ck_clientname', overlay).value.trim(), phone: $('#ck_clientphone', overlay).value.trim(), customerType: 'wholesale' }); });
-    $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
-    const updatePaymentV725 = () => { const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0)); $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - paid)); };
-    $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725); updatePaymentV725();
-    $('#ck_clientname', overlay).addEventListener('blur', () => {
-      const name = $('#ck_clientname', overlay).value.trim();
-      const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
-      if (existing) fillClientV723(existing);
-    });
-    $('#confirmSale', overlay).addEventListener('click', async () => {
-      if (operation.submitting) return;
-      const btn = $('#confirmSale', overlay);
-      const clientName = $('#ck_clientname', overlay).value.trim();
-      const clientPhone = $('#ck_clientphone', overlay).value.trim();
-      if (!clientName) return showToast('⚠️ Ingresa el nombre del cliente', 'error');
-      if (!navigator.onLine) return showToast('Sin internet. La venta no fue registrada.', 'error');
-      operation.submitting = true; btn.disabled = true; btn.textContent = 'Verificando stock y guardando…';
+function readImageFile(file, options = {}) {
+  return new Promise((resolve, reject) => {
+    if (!file) return reject(new Error('Sin archivo'));
+    if (!file.type.startsWith('image/')) return reject(new Error('No es una imagen'));
+    const reader = new FileReader();
+    reader.onload = async (e) => {
       try {
-        const refresh = await syncCloudProductsToLocal();
-        if (refresh && refresh.ok === false) throw new Error(refresh.message);
-        for (const item of rawItems) {
-          const current = AppState.products.find(product => product.id === item.product.id);
-          if (!current || Number(current.stock || 0) < Number(item.qty || 0)) throw new Error(`Stock insuficiente para ${item.product.name}. Actualiza la venta y vuelve a intentarlo.`);
+        const raw = e.target.result;
+        if (options && options.optimize) {
+          const optimized = await optimizeImageDataUrl(raw, options);
+          return resolve(optimized.dataUrl);
         }
-        if (!operation.client) operation.client = await findOrCreateClientQuick(clientName, clientPhone, customerTypeForSaleV723(_saleType));
-        if (!operation.documentNumber) {
-          const result = window.nextDocumentNumberV7 ? await nextDocumentNumberV7('NV-VTA') : { ok: false, message: 'No está disponible la numeración V7.' };
-          if (!result.ok) throw new Error(result.message || 'No se pudo generar el número de recibo.');
-          operation.documentNumber = result.number;
-        }
-        if (!operation.sale) {
-          const groupName = _saleSelectedGroup ? (saleGroupInfoV7(_saleSelectedGroup) || {}).name : null;
-          const paidNow = roundBs(Math.min(total, Math.max(0, Number($('#ck_amountPaid', overlay).value || 0))));
-          const pendingNow = roundBs(Math.max(0, total - paidNow));
-          const saleItems = buildSaleItemsFromCartV7(rawItems);
-          operation.sale = {
-            id: operation.id,
-            documentNumber: operation.documentNumber,
-            receiptNumber: operation.documentNumber,
-            paymentMethod: 'cash',
-            paymentStatus: pendingNow > 0 ? (paidNow > 0 ? 'partial' : 'pending') : 'paid',
-            amountPaid: paidNow,
-            pendingBalance: pendingNow,
-            pendingReason: pendingNow > 0 ? $('#ck_pendingReason', overlay).value.trim() : '',
-            type: _saleType,
-            role: AppState.session ? AppState.session.roleName : '',
-            sellerId: AppState.session ? (AppState.session.onlineUserId || AppState.session.userId) : null,
-            sellerName: AppState.session ? AppState.session.fullName : null,
-            sellerBusinessName: window.myCommercialProfile ? (myCommercialProfile().businessName || '') : '',
-            sellerQrUrl: window.myCommercialProfile ? (myCommercialProfile().qrUrl || '') : '',
-            sellerReceiptMessage: window.myCommercialProfile ? (myCommercialProfile().receiptMessage || '') : '',
-            groupId: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? _saleSelectedGroup : null,
-            groupName: (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) ? groupName : null,
-            items: saleItems,
-            total: saleItems.reduce((sum, item) => sum + item.subtotal, 0),
-            originalTotal: saleItems.reduce((sum, item) => sum + item.originalSubtotal, 0),
-            discountTotal: saleItems.reduce((sum, item) => sum + Number(item.discountAmount || 0), 0),
-            surchargeTotal: saleItems.reduce((sum, item) => sum + Number(item.surchargeAmount || 0), 0),
-            sellerProfit,
-            clientId: operation.client ? operation.client.id : null,
-            clientName: operation.client ? operation.client.name : clientName,
-            clientPhone: operation.client ? operation.client.phone : clientPhone,
-            customerType: operation.client ? (operation.client.customerType || customerTypeForSaleV723(_saleType)) : customerTypeForSaleV723(_saleType),
-            clientCity: operation.client ? (operation.client.city || '') : '',
-            clientAddress: operation.client ? (operation.client.address || '') : '',
-            clientBusinessName: operation.client ? (operation.client.businessName || '') : '',
-            date: Date.now(),
-            syncStatus: 'cloud'
-          };
-        }
-        await DB.put('sales', operation.sale);
-        await Promise.all([syncCloudProductsToLocal().catch(() => null), window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()]);
-        if (!AppState.sales.some(x => x.id === operation.sale.id)) AppState.sales.push(operation.sale);
-        await writeAudit('sale:create', 'sales', operation.sale.id, null, operation.sale).catch(() => {});
-        showToast('Venta registrada en Supabase.');
+        resolve(raw);
+      } catch (error) { reject(error); }
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function readProductImageFile(file) {
+  if (!file) throw new Error('Sin archivo');
+  if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
+  if (file.size > 15 * 1024 * 1024) throw new Error('La imagen supera 15 MB. Usa una foto más liviana.');
+  return readImageFile(file, { optimize: true, maxEdge: 1400, quality: 0.84, mimeType: 'image/jpeg' });
+}
+
+async function readLogoImageFile(file) {
+  if (!file) throw new Error('Sin archivo');
+  if (!file.type.startsWith('image/')) throw new Error('No es una imagen');
+  return readImageFile(file, { optimize: true, maxEdge: 1200, quality: 0.92, mimeType: 'image/jpeg' });
+}
+
+
+/* Editor de encuadre reutilizable. Produce una imagen cuadrada optimizada
+   para tarjetas, catálogo y PDF sin guardar capturas gigantes. */
+function loadEditableImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    if (!String(src || '').startsWith('data:')) img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo abrir la imagen para encuadrarla.'));
+    img.src = src;
+  });
+}
+
+function drawCoverImage(canvas, image, zoom = 1, offsetX = 0, offsetY = 0, guide = true) {
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const width = canvas.width, height = canvas.height;
+  ctx.fillStyle = '#f4faf6';
+  ctx.fillRect(0, 0, width, height);
+  const baseScale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const scale = baseScale * zoom;
+  const drawW = image.naturalWidth * scale;
+  const drawH = image.naturalHeight * scale;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, (width - drawW) / 2 + offsetX, (height - drawH) / 2 + offsetY, drawW, drawH);
+  if (guide) {
+    ctx.strokeStyle = 'rgba(16,169,99,.95)';
+    ctx.lineWidth = Math.max(3, width / 180);
+    ctx.setLineDash([14, 10]);
+    ctx.strokeRect(7, 7, width - 14, height - 14);
+    ctx.setLineDash([]);
+  }
+}
+
+async function openImageCropper(options = {}) {
+  const src = options.src || '';
+  if (!src) throw new Error('No hay una imagen para encuadrar.');
+  const image = await loadEditableImage(src);
+  const outputWidth = Math.max(480, Number(options.outputWidth || 1400));
+  const outputHeight = Math.max(480, Number(options.outputHeight || 1400));
+  const previewWidth = 720;
+  const previewHeight = Math.round(previewWidth * outputHeight / outputWidth);
+  let zoom = 1;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  return new Promise(resolve => {
+    openSheet(`
+      <h2>${escapeHtml(options.title || 'Encuadrar fotografía')} <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7CropHelp">Arrastra la fotografía para centrar el producto. El cuadro quedará completamente lleno; solo se recortarán los bordes necesarios.</div>
+      <canvas class="v7ImageCropCanvas" id="imageCropCanvas" width="${previewWidth}" height="${previewHeight}"></canvas>
+      <div class="field"><label>Acercar / alejar</label><input id="imageCropZoom" type="range" min="1" max="3.5" step="0.02" value="1"></div>
+      <button class="btn ghost block" id="resetImageCrop">Centrar nuevamente</button>
+      <button class="btn block" id="confirmImageCrop">Usar este encuadre</button>
+    `, (overlay, close) => {
+      const canvas = $('#imageCropCanvas', overlay);
+      let dragging = false, lastX = 0, lastY = 0;
+      const redraw = () => drawCoverImage(canvas, image, zoom, offsetX, offsetY, true);
+      redraw();
+      canvas.style.touchAction = 'none';
+      canvas.addEventListener('pointerdown', event => {
+        dragging = true; lastX = event.clientX; lastY = event.clientY;
+        try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+      });
+      canvas.addEventListener('pointermove', event => {
+        if (!dragging) return;
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / Math.max(1, rect.width);
+        offsetX += (event.clientX - lastX) * scale;
+        offsetY += (event.clientY - lastY) * scale;
+        lastX = event.clientX; lastY = event.clientY;
+        redraw();
+      });
+      const stop = () => { dragging = false; };
+      canvas.addEventListener('pointerup', stop);
+      canvas.addEventListener('pointercancel', stop);
+      $('#imageCropZoom', overlay).addEventListener('input', event => {
+        zoom = Number(event.target.value || 1); redraw();
+      });
+      $('#resetImageCrop', overlay).addEventListener('click', () => {
+        zoom = 1; offsetX = 0; offsetY = 0;
+        $('#imageCropZoom', overlay).value = '1'; redraw();
+      });
+      $('#closeSheet', overlay).addEventListener('click', () => { close(); resolve(null); });
+      $('#confirmImageCrop', overlay).addEventListener('click', () => {
+        const output = document.createElement('canvas');
+        output.width = outputWidth; output.height = outputHeight;
+        const factorX = outputWidth / previewWidth;
+        const factorY = outputHeight / previewHeight;
+        drawCoverImage(output, image, zoom, offsetX * factorX, offsetY * factorY, false);
+        const dataUrl = canvasToDataUrl(output, 'image/jpeg', Number(options.quality || 0.84));
         close();
-        if (window.openV7ReceiptPreview) openV7ReceiptPreview(operation.sale, 'sale'); else openReceiptPreview(operation.sale);
-        _cart = {}; _cartPrices = {}; renderVender();
-      } catch (err) {
-        operation.submitting = false; btn.disabled = false; btn.textContent = 'Reintentar la misma operación';
-        const message = window.messageFromError ? messageFromError(err, 'No se pudo registrar la venta.') : (err.message || 'No se pudo registrar la venta.');
-        showToast(message, 'error');
-      }
+        resolve(dataUrl);
+      });
     });
   });
 }
 
-function startSaleWithProduct(productId) {
-  AppState.currentTab = 'vender';
-  _cart = { [productId]: 1 };
-  render();
+/* Búsqueda predictiva simple: filtra por substring, sin distinción de mayúsculas/acentos básicos. */
+function normalizeSearch(s) {
+  return (s || '').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+function matchesSearch(haystack, needle) {
+  if (!needle) return true;
+  return normalizeSearch(haystack).includes(normalizeSearch(needle));
 }
 
-Object.assign(window, {
-  renderVender,
-  startSaleWithProduct,
-  applyPercentGroupV7: applyPercentGroup,
-  buildSalePriceBreakdownV7,
-  openSalePriceEditorV7,
-  salePriceBadgeV7,
-  salePriceLabelV7
-});
+
+/* Filtra tarjetas ya dibujadas sin reconstruir la pantalla.
+   Evita que el teclado del celular se cierre mientras el usuario escribe. */
+function bindStableSearch(inputOrSelector, cardSelector, onValue) {
+  const input = typeof inputOrSelector === 'string' ? document.querySelector(inputOrSelector) : inputOrSelector;
+  if (!input) return;
+  const apply = () => {
+    const value = String(input.value || '');
+    if (typeof onValue === 'function') onValue(value);
+    const query = normalizeSearch(value);
+    document.querySelectorAll(cardSelector).forEach(card => {
+      const searchable = normalizeSearch(card.getAttribute('data-search') || card.textContent || '');
+      card.classList.toggle('searchHidden', Boolean(query) && !searchable.includes(query));
+    });
+  };
+  input.addEventListener('input', apply);
+  apply();
+}
+
+window.$ = $;
+window.$all = $all;
+window.escapeHtml = escapeHtml;
+window.showToast = showToast;
+window.openSheet = openSheet;
+window.confirmDialog = confirmDialog;
+window.todayISO = todayISO;
+window.fmtDate = fmtDate;
+window.fmtDateTime = fmtDateTime;
+window.readImageFile = readImageFile;
+window.readProductImageFile = readProductImageFile;
+window.readLogoImageFile = readLogoImageFile;
+window.optimizeImageDataUrl = optimizeImageDataUrl;
+window.openImageCropper = openImageCropper;
+window.drawCoverImage = drawCoverImage;
+window.matchesSearch = matchesSearch;
+window.normalizeSearch = normalizeSearch;
+window.bindStableSearch = bindStableSearch;
+
+/* Comparte un archivo mediante el menú nativo del dispositivo.
+   Si no está disponible, descarga el archivo sin forzar ninguna aplicación. */
+async function shareBlobFile(blob, filename, mimeType, title, text) {
+  const safeTitle = title || 'Archivo Natura Vida';
+  const safeText = text || 'Archivo generado desde Natura Vida.';
+  const file = new File([blob], filename, { type: mimeType || blob.type || 'application/octet-stream' });
+
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+    try {
+      await navigator.share({ files: [file], title: safeTitle, text: safeText });
+      return { ok: true, method: 'native-share' };
+    } catch (err) {
+      if (err && err.name === 'AbortError') return { ok: false, cancelled: true, method: 'native-share' };
+    }
+  }
+
+  downloadGenericBlob(blob, filename);
+  openSheet(`
+    <h2>Archivo descargado <span class="x" id="closeSheet">✕</span></h2>
+    <div class="catalogReadyHero">
+      <div class="readyMark">✓</div>
+      <div>
+        <div class="eyebrow">Compartir libremente</div>
+        <h3>${escapeHtml(filename)}</h3>
+        <p>El navegador no permitió abrir el menú nativo. El archivo fue descargado y puedes adjuntarlo desde WhatsApp, Gmail, Telegram, Drive o cualquier aplicación compatible.</p>
+      </div>
+    </div>
+    <button class="btn block" id="closeManualShare">Entendido</button>
+  `, (overlay, close) => {
+    $('#closeSheet', overlay).addEventListener('click', close);
+    $('#closeManualShare', overlay).addEventListener('click', close);
+  });
+  return { ok: false, method: 'download-fallback' };
+}
+
+function downloadGenericBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2500);
+}
+
+window.shareBlobFile = shareBlobFile;
+window.downloadGenericBlob = downloadGenericBlob;
