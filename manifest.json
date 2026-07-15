@@ -1,7 +1,7 @@
 {
-  "name": "NATURA VIDA V7.3 — Gestión Comercial Inteligente",
+  "name": "NATURA VIDA V7.4 — Producción y Trazabilidad",
   "short_name": "NaturaVida",
-  "description": "Gestión comercial Natura Vida con clientes, representantes, stock, beneficios, cotizaciones, cobros, egresos, Supabase y Realtime.",
+  "description": "Gestión integral Natura Vida con ventas, representantes, insumos, producción, lotes, costos, Supabase y Realtime.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

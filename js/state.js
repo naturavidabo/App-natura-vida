@@ -9,6 +9,10 @@ const AppState = {
   messages: [],
   expenses: [],
   receivablePayments: [],
+  rawMaterials: [],
+  rawMaterialMovements: [],
+  productionOrders: [],
+  productionBatches: [],
   representatives: [],
   settings: {
     businessName: 'NATURA VIDA',
@@ -41,7 +45,7 @@ const AppState = {
 };
 
 async function loadAllState() {
-  const [products, priceGroups, sales, clients, quotes, messages, expenses, receivablePayments, representatives, settingsRows] = await Promise.all([
+  const [products, priceGroups, sales, clients, quotes, messages, expenses, receivablePayments, rawMaterials, rawMaterialMovements, productionOrders, productionBatches, representatives, settingsRows] = await Promise.all([
     DB.getAll('products'),
     DB.getAll('priceGroups'),
     DB.getAll('sales'),
@@ -50,6 +54,10 @@ async function loadAllState() {
     DB.getAll('messages').catch(() => []),
     DB.getAll('expenses').catch(() => []),
     DB.getAll('receivablePayments').catch(() => []),
+    DB.getAll('rawMaterials').catch(() => []),
+    DB.getAll('rawMaterialMovements').catch(() => []),
+    DB.getAll('productionOrders').catch(() => []),
+    DB.getAll('productionBatches').catch(() => []),
     DB.getAll('representatives').catch(() => []),
     DB.getAll('settings')
   ]);
@@ -61,6 +69,10 @@ async function loadAllState() {
   AppState.messages = messages || [];
   AppState.expenses = expenses || [];
   AppState.receivablePayments = receivablePayments || [];
+  AppState.rawMaterials = rawMaterials || [];
+  AppState.rawMaterialMovements = rawMaterialMovements || [];
+  AppState.productionOrders = productionOrders || [];
+  AppState.productionBatches = productionBatches || [];
   AppState.representatives = representatives || [];
 
   const savedSettings = settingsRows.find(r => r.key === 'main');

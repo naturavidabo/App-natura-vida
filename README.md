@@ -1,33 +1,42 @@
-# Natura Vida V7.3.0 — Gestión Comercial Inteligente
+# Natura Vida V7.4.0 — Producción y Trazabilidad
 
-Versión de consolidación comercial basada en V7.2.5.
+Versión construida sobre la base estable V7.3.0 e incorporada siguiendo el Documento Maestro de Arquitectura V8 XD.
 
-## Funciones principales
+## Funciones consolidadas
 
 - Ventas unitarias y mayoristas con precios flexibles.
-- Grupos de precios y descuentos personales.
-- Beneficio comercial por cliente con vigencia y nota interna.
+- Grupos de precios, beneficios por cliente y descuentos personales.
 - Ventas por cobrar y pagos parciales.
-- Cotizaciones / precios de oferta.
-- Egresos, insumos y balance básico.
-- Ficha avanzada del representante con stock, valor, pedidos, ventas, movimientos y productos de mayor rotación.
-- Centro Comercial con alertas y oportunidades accionables.
-- Supabase como única fuente persistente.
-- GitHub Pages con workflow Node 24.
+- Cotizaciones, clientes, representantes, catálogo, recibos y Centro Comercial.
+- Supabase como única fuente persistente y actualización mediante Realtime.
+
+## Nuevo módulo V7.4
+
+- Inventario de materia prima, ingredientes, envases, etiquetas y empaques.
+- Compras y ajustes con historial de movimientos.
+- Costo promedio ponderado por insumo.
+- Stock mínimo y alertas de reposición.
+- Órdenes de producción planificadas y en proceso.
+- Consumo real de insumos al completar una orden.
+- Generación de lote con código, rendimiento y trazabilidad.
+- Cálculo de costo de insumos, costo directo, costo total, costo unitario y costo por ml.
+- Aumento atómico del stock del producto terminado.
+- Registro opcional y automático de compras de insumos en Finanzas y egresos.
 
 ## Instalación en GitHub
 
 1. Descomprimir el ZIP.
 2. Reemplazar el contenido del repositorio.
-3. Hacer commit y push a `main`.
-4. Esperar que `Deploy Natura Vida to GitHub Pages` termine en verde.
-5. En la app, entrar a Más → Actualizaciones → Actualizar ahora.
+3. Ejecutar primero los SQL indicados en `LEER_PRIMERO_V7.4.0.txt`.
+4. Hacer commit y push a `main`.
+5. Esperar que `Deploy Natura Vida to GitHub Pages` termine en verde.
+6. En la aplicación, entrar a **Más → Actualizaciones → Actualizar ahora**.
 
-## SQL V7.3 obligatorio
+## SQL V7.4 obligatorio
 
-Para que el grupo de precios asignado al representante también se aplique en su Compra online, ejecutar en Supabase SQL Editor:
+Ejecutar en Supabase SQL Editor:
 
-1. `sql/2026-07-15_v7_3_0_representative_pricing.sql`
-2. `sql/2026-07-15_v7_3_0_verify.sql`
+1. `sql/2026-07-15_v7_4_0_production.sql`
+2. `sql/2026-07-15_v7_4_0_verify.sql`
 
-La migración no elimina datos y puede ejecutarse más de una vez.
+La migración crea tablas exclusivas de producción, aplica RLS para administrador y añade dos RPC atómicas. No elimina datos existentes y puede ejecutarse nuevamente si una ejecución quedó incompleta.

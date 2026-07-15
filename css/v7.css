@@ -300,3 +300,94 @@ body.nv-sheet-open{overflow:hidden;touch-action:none}
 .repQuickMetricsV730{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}.repQuickMetricsV730 span{background:#f4faf6;border:1px solid #dfeee4;border-radius:12px;padding:9px;min-width:0}.repQuickMetricsV730 small{display:block;color:#718078;font-size:10px}.repQuickMetricsV730 b{display:block;color:#154b34;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
 .repDetailHeroV730{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:linear-gradient(135deg,#eef9f2,#fff9ed);padding:16px;border-radius:20px;margin-bottom:14px}.repDetailHeroV730 h3{margin:0 0 3px}.repDetailHeroV730 span,.repDetailHeroV730 small{display:block;color:#68766f;overflow-wrap:anywhere}.repMetricGridV730{margin-bottom:14px}.repStockLineV730,.repMovementV730,.commercialActionV730,.commercialRepRowV730{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #e5eee8}.repStockLineV730>span,.repMovementV730>span,.commercialActionV730>span,.commercialRepRowV730>span{display:flex;align-items:center;gap:10px;min-width:0}.repStockLineV730 img,.repStockLineV730 i{width:42px;height:42px;border-radius:12px;object-fit:contain;background:#f1f8f4;display:grid;place-items:center;font-style:normal;color:#087044;font-weight:800}.repStockLineV730 strong,.repStockLineV730 small,.repMovementV730 strong,.repMovementV730 small,.commercialActionV730 strong,.commercialActionV730 small,.commercialRepRowV730 strong,.commercialRepRowV730 small{display:block}.repStockLineV730 small,.repMovementV730 small,.commercialActionV730 small,.commercialRepRowV730 small{color:#738078;font-size:11px}.repMovementV730 b.positive{color:#10864a}.repMovementV730 b.negative{color:#c24d4d}.repDetailsV730 summary{cursor:pointer;font-weight:800;color:#154b34;padding:4px 0 10px}.commercialRepRowV730{width:100%;border:0;border-bottom:1px solid #e5eee8;background:transparent;text-align:left;color:inherit}.commercialRepRowV730 b{color:#087044}.commercialActionV730>span:last-child{margin-left:auto;display:flex;gap:7px}.waLogoV730{font-size:18px;color:#fff}.v7BadgeCount{min-width:28px;height:28px;border-radius:999px;display:grid;place-items:center;background:#e7f6ed;color:#087044;font-weight:800;font-size:12px}
 @media(max-width:620px){.repQuickMetricsV730{grid-template-columns:1fr}.repDetailHeroV730{grid-template-columns:auto 1fr}.repDetailHeroV730 .v7Status{grid-column:1/-1;justify-self:start}.commercialActionV730{align-items:flex-start;flex-direction:column}.commercialActionV730>span:last-child{margin-left:0;width:100%;justify-content:flex-end}.repMetricGridV730{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ===== V7.4.0 — producción, insumos, lotes y costo real ===== */
+.productionHeadV740{padding-bottom:8px}
+.productionTabsV740{display:flex;gap:7px;overflow:auto;padding:4px 1px 10px;scrollbar-width:none}
+.productionTabsV740::-webkit-scrollbar{display:none}
+.productionTabsV740 button{border:1px solid #d9e9df;background:#fff;color:#557064;border-radius:999px;padding:9px 14px;font-size:11px;font-weight:900;white-space:nowrap}
+.productionTabsV740 button.active{background:linear-gradient(135deg,#075b35,#0f9859);color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(7,91,53,.2)}
+.productionMetricsV740{margin-top:3px}
+.v7MetricCard.dangerV740{background:linear-gradient(145deg,#fff2ed,#fff);border-color:#f5c6b5}
+.v7MetricCard.dangerV740 strong{color:#bd4b29}
+.productionActionGridV740{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+.productionActionGridV740 button{border:1px solid #dbece1;background:linear-gradient(145deg,#fff,#f4fbf7);border-radius:20px;padding:15px;text-align:left;min-height:112px;box-shadow:0 12px 28px rgba(0,65,35,.07)}
+.productionActionGridV740 button span{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:#e6f6ed;color:#087044;font-size:22px;font-weight:900;margin-bottom:9px}
+.productionActionGridV740 button strong,.productionActionGridV740 button small{display:block}
+.productionActionGridV740 button strong{font-size:13px;color:#123a28}
+.productionActionGridV740 button small{font-size:10px;color:#6a7e73;line-height:1.4;margin-top:4px}
+.productionRowV740{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #e8f0eb}
+.productionRowV740:last-child{border-bottom:0}
+.productionRowV740>span{min-width:0}
+.productionRowV740>span:last-child{text-align:right;display:flex;align-items:center;gap:8px}
+.productionRowV740 strong,.productionRowV740 small,.productionRowV740 b{display:block}
+.productionRowV740 strong{color:#173a2a;font-size:13px;overflow:hidden;text-overflow:ellipsis}
+.productionRowV740 small{color:#728177;font-size:10px;line-height:1.35;margin-top:3px}
+.productionRowV740 b{color:#075b35;font-size:12px;white-space:nowrap}
+.productionRowV740.low{background:linear-gradient(90deg,rgba(255,238,228,.7),transparent);border-left:3px solid #df7c4c;padding-left:10px}
+.productionArrowV740{border:0;background:#edf7f1;color:#087044;width:30px;height:30px;border-radius:10px;font-size:20px;font-weight:800}
+.productionStatusV740{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.productionStatusV740.planned{background:#edf3ff;color:#3f66a8}
+.productionStatusV740.progress{background:#fff4df;color:#9d6504}
+.productionStatusV740.completed{background:#e7f7ed;color:#087044}
+.productionStatusV740.cancelled{background:#f1f2f2;color:#6a7470}
+.productionToolbarV740{display:flex;gap:9px;flex-wrap:wrap;margin:13px 0}
+.productionListV740{display:grid;gap:11px;padding-bottom:12px}
+.productionMaterialCardV740,.productionOrderCardV740,.productionBatchCardV740{background:#fff;border:1px solid #deece3;border-radius:22px;padding:15px;box-shadow:0 13px 32px rgba(0,58,32,.07)}
+.productionMaterialCardV740.low{border-color:#efc7b7;background:linear-gradient(145deg,#fff8f4,#fff)}
+.productionMaterialCardV740.inactive{opacity:.65}
+.productionMaterialTopV740,.productionOrderTopV740,.productionBatchTopV740{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.productionMaterialTopV740 small,.productionMaterialTopV740 strong,.productionOrderTopV740 small,.productionOrderTopV740 strong,.productionBatchTopV740 small,.productionBatchTopV740 strong,.productionBatchTopV740 em{display:block}
+.productionMaterialTopV740 small,.productionOrderTopV740 small,.productionBatchTopV740 small{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#718078;font-weight:800}
+.productionMaterialTopV740 strong,.productionOrderTopV740 strong,.productionBatchTopV740 strong{font-size:16px;color:#153727;margin-top:3px}
+.productionMaterialTopV740 em{font-style:normal;font-size:9px;font-weight:900;color:#b34f2b;background:#fff0e9;border-radius:999px;padding:5px 8px}
+.productionBatchTopV740 em{font-style:normal;color:#688076;font-size:11px;margin-top:3px}
+.productionMaterialStatsV740,.productionOrderPlanV740,.productionBatchStatsV740,.productionCostGridV740{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:13px 0}
+.productionMaterialStatsV740>div,.productionOrderPlanV740>div,.productionBatchStatsV740>div,.productionCostGridV740>div{background:#f5faf7;border-radius:13px;padding:10px;min-width:0}
+.productionMaterialStatsV740 span,.productionOrderPlanV740 span,.productionBatchStatsV740 span,.productionCostGridV740 span{display:block;font-size:9px;color:#75847b;text-transform:uppercase;letter-spacing:.04em;font-weight:800}
+.productionMaterialStatsV740 b,.productionOrderPlanV740 b,.productionBatchStatsV740 b,.productionCostGridV740 b{display:block;color:#075b35;font-size:12px;margin-top:4px;overflow:hidden;text-overflow:ellipsis}
+.productionMaterialCardV740 p,.productionOrderCardV740 p{font-size:11px;line-height:1.5;color:#61766b;margin:9px 0}
+.productionCardActionsV740{display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid #edf3ef;padding-top:11px;margin-top:8px}
+.productionInitialStockV740,.productionInputsBuilderV740,.productionActualInputsV740{background:#f5faf7;border:1px solid #dfeee4;border-radius:18px;padding:13px;margin:12px 0}
+.productionBuilderHeadV740{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.productionInputBuilderRowV740{display:grid;grid-template-columns:minmax(0,1fr) 110px 36px;gap:7px;margin-top:8px;align-items:center}
+.productionInputBuilderRowV740 select,.productionInputBuilderRowV740 input{min-width:0;border:1px solid #d5e7dc;background:#fff;border-radius:12px;padding:10px;font-size:12px}
+.removeInputV740{width:36px;height:36px;border:0;border-radius:11px;background:#fff0ed;color:#b94d34;font-weight:900}
+.productionPickerV740{display:grid;gap:8px;max-height:58vh;overflow:auto}
+.productionPickerV740 button{display:flex;justify-content:space-between;align-items:center;text-align:left;border:1px solid #dfede4;background:#fff;border-radius:16px;padding:12px}
+.productionPickerV740 strong,.productionPickerV740 small{display:block}
+.productionPickerV740 strong{color:#183b2b}.productionPickerV740 small{color:#718078;margin-top:3px}
+.productionPickerV740 b{font-size:20px;color:#087044}
+.productionCostPreviewV740{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;background:linear-gradient(135deg,#eef8f2,#fff9e9);border:1px solid #d7eadf;border-radius:15px;padding:11px 12px;margin:10px 0;color:#526b5e;font-size:11px}
+.productionCostPreviewV740 span{display:block}.productionCostPreviewV740 b{display:block;color:#075b35;margin-top:3px}
+.productionHistoryV740{display:grid;gap:0}
+.productionHistoryV740>div{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #e9f0ec}
+.productionHistoryV740 strong,.productionHistoryV740 small,.productionHistoryV740 b{display:block}
+.productionHistoryV740 small{color:#718078;font-size:10px;margin-top:3px}
+.productionHistoryV740>div>span:last-child{text-align:right}.productionHistoryV740 .in b{color:#0c8a4a}.productionHistoryV740 .out b{color:#c35645}
+.productionActualInputsV740>strong{display:block;margin-bottom:8px}
+.productionActualInputRowV740{display:grid;grid-template-columns:minmax(0,1fr) 90px auto;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #dfebe4}
+.productionActualInputRowV740:last-child{border-bottom:0}
+.productionActualInputRowV740 b,.productionActualInputRowV740 small{display:block}.productionActualInputRowV740 small{color:#718078;font-size:9px;margin-top:3px}
+.productionActualInputRowV740 input{width:100%;border:1px solid #d4e4da;border-radius:11px;padding:9px;background:#fff}
+.productionActualInputRowV740 em{font-style:normal;font-size:10px;color:#64776b}
+.productionDetailHeroV740{background:linear-gradient(135deg,#eef8f2,#fff9e9);border-radius:19px;padding:15px;margin-bottom:12px}
+.productionDetailHeroV740.completed{background:linear-gradient(135deg,#e9f8ef,#fff)}
+.productionDetailHeroV740 h3{margin:8px 0 4px;color:#153727}.productionDetailHeroV740 p{margin:0;color:#61766b;font-size:12px}
+.productionDetailListV740{background:#fff;border:1px solid #dfede4;border-radius:17px;padding:13px;margin:11px 0}
+.productionDetailListV740>strong{display:block;color:#153727;margin-bottom:7px}
+.productionDetailListV740>div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #edf2ef;font-size:11px}
+.productionDetailListV740>div:last-child{border-bottom:0}.productionDetailListV740 b{color:#075b35;text-align:right}
+@media(max-width:620px){
+  .productionActionGridV740{grid-template-columns:1fr}
+  .productionActionGridV740 button{min-height:auto;display:grid;grid-template-columns:42px 1fr;column-gap:10px;align-items:center}
+  .productionActionGridV740 button span{grid-row:1/3;margin:0}.productionActionGridV740 button small{grid-column:2}
+  .productionMaterialStatsV740,.productionOrderPlanV740,.productionBatchStatsV740,.productionCostGridV740{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .productionInputBuilderRowV740{grid-template-columns:minmax(0,1fr) 90px 36px}
+  .productionActualInputRowV740{grid-template-columns:minmax(0,1fr) 78px auto}
+}
+@media(max-width:390px){
+  .productionMaterialStatsV740,.productionOrderPlanV740,.productionBatchStatsV740,.productionCostGridV740{grid-template-columns:1fr 1fr}
+  .productionInputBuilderRowV740{grid-template-columns:1fr 80px 34px}
+  .productionCardActionsV740 .btn{flex:1 1 44%}
+}

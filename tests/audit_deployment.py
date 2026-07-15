@@ -20,7 +20,7 @@ require('pages: write' in text and 'id-token: write' in text,'Permisos Pages inc
 require((ROOT/'.nojekyll').exists(),'Falta .nojekyll')
 require((ROOT/'.node-version').read_text().strip().startswith('24'),'Node 24 no configurado')
 
-print(f'Auditoría de despliegue V7.3: {11-len(errors)}/11 controles OK')
+print(f'Auditoría de despliegue V7.4: {11-len(errors)}/11 controles OK')
 if errors:
     for e in errors: print('ERROR:',e)
     sys.exit(1)

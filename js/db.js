@@ -9,7 +9,8 @@ const STORES = [
   'products','priceGroups','sales','clients','quotes','settings','users','roles',
   'permissions','inventoryMovements','commissionRules','commissions','reportsCache',
   'auditLog','representatives','dispatches','representativeReports',
-  'importedPackages','purchaseOrders','messages','expenses','receivablePayments','syncMeta'
+  'importedPackages','purchaseOrders','messages','expenses','receivablePayments',
+  'rawMaterials','rawMaterialMovements','productionOrders','productionBatches','syncMeta'
 ];
 
 const INDEX_FIELDS = {
@@ -32,6 +33,10 @@ const INDEX_FIELDS = {
   messages: { byCreatedAt: 'createdAt', byStatus: 'status', byRecipientRole: 'recipientRole', byRecipientUser: 'recipientUserId', bySenderUser: 'senderUserId', byType: 'type' },
   expenses: { byDate: 'date', byCategory: 'category', byCreatedAt: 'createdAt' },
   receivablePayments: { bySale: 'saleId', byClient: 'clientId', byDate: 'date' },
+  rawMaterials: { byName: 'name', byCategory: 'category', byStock: 'stock', byUpdatedAt: 'updatedAt' },
+  rawMaterialMovements: { byMaterial: 'materialId', byType: 'movementType', byCreatedAt: 'createdAt' },
+  productionOrders: { byProduct: 'productId', byStatus: 'status', byCreatedAt: 'createdAt' },
+  productionBatches: { byProduct: 'productId', byOrder: 'orderId', byCreatedAt: 'createdAt' },
   syncMeta: { byUpdatedAt: 'updatedAt' }
 };
 

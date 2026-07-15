@@ -148,6 +148,7 @@
       case 'centro-comercial': window.renderCommercialCenterV730 ? renderCommercialCenterV730() : renderInicioV7(); break;
       case 'por-cobrar': window.renderReceivablesV725 ? renderReceivablesV725() : renderInicioV7(); break;
       case 'egresos': isAdmin() && window.renderFinanceV725 ? renderFinanceV725() : renderInicioV7(); break;
+      case 'produccion': isAdmin() && window.renderProductionV740 ? renderProductionV740() : renderInicioV7(); break;
       case 'cotizaciones': window.renderQuotes ? renderQuotes() : renderInicioV7(); break;
       case 'grupos': renderPriceGroups(); break;
       case 'usuarios': renderUsersFoundation(); break;
@@ -243,7 +244,8 @@
         ${moreItem('v7MoreStats', 'chart', 'Estadísticas comerciales', 'Productos, clientes, recargos y rebajas')}
         ${moreItem('v7MoreReceivables', 'tag', 'Ventas por cobrar', 'Saldos pendientes y pagos parciales')}
         ${moreItem('v7MoreQuotes', 'tag', 'Precios / cotizaciones', 'Ofertas personalizadas para clientes')}
-        ${isAdmin() ? moreItem('v7MoreFinance', 'chart', 'Egresos e insumos', 'Materia prima, envases y balance básico') : ''}
+        ${isAdmin() ? moreItem('v7MoreProduction', 'inventory', 'Producción e insumos', 'Materia prima, órdenes, lotes y costo real') : ''}
+        ${isAdmin() ? moreItem('v7MoreFinance', 'chart', 'Finanzas y egresos', 'Gastos operativos, ingresos y balance básico') : ''}
         ${moreItem('v7MoreCatalog', 'tag', 'Catálogo PDF', 'Descargar o compartir con cualquier aplicación')}
         ${moreItem('v7MoreProfile', 'profile', 'Perfil comercial y QR', 'Datos para recibos y cobros')}
         ${isAdmin() ? moreItem('v7MoreUsers', 'users', 'Representantes', 'Aprobar, bloquear y personalizar descuento') : ''}
@@ -252,7 +254,7 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.3.0')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.4.0')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
@@ -261,6 +263,7 @@
     $('#v7MoreStats').addEventListener('click', () => navigateToV7('estadisticas'));
     $('#v7MoreReceivables').addEventListener('click', () => navigateToV7('por-cobrar'));
     $('#v7MoreQuotes').addEventListener('click', () => navigateToV7('cotizaciones'));
+    if ($('#v7MoreProduction')) $('#v7MoreProduction').addEventListener('click', () => navigateToV7('produccion'));
     if ($('#v7MoreFinance')) $('#v7MoreFinance').addEventListener('click', () => navigateToV7('egresos'));
     $('#v7MoreCatalog').addEventListener('click', () => openCatalogPdfOptions());
     $('#v7MoreProfile').addEventListener('click', () => navigateToV7('perfil'));

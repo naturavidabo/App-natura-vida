@@ -1,8 +1,8 @@
 {
-  "version": "7.3.0",
-  "build": "2026-07-15-v730-gestion-comercial-inteligente",
-  "releasedAt": "2026-07-15T20:30:00-04:00",
+  "version": "7.4.0",
+  "build": "2026-07-15-v740-produccion-insumos-trazabilidad",
+  "releasedAt": "2026-07-15T15:10:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V7.3.0 - Gestión Comercial Inteligente",
-  "createdAt": "2026-07-15T20:30:00-04:00"
+  "label": "Natura Vida V7.4.0 - Producción y Trazabilidad",
+  "createdAt": "2026-07-15T15:10:00-04:00"
 }

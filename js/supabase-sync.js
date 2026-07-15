@@ -864,7 +864,8 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
       syncCloudSalesToLocal(),
       syncGenericCloudRecordsToLocal(),
       window.fetchAndCachePurchaseOrders ? fetchAndCachePurchaseOrders() : Promise.resolve({ ok: true }),
-      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true })
+      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true }),
+      window.syncProductionCloudToLocalV740 ? syncProductionCloudToLocalV740() : Promise.resolve({ ok: true })
     ];
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
     await loadAllState();
@@ -891,6 +892,7 @@ async function refreshAfterEvent(table) {
     else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
     else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
     else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
+    else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
     else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
     await loadAllState();
     renderAfterCloudRefresh();
@@ -926,7 +928,7 @@ function startRealtimeSubscriptions() {
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
   let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
-  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests'].forEach(table => {
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => refreshAfterEvent(table));
   });
   channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
