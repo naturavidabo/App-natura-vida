@@ -143,7 +143,7 @@
       </section>
       <section class="v7Panel">
         <div class="v7PanelHead"><div><span class="v7Eyebrow">Configuración comercial</span><h2>Precios de compra</h2></div><button class="btn sm outline" id="editRepConfigV730">Editar</button></div>
-        <div class="priceLine"><span>Grupo de precios</span><b>${escapeHtml(group ? group.name : 'Sin grupo fijo')}</b></div>
+        <div class="priceLine"><span>Condición de compra con Natura Vida</span><b>${escapeHtml(group ? group.name : 'Precio base de representante')}</b></div>
         <div class="priceLine"><span>Descuento personal</span><b>${Number(d.config.discountPercent ?? d.profile.representative_discount_percent ?? 0)}%</b></div>
       </section>
       <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Inventario regional</span><h2>Stock actual</h2></div><span class="v7BadgeCount">${d.stock.length}</span></div>
@@ -168,7 +168,7 @@
     openSheet(`
       <h2>Configurar representante <span class="x" id="closeSheet">✕</span></h2>
       <div class="v7CashNotice">El grupo define el precio base de compra. El descuento personal se registra como beneficio adicional del representante.</div>
-      <div class="field"><label>Grupo de precios</label><select id="repGroupV730"><option value="">Sin grupo fijo</option>${(AppState.priceGroups || []).map(g => `<option value="${g.id}" ${cfg.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}</select></div>
+      <div class="field"><label>Condición central de compra</label><select id="repGroupV730"><option value="">Precio base de representante</option>${(AppState.priceGroups || []).map(g => `<option value="${g.id}" ${cfg.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}</select></div>
       <div class="field"><label>Descuento personal de compra</label><input id="repDiscountV730" type="number" min="0" max="100" step="0.5" value="${Number(cfg.discountPercent ?? profile.representative_discount_percent ?? 0)}"></div>
       <button class="btn block" id="saveRepConfigV730">Guardar configuración</button>`, (overlay, close) => {
       $('#closeSheet', overlay).addEventListener('click', close);
@@ -258,7 +258,7 @@
     openSheet(`
       <h2>Beneficio comercial <span class="x" id="closeSheet">✕</span></h2>
       <div class="v7CashNotice"><strong>${escapeHtml(client.name || 'Cliente')}</strong><br>Asigna precios preferenciales sin modificar los precios generales.</div>
-      <div class="field"><label>Grupo de precios</label><select id="benefitGroupV730"><option value="">Sin grupo</option>${(AppState.priceGroups || []).map(g => `<option value="${g.id}" ${client.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}</select></div>
+      <div class="field"><label>Grupo de precio del cliente</label><select id="benefitGroupV730"><option value="">Sin grupo</option>${(AppState.priceGroups || []).map(g => `<option value="${g.id}" ${client.priceGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}</select></div>
       <div class="field"><label>Descuento personal adicional (%)</label><input id="benefitDiscountV730" type="number" min="0" max="100" step="0.5" value="${Number(client.customDiscountPercent || 0)}"></div>
       <div class="field"><label>Vigencia opcional</label><input id="benefitUntilV730" type="date" value="${escapeHtml(client.benefitUntil || '')}"></div>
       <div class="field"><label>Nota interna</label><input id="benefitNoteV730" value="${escapeHtml(client.benefitNote || '')}" placeholder="Ej.: cliente frecuente, recuperación, promoción"></div>

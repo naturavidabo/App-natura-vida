@@ -1,13 +1,13 @@
 {
-  "name": "NATURA VIDA V7.6 — Distribución y Rutas",
+  "name": "NATURA VIDA V7.7 — Personal y Centro de Gestión",
   "short_name": "NaturaVida",
-  "description": "Gestión integral Natura Vida con ventas, representantes, producción, distribución, rutas, geolocalización, Supabase y Realtime.",
+  "description": "Gestión integral Natura Vida con centro modular, catálogo comercial visible, personal, mano de obra, rutas estables, Supabase y Realtime.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#EEF8F2",
-  "theme_color": "#05512F",
+  "background_color": "#F2FAF5",
+  "theme_color": "#087A49",
   "icons": [
     {
       "src": "icons/icon-48.png",

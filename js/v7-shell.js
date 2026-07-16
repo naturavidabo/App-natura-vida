@@ -106,7 +106,7 @@
   function canAccessV7(tab) {
     if (!requireAuth()) return false;
     if (isAdmin()) return !['compra', 'perfil-cambio'].includes(tab);
-    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'estadisticas', 'centro-comercial', 'por-cobrar', 'cotizaciones', 'ajustes', 'regional', 'grupos', 'distribucion'].includes(tab);
+    return ['inicio', 'vender', 'compra', 'inventario', 'mas', 'clientes', 'inbox', 'perfil', 'historial', 'estadisticas', 'centro-comercial', 'por-cobrar', 'cotizaciones', 'ajustes', 'regional', 'grupos', 'distribucion', 'personal'].includes(tab);
   }
 
   function navigateToV7(tab) {
@@ -151,6 +151,7 @@
       case 'produccion': isAdmin() && window.renderProductionV740 ? renderProductionV740() : renderInicioV7(); break;
       case 'regional': window.renderRegionalManagementV750 ? renderRegionalManagementV750() : renderInicioV7(); break;
       case 'distribucion': window.renderDistributionV760 ? renderDistributionV760() : renderInicioV7(); break;
+      case 'personal': window.renderWorkforceV770 ? renderWorkforceV770() : renderInicioV7(); break;
       case 'cotizaciones': window.renderQuotes ? renderQuotes() : renderInicioV7(); break;
       case 'grupos': renderPriceGroups(); break;
       case 'usuarios': renderUsersFoundation(); break;
@@ -230,6 +231,7 @@
   }
 
   function renderMasV7() {
+    if (window.renderManagementCenterV770) return renderManagementCenterV770();
     const main = $('#mainArea');
     const cp = window.myCommercialProfile ? myCommercialProfile() : {};
     main.innerHTML = `
@@ -258,7 +260,7 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.6.0')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.7.0')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));

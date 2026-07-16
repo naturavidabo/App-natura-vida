@@ -205,6 +205,22 @@ function manualCountV7() {
   return Object.keys(_cartPrices || {}).filter(id => saleManualEntryV7(_cartPrices[id])).length;
 }
 
+function salesToolboxV770() {
+  return `<section class="v770SalesTools" aria-label="Herramientas comerciales">
+    <button id="salesCatalogV770"><span>📖</span><strong>Catálogo</strong><small>Mostrar o compartir</small></button>
+    <button id="salesClientsV770"><span>👥</span><strong>Clientes</strong><small>Directorio comercial</small></button>
+    <button id="salesQuoteV770"><span>🏷️</span><strong>Cotizar</strong><small>Preparar oferta</small></button>
+    <button id="salesCollectV770"><span>💳</span><strong>Cobrar</strong><small>Saldos pendientes</small></button>
+  </section>`;
+}
+
+function bindSalesToolboxV770() {
+  $('#salesCatalogV770')?.addEventListener('click', () => window.openCatalogPdfOptions ? openCatalogPdfOptions() : showToast('Catálogo no disponible.', 'error'));
+  $('#salesClientsV770')?.addEventListener('click', () => window.navigateTo && navigateTo('clientes'));
+  $('#salesQuoteV770')?.addEventListener('click', () => window.navigateTo && navigateTo('cotizaciones'));
+  $('#salesCollectV770')?.addEventListener('click', () => window.navigateTo && navigateTo('por-cobrar'));
+}
+
 function renderVender() {
   $('#fabAdd').classList.add('hidden');
   const main = $('#mainArea');
@@ -220,11 +236,13 @@ function renderVender() {
       <div class="saletoggle salesChannelToggle cleanSaleToggle"><button data-type="reseller_unit" class="${_saleType === 'reseller_unit' ? 'active' : ''}">Unitaria</button><button data-type="reseller_wholesale" class="${_saleType === 'reseller_wholesale' ? 'active' : ''}">Mayorista</button></div>` : `
       <section class="salesCleanHeader"><div><span class="eyebrow">Ventas</span><h1>Registrar venta</h1></div><small>Precio base, grupo o precio manual por producto.</small></section>
       <div class="saletoggle salesChannelToggle cleanSaleToggle"><button data-type="unit" class="${_saleType === 'unit' ? 'active' : ''}">Unitaria</button><button data-type="market" class="${_saleType === 'market' ? 'active' : ''}">Mayorista</button><button data-type="representative_transfer" class="${_saleType === 'representative_transfer' ? 'active' : ''}">Representantes</button></div>`}
+    ${salesToolboxV770()}
     ${((_saleType === 'market' || _saleType === 'representative_transfer') || sellerMode()) && groupsEnabled ? `
     <div class="field" style="margin-bottom:14px;"><label>Grupo / zona de venta (opcional)</label><select id="s_group"><option value="">Sin grupo / precio base</option>${AppState.priceGroups.map(g => `<option value="${g.id}" ${_saleSelectedGroup === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.mode === 'discount' ? '−' : '+'}${g.percent}%)</option>`).join('')}</select><small>Los precios manuales se mantienen como excepción.</small></div>` : ''}
     <div class="toolrow"><input type="text" id="searchInput" placeholder="Buscar producto..." value="${escapeHtml(_saleSearch)}"></div>
     <div class="catalogGrid" id="catalogGrid"></div>
   `;
+  bindSalesToolboxV770();
   $all('.saletoggle button').forEach(b => b.addEventListener('click', () => {
     _saleType = b.dataset.type;
     _cartPrices = {};

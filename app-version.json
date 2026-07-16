@@ -1,8 +1,8 @@
 {
-  "version": "7.6.0",
-  "build": "2026-07-15-v760-distribucion-rutas-grupos-independientes",
-  "releasedAt": "2026-07-15T20:30:00-04:00",
+  "version": "7.7.0",
+  "build": "2026-07-16-v770-personal-centro-gestion-realtime-estable",
+  "releasedAt": "2026-07-16T15:30:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V7.6.0 - Distribución, Rutas y Grupos Independientes",
-  "createdAt": "2026-07-15T20:30:00-04:00"
+  "label": "Natura Vida V7.7.0 - Personal, Centro de Gestión y Realtime Estable",
+  "createdAt": "2026-07-16T15:30:00-04:00"
 }

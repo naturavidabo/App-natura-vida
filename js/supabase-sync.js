@@ -906,7 +906,7 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
   finally { _refreshInFlight = null; }
 }
 
-async function refreshAfterEvent(table) {
+async function refreshAfterEvent(table, payload = null) {
   try {
     if (table === 'products' || table === 'representative_stock' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
     else if (table === 'clients') await syncCloudClientsToLocal();
@@ -915,7 +915,18 @@ async function refreshAfterEvent(table) {
     else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
     else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
     else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
-    else if (['delivery_routes','route_stops','deliveries','geo_events'].includes(table) && window.refreshDistributionV760) await refreshDistributionV760({ rerender: false });
+    else if (['delivery_routes','route_stops','deliveries','geo_events'].includes(table)) {
+      if (window.handleDistributionRealtimeV770) handleDistributionRealtimeV770(table, payload);
+      else if (window.refreshDistributionV760) await refreshDistributionV760();
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
+    else if (['staff_members','staff_tasks','staff_attendance','labor_costs','staff_payments'].includes(table)) {
+      if (window.handleWorkforceRealtimeV770) handleWorkforceRealtimeV770(table, payload);
+      else if (window.refreshWorkforceV770) await refreshWorkforceV770();
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
     await loadAllState();
     renderAfterCloudRefresh();
@@ -951,8 +962,8 @@ function startRealtimeSubscriptions() {
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
   let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
-  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events'].forEach(table => {
-    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => refreshAfterEvent(table));
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments'].forEach(table => {
+    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => refreshAfterEvent(table, payload));
   });
   channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
     try {
