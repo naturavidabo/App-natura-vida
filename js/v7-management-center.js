@@ -16,49 +16,58 @@
 
   function actionRegistryV770() {
     const isAdminUser = admin();
+    const canTeam = window.canOpenRolesV800 && canOpenRolesV800();
     const actions = [
-      { id: 'clientes', category: 'comercial', icon: '👥', title: 'Clientes', subtitle: 'Directorio, ubicación e historial', tab: 'clientes', roles: ['all'] },
-      { id: 'historial', category: 'comercial', icon: '🧾', title: 'Ventas y recibos', subtitle: 'Historial permanente de operaciones', tab: 'historial', roles: ['all'] },
-      { id: 'centro-comercial', category: 'comercial', icon: '📈', title: 'Centro comercial', subtitle: 'Oportunidades y acciones recomendadas', tab: 'centro-comercial', roles: ['all'] },
-      { id: 'estadisticas', category: 'comercial', icon: '📊', title: 'Estadísticas comerciales', subtitle: 'Productos, clientes y tendencias', tab: 'estadisticas', roles: ['all'] },
-      { id: 'por-cobrar', category: 'comercial', icon: '💰', title: 'Ventas por cobrar', subtitle: 'Saldos y pagos parciales', tab: 'por-cobrar', roles: ['all'] },
-      { id: 'cotizaciones', category: 'comercial', icon: '🏷️', title: 'Precios y cotizaciones', subtitle: 'Ofertas personalizadas', tab: 'cotizaciones', roles: ['all'] },
-      { id: 'grupos', category: 'comercial', icon: '🎯', title: isAdminUser ? 'Grupos de precios centrales' : 'Mis grupos de precio', subtitle: isAdminUser ? 'Reglas para ventas y abastecimiento' : 'Reglas propias para tus clientes', tab: 'grupos', roles: ['all'] },
-      { id: 'usuarios', category: 'comercial', icon: '🤝', title: 'Representantes', subtitle: 'Aprobación, condiciones y seguimiento', tab: 'usuarios', roles: ['admin'] },
+      { id: 'catalogo', category: 'comercial', icon: '🌿', title: 'Catálogo comercial', subtitle: 'Productos, presentaciones y precios para ofrecer al cliente', handler: () => window.openCatalogPdfOptions ? openCatalogPdfOptions() : navigateTo('vender'), permission: 'catalog:use' },
+      { id: 'vender', category: 'comercial', icon: '🛍️', title: 'Nueva venta', subtitle: 'Venta unitaria o mayorista', tab: 'vender', permission: 'sales:create' },
+      { id: 'clientes', category: 'comercial', icon: '👥', title: 'Clientes', subtitle: 'Directorio, ubicación e historial', tab: 'clientes', permission: 'clients:manage' },
+      { id: 'historial', category: 'comercial', icon: '🧾', title: 'Ventas y recibos', subtitle: 'Historial permanente de operaciones', tab: 'historial', permission: 'own_reports:read' },
+      { id: 'centro-comercial', category: 'comercial', icon: '📈', title: 'Centro comercial', subtitle: 'Oportunidades y acciones recomendadas', tab: 'centro-comercial', permission: 'own_reports:read' },
+      { id: 'estadisticas', category: 'comercial', icon: '📊', title: 'Estadísticas comerciales', subtitle: 'Productos, clientes y tendencias', tab: 'estadisticas', permission: 'own_reports:read' },
+      { id: 'por-cobrar', category: 'comercial', icon: '💰', title: 'Ventas por cobrar', subtitle: 'Saldos y pagos parciales', tab: 'por-cobrar', permission: 'receivables:manage' },
+      { id: 'cotizaciones', category: 'comercial', icon: '🏷️', title: 'Precios y cotizaciones', subtitle: 'Ofertas personalizadas', tab: 'cotizaciones', permission: 'quotes:manage' },
+      { id: 'grupos', category: 'comercial', icon: '🎯', title: isAdminUser ? 'Grupos de precios centrales' : 'Mis grupos de precio', subtitle: isAdminUser ? 'Reglas para ventas y abastecimiento' : 'Reglas propias para tus clientes', tab: 'grupos', permission: 'sales:create' },
+      { id: 'usuarios', category: 'comercial', icon: '🤝', title: 'Representantes', subtitle: 'Aprobación, condiciones y seguimiento', tab: 'usuarios', adminOnly: true },
 
-      { id: 'inventario', category: 'operaciones', icon: '📦', title: isAdminUser ? 'Inventario central' : 'Mi inventario', subtitle: 'Stock, movimientos y productos', tab: 'inventario', roles: ['all'] },
-      { id: 'regional', category: 'operaciones', icon: '🧭', title: isAdminUser ? 'Gestión regional' : 'Mi región comercial', subtitle: isAdminUser ? 'Stock, regiones y reposiciones' : 'Mi stock y solicitudes', tab: 'regional', roles: ['all'] },
-      { id: 'distribucion', category: 'operaciones', icon: '🚚', title: 'Distribución y rutas', subtitle: 'Rutas, entregas, GPS y evidencia', tab: 'distribucion', roles: ['all'] },
-      { id: 'produccion', category: 'operaciones', icon: '🌿', title: 'Producción e insumos', subtitle: 'Materia prima, lotes y costo real', tab: 'produccion', roles: ['admin'] },
-      { id: 'pedidos', category: 'operaciones', icon: '🛒', title: isAdminUser ? 'Pedidos de representantes' : 'Mis pedidos de reposición', subtitle: 'Solicitudes, recepción y seguimiento', tab: isAdminUser ? 'pedidos' : 'compra', roles: ['all'] },
+      { id: 'inventario', category: 'operaciones', icon: '📦', title: isAdminUser ? 'Inventario central' : 'Mi inventario', subtitle: 'Stock, movimientos y productos', tab: 'inventario', anyPermissions: ['inventory:own','inventory:operate'] },
+      { id: 'regional', category: 'operaciones', icon: '🧭', title: isAdminUser ? 'Gestión regional' : 'Mi región comercial', subtitle: isAdminUser ? 'Stock, regiones y reposiciones' : 'Mi stock, equipo y solicitudes', tab: 'regional', permission: 'regional:manage' },
+      { id: 'distribucion', category: 'operaciones', icon: '🚚', title: 'Distribución y rutas', subtitle: 'Rutas, entregas, GPS y evidencia', tab: 'distribucion', anyPermissions: ['routes:own','routes:manage','deliveries:manage'] },
+      { id: 'produccion', category: 'operaciones', icon: '🌿', title: 'Producción e insumos', subtitle: 'Materia prima, lotes y costo real', tab: 'produccion', anyPermissions: ['production:operate'], adminAlso: true },
+      { id: 'pedidos', category: 'operaciones', icon: '🛒', title: isAdminUser ? 'Pedidos de representantes' : 'Mis pedidos de reposición', subtitle: 'Solicitudes, recepción y seguimiento', tab: isAdminUser ? 'pedidos' : 'compra', anyPermissions: ['orders:create','orders:team_read'], adminAlso: true },
 
-      { id: 'personal', category: 'personal', icon: '🧑‍🌾', title: 'Personal y mano de obra', subtitle: isAdminUser ? 'Equipos centrales y regionales' : 'Mi equipo regional, tareas y pagos', tab: 'personal', roles: ['all'] },
+      { id: 'territorio', category: 'territorio', icon: '🗺️', title: 'Gestión territorial', subtitle: 'Prospectos, visitas, clientes, mapa y cobertura comercial', tab: 'territorio', anyPermissions: ['territory:manage','territory:team_read'], adminAlso: true },
 
-      { id: 'finanzas', category: 'finanzas', icon: '📒', title: 'Finanzas y egresos', subtitle: 'Gastos, ingresos y balance básico', tab: 'egresos', roles: ['admin'] },
-      { id: 'cobros-finanzas', category: 'finanzas', icon: '💳', title: 'Cobranzas', subtitle: 'Saldos pendientes y pagos', tab: 'por-cobrar', roles: ['all'] },
+      { id: 'personal', category: 'personal', icon: '🧑‍🌾', title: (window.canManageTeamV800&&canManageTeamV800()) ? 'Personal y funciones' : 'Mi trabajo', subtitle: (window.canManageTeamV800&&canManageTeamV800()) ? 'Equipo, tareas, asistencia y mano de obra' : 'Tareas, asistencia y actividad asignada', tab: 'personal', anyPermissions: ['workforce:manage','tasks:own','attendance:own'], adminAlso: true },
+      { id: 'roles-estructura', category: 'personal', icon: '🪪', title: 'Roles y estructura funcional', subtitle: 'Función, región, responsable, proveedor y herramientas', tab: 'roles-estructura', customVisible: () => canTeam },
 
-      { id: 'perfil', category: 'administracion', icon: '👤', title: 'Perfil comercial y QR', subtitle: 'Datos para recibos y cobros', tab: 'perfil', roles: ['all'] },
-      { id: 'ajustes', category: 'administracion', icon: '⚙️', title: 'Configuración del negocio', subtitle: 'Marca, contacto y parámetros', tab: 'ajustes', roles: ['admin'] },
-      { id: 'actualizaciones', category: 'administracion', icon: '🔄', title: 'Actualizaciones', subtitle: 'Versión, revisión y recarga segura', handler: () => window.openUpdateCenter ? openUpdateCenter() : showToast('El módulo de actualización no está disponible.', 'error'), roles: ['all'] },
-      { id: 'bandeja', category: 'administracion', icon: '🔔', title: 'Bandeja y actividad', subtitle: 'Avisos, aprobaciones y comprobantes', handler: () => openInboxPanel(), roles: ['all'] }
+      { id: 'finanzas', category: 'finanzas', icon: '📒', title: 'Finanzas y egresos', subtitle: 'Gastos, ingresos y balance básico', tab: 'egresos', anyPermissions: ['finance:operate'], adminAlso: true },
+      { id: 'cobros-finanzas', category: 'finanzas', icon: '💳', title: 'Cobranzas', subtitle: 'Saldos pendientes y pagos', tab: 'por-cobrar', permission: 'receivables:manage' },
+
+      { id: 'perfil', category: 'administracion', icon: '👤', title: 'Mi perfil, función y QR', subtitle: 'Identidad, rol, datos comerciales y cobros', tab: 'perfil', always: true },
+      { id: 'ajustes', category: 'administracion', icon: '⚙️', title: 'Configuración del negocio', subtitle: 'Marca, contacto y parámetros', tab: 'ajustes', adminOnly: true },
+      { id: 'actualizaciones', category: 'administracion', icon: '🔄', title: 'Actualizaciones', subtitle: 'Versión, revisión y recarga segura', handler: () => window.openUpdateCenter ? openUpdateCenter() : showToast('El módulo de actualización no está disponible.', 'error'), always: true },
+      { id: 'bandeja', category: 'administracion', icon: '🔔', title: 'Bandeja y actividad', subtitle: 'Avisos, aprobaciones y comprobantes', handler: () => openInboxPanel(), always: true }
     ];
-    return actions.filter(action => action.roles.includes('all') || (action.roles.includes('admin') && isAdminUser));
+    return actions.filter(action => {
+      if (action.always) return true;
+      if (action.adminOnly) return isAdminUser;
+      if (action.adminAlso && isAdminUser) return true;
+      if (action.customVisible) return !!action.customVisible();
+      if (action.permission) return window.hasPermission && hasPermission(action.permission);
+      if (action.anyPermissions) return action.anyPermissions.some(permission => window.hasPermission && hasPermission(permission));
+      return false;
+    });
   }
 
   function categoryRegistryV770() {
-    if (admin()) return [
-      { id: 'comercial', icon: '💼', title: 'Comercial', subtitle: 'Clientes, ventas, precios y representantes', tone: 'green' },
-      { id: 'operaciones', icon: '📦', title: 'Operaciones', subtitle: 'Inventario, producción, regiones y rutas', tone: 'blue' },
-      { id: 'personal', icon: '👥', title: 'Personal', subtitle: 'Equipo, tareas, asistencia y mano de obra', tone: 'violet' },
-      { id: 'finanzas', icon: '📒', title: 'Finanzas', subtitle: 'Egresos, cobranzas y control económico', tone: 'gold' },
-      { id: 'administracion', icon: '⚙️', title: 'Administración', subtitle: 'Perfil, ajustes, seguridad y actualización', tone: 'slate' }
-    ];
+    const team = window.canManageTeamV800 && canManageTeamV800();
     return [
-      { id: 'comercial', icon: '💼', title: 'Mi negocio', subtitle: 'Clientes, ventas, precios y cobranzas', tone: 'green' },
-      { id: 'operaciones', icon: '📦', title: 'Mi operación', subtitle: 'Stock, reposición, pedidos, rutas y entregas', tone: 'blue' },
-      { id: 'personal', icon: '👥', title: 'Mi equipo', subtitle: 'Personal regional, tareas y asistencia', tone: 'violet' },
-      { id: 'finanzas', icon: '💳', title: 'Mis cobranzas', subtitle: 'Saldos y pagos de mis clientes', tone: 'gold' },
-      { id: 'administracion', icon: '⚙️', title: 'Configuración', subtitle: 'Perfil, bandeja y actualización', tone: 'slate' }
+      { id: 'comercial', icon: '💼', title: admin() ? 'Comercial' : 'Mi actividad comercial', subtitle: 'Catálogo, clientes, ventas, precios y cobranzas', tone: 'green' },
+      { id: 'operaciones', icon: '📦', title: admin() ? 'Operaciones' : 'Mi operación', subtitle: 'Inventario, producción, pedidos, regiones y rutas', tone: 'blue' },
+      { id: 'territorio', icon: '🗺️', title: 'Territorio', subtitle: 'Prospectos, visitas, mapas y cobertura comercial', tone: 'lime' },
+      { id: 'personal', icon: '👥', title: team ? 'Personal y funciones' : 'Mi trabajo', subtitle: team ? 'Equipo, roles, tareas, asistencia y mano de obra' : 'Tareas, asistencia y perfil operativo', tone: 'violet' },
+      { id: 'finanzas', icon: '📒', title: admin() ? 'Finanzas' : 'Cobranzas y finanzas', subtitle: 'Cobros, egresos y control económico autorizado', tone: 'gold' },
+      { id: 'administracion', icon: '⚙️', title: admin() ? 'Administración' : 'Configuración', subtitle: 'Perfil, función, bandeja y actualización', tone: 'slate' }
     ];
   }
 
@@ -116,8 +125,8 @@
 
   function renderMainView(actions) {
     const results = filteredActions(actions);
-    const categories = categoryRegistryV770();
-    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Organización modular V7.7.1</span><h1>Centro de gestión</h1><p>Encuentra cada herramienta por área, sin listas interminables ni funciones mezcladas con Configuración.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
+    const categories = categoryRegistryV770().filter(category => actions.some(action => action.category === category.id));
+    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Organización modular V8.0.0 XD</span><h1>Centro de gestión</h1><p>Encuentra cada herramienta por área, sin listas interminables ni funciones mezcladas con Configuración.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
       ${searchTerm ? `<section class="v770SearchResults"><div class="v770SectionTitle"><span>Resultados</span><b>${results.length}</b></div>${results.map(action => actionButton(action, true)).join('') || '<div class="v770Hint"><span>⌕</span><p>No se encontró una función con ese nombre.</p></div>'}</section>` : `
       <section class="v770FavoriteSection"><div class="v770SectionTitle"><span>Favoritos</span><small>Accesos personalizados</small></div>${renderFavorites(actions)}</section>
       <section class="v770CategoryGrid">${categories.map(category => {
@@ -125,7 +134,7 @@
         return `<button class="v770CategoryCard ${esc(category.tone)}" data-category="${esc(category.id)}"><span class="v770CategoryGlow"></span><i>${category.icon}</i><span><strong>${esc(category.title)}</strong><small>${esc(category.subtitle)}</small></span><em>${count}</em><b>›</b></button>`;
       }).join('')}</section>${renderRecents(actions)}`}
       <section class="v770SettingsSeparation"><span>⚙️</span><div><strong>Configuración está separada de la operación</strong><p>Los ajustes del negocio están dentro de Administración; ventas, catálogo, stock y rutas permanecen como herramientas de trabajo.</p></div></section>
-      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '7.7.1')} · Centro modular · Supabase Realtime</div>`;
+      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '8.0.0')} · Núcleo modular XD · Supabase Realtime</div>`;
   }
 
   function bindCenterEvents(actions) {

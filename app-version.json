@@ -1,8 +1,8 @@
 {
-  "version": "7.7.1",
-  "build": "2026-07-16-v771-estabilizacion-integracion-operativa-identidad-visual",
-  "releasedAt": "2026-07-16T16:55:00-04:00",
+  "version": "8.0.0",
+  "build": "2026-07-17-v800-xd-nucleo-roles-territorio",
+  "releasedAt": "2026-07-17T13:30:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V7.7.1 - Estabilización e Integración Operativa",
-  "createdAt": "2026-07-16T16:55:00-04:00"
+  "label": "Natura Vida V8.0.0 XD - Núcleo Modular, Roles y Territorio",
+  "createdAt": "2026-07-17T13:30:00-04:00"
 }

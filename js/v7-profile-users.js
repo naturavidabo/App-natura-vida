@@ -27,8 +27,9 @@
       <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Puedes actualizar tus datos de perfil y presentación comercial. El correo, rol y estado permanecen protegidos.'}</p></section>
       <section class="v7ProfileCardMain nv771ProfileIdentity">
         ${window.avatarMarkupV771 ? avatarMarkupV771(AppState.session || {}, 'profile-large') : `<div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>`}
-        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : (AppState.session.operationalRoleLabel || 'Representante activo')}</small></div>
+        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${escapeHtml(AppState.session.roleName || (isAdmin() ? 'Administrador central' : 'Representante comercial'))}</small></div>
       </section>
+      ${window.roleSummaryCardV800 ? roleSummaryCardV800(AppState.session || {}, { compact: true }) : ''}
       <section class="nv771PhotoPanel">
         <div><span class="v7Eyebrow">Identificación visual</span><h2>Fotografía de perfil</h2><p>Esta imagen aparecerá en la cabecera y ayudará a identificarte en representantes, regiones y equipos.</p></div>
         <label class="nv771PhotoPicker"><span>📷 Elegir fotografía</span><input id="profilePhotoFileV771" type="file" accept="image/png,image/jpeg,image/webp"></label>

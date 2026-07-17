@@ -19,11 +19,12 @@
     refreshPromise = (async () => {
       const userId = currentUid();
       const admin = isAdmin();
-      const profilesPromise = admin && window.fetchAllProfilesV7 ? fetchAllProfilesV7() : Promise.resolve({ ok:true, profiles:[AppState.session] });
+      const managerView = admin || (window.canManageTeamV800 && canManageTeamV800());
+      const profilesPromise = managerView && window.fetchManageableProfilesV800 ? fetchManageableProfilesV800() : (admin && window.fetchAllProfilesV7 ? fetchAllProfilesV7() : Promise.resolve({ ok:true, profiles:[AppState.session] }));
       let regionalQuery = client().from('representative_regional_profiles').select('*').order('updated_at',{ ascending:false });
       let requestsQuery = client().from('regional_restock_requests').select('*').order('created_at',{ ascending:false }).limit(200);
       let stockQuery = client().from('representative_stock').select('representative_user_id,product_id,stock,acquisition_cost,updated_at');
-      if (!admin) {
+      if (!managerView) {
         regionalQuery = regionalQuery.eq('representative_user_id',userId);
         requestsQuery = requestsQuery.eq('representative_user_id',userId);
         stockQuery = stockQuery.eq('representative_user_id',userId);
@@ -48,7 +49,8 @@
   function statusLabel(status) { return ({ active:'Activo',suspended:'Suspendido',inactive:'Inactivo',pending:'Pendiente',approved:'Aprobada',rejected:'Rechazada',fulfilled:'Atendida' })[status] || status || 'Pendiente'; }
   function representativeRows() {
     const reps = regionalCache.profiles.filter(profile => String(profile.role||'').toLowerCase() !== 'administrador');
-    return isAdmin() ? reps : reps.filter(profile => profile.id === currentUid());
+    const managerView = isAdmin() || (window.canManageTeamV800 && canManageTeamV800());
+    return managerView ? reps : reps.filter(profile => profile.id === currentUid());
   }
   function totalUnits() { return regionalCache.stock.reduce((sum,row)=>sum+Number(row.stock||0),0); }
   function pendingRequests() { return regionalCache.requests.filter(row=>row.status==='pending').length; }
@@ -63,14 +65,15 @@
 
   function requestCard(row) {
     const detail = Array.isArray(row.items) ? row.items.map(item => `${esc(item.productName||item.product_name)} × ${Number(item.quantity||0)}`).join(' · ') : 'Sin detalle';
-    return `<article class="v750RequestCard"><div><strong>${esc(row.request_code||'Solicitud')}</strong><span>${esc(row.representative_name||'Representante')} · ${new Date(row.created_at).toLocaleDateString('es-BO')}</span><small>${detail}</small></div><div><em class="v750Status ${esc(row.status)}">${statusLabel(row.status)}</em>${isAdmin() && row.status==='pending' ? `<button class="btn sm approveRestockV750" data-id="${esc(row.id)}">Aprobar</button><button class="btn sm outline rejectRestockV750" data-id="${esc(row.id)}">Rechazar</button>` : ''}</div></article>`;
+    return `<article class="v750RequestCard"><div><strong>${esc(row.request_code||'Solicitud')}</strong><span>${esc(row.representative_name||'Representante')} · ${new Date(row.created_at).toLocaleDateString('es-BO')}</span><small>${detail}</small></div><div><em class="v750Status ${esc(row.status)}">${statusLabel(row.status)}</em>${(isAdmin() || ((window.canManageTeamV800&&canManageTeamV800()) && row.representative_user_id!==currentUid())) && row.status==='pending' ? `<button class="btn sm approveRestockV750" data-id="${esc(row.id)}">Aprobar</button><button class="btn sm outline rejectRestockV750" data-id="${esc(row.id)}">Rechazar</button>` : ''}</div></article>`;
   }
 
   function fullHtml() {
     const visible = representativeRows();
-    return `<section class="v7RegionalHero nv771LimeHero"><span class="nv771HeroOrb one"></span><span class="nv771HeroOrb two"></span><span class="v7Eyebrow">Natura Vida V7.7.1</span><h1>${isAdmin()?'Gestión regional':'Mi región comercial'}</h1><p>${isAdmin()?'Representantes, regiones, stock y solicitudes bajo control central, con actualización silenciosa.':'Consulta tu región, stock y reposiciones sin perder la estabilidad de la pantalla.'}</p></section>
+    const managerView = isAdmin() || (window.canManageTeamV800 && canManageTeamV800());
+    return `<section class="v7RegionalHero nv771LimeHero"><span class="nv771HeroOrb one"></span><span class="nv771HeroOrb two"></span><span class="v7Eyebrow">Natura Vida V8.0.0 XD</span><h1>${managerView?'Gestión regional y equipo':'Mi región comercial'}</h1><p>${managerView?'Región, stock, equipo y solicitudes visibles según tu nivel de responsabilidad, con actualización silenciosa.':'Consulta tu región, stock y reposiciones sin perder la estabilidad de la pantalla.'}</p></section>
       <section class="v7MetricGrid compact v750Metrics"><article class="v7MetricCard"><span>Representantes</span><strong id="regionalMetricRepsV771">${visible.length}</strong><small>con ficha visible</small></article><article class="v7MetricCard"><span>Stock regional</span><strong id="regionalMetricStockV771">${totalUnits()}</strong><small>unidades registradas</small></article><article class="v7MetricCard"><span>Reposiciones</span><strong id="regionalMetricPendingV771">${pendingRequests()}</strong><small>pendientes</small></article></section>
-      ${isAdmin()?`<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Mapa operativo</span><h2>Representantes regionales</h2></div><span class="v770SyncChip" id="regionalSyncChipV771">Actualizado</span></div><div class="v750RegionalGrid" id="regionalGridV771">${visible.map(representativeCard).join('')||'<div class="v7Empty"><h3>Sin representantes</h3><p>Aprueba primero las cuentas del equipo comercial.</p></div>'}</div></section>`:''}
+      ${managerView?`<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Mapa operativo</span><h2>Representantes regionales</h2></div><span class="v770SyncChip" id="regionalSyncChipV771">Actualizado</span></div><div class="v750RegionalGrid" id="regionalGridV771">${visible.map(representativeCard).join('')||'<div class="v7Empty"><h3>Sin representantes</h3><p>Aprueba primero las cuentas del equipo comercial.</p></div>'}</div></section>`:''}
       <section class="v7Panel" id="regionalRequestsSectionV771"><div class="v7PanelHead"><div><span class="v7Eyebrow">Abastecimiento</span><h2>Solicitudes de reposición</h2></div>${!isAdmin()?'<button class="btn sm" id="newRestockV750">Nueva solicitud</button>':''}</div><div class="v750RequestList" id="regionalRequestsListV771">${regionalCache.requests.map(requestCard).join('')||'<div class="v7Empty"><span>📦</span><h3>Sin solicitudes</h3><p>Las solicitudes aparecerán aquí.</p></div>'}</div></section>`;
   }
 

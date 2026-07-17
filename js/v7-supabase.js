@@ -93,6 +93,17 @@
         AppState.session.fullName = data.full_name || AppState.session.fullName;
         AppState.session.avatarUrl = data.avatar_url || '';
         AppState.session.avatar_url = data.avatar_url || '';
+        const v8Role = window.commercialRoleFromProfile ? commercialRoleFromProfile(data) : (String(data.role||'').toLowerCase()==='administrador' ? 'central_admin' : 'commercial_representative');
+        const v8Def = window.roleDefinitionV800 ? roleDefinitionV800(v8Role) : null;
+        AppState.session.commercialRole = v8Role;
+        AppState.session.roleName = v8Def ? v8Def.name : AppState.session.roleName;
+        AppState.session.roleShortName = v8Def ? v8Def.short : AppState.session.roleShortName;
+        AppState.session.roleSummary = v8Def ? v8Def.summary : AppState.session.roleSummary;
+        AppState.session.permissions = window.permissionsForRole ? permissionsForRole(v8Role) : AppState.session.permissions;
+        AppState.session.regionName = data.region_name || data.city || '';
+        AppState.session.managerUserId = data.manager_user_id || null;
+        AppState.session.supplierUserId = data.supplier_user_id || null;
+        AppState.session.roleNote = data.role_note || '';
       }
       const { data: linkedStaff } = await sb.from('staff_members')
         .select('id,full_name,operational_role,role_type,access_mode,status')
@@ -196,6 +207,10 @@
       source: row.source || payload.source || 'representative',
       representativeId: row.representative_user_id,
       representativeName: row.representative_name || payload.representativeName || '',
+      supplierUserId: row.supplier_user_id || payload.supplierUserId || null,
+      supplierName: row.supplier_name || payload.supplierName || 'Stock central Natura Vida',
+      regionName: row.region_name || payload.regionName || '',
+      regionalManagerUserId: row.regional_manager_user_id || payload.regionalManagerUserId || null,
       status: row.status || payload.status || 'submitted',
       paymentStatus: row.payment_status || payload.paymentStatus || 'pending',
       total: Number(row.total || payload.total || 0),
@@ -388,12 +403,14 @@
   async function syncAfterLoginV7() {
     const base = originalSyncAfterLogin ? await originalSyncAfterLogin() : { ok: true };
     await syncV7Context();
+    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
     return base;
   }
 
   async function runBackgroundSyncV7(reason = 'automatic') {
     const base = originalRunBackgroundSyncOnce ? await originalRunBackgroundSyncOnce(reason) : { ok: true };
     await syncV7Context();
+    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
     return base;
   }
 

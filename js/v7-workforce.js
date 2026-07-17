@@ -10,6 +10,7 @@
   const sb = () => window.getSupabaseClient ? getSupabaseClient() : null;
   const currentUid = () => AppState.session.onlineUserId || AppState.session.userId;
   const admin = () => window.isAdmin && isAdmin();
+  const managerMode = () => admin() || (window.canManageTeamV800 && canManageTeamV800());
   const esc = value => escapeHtml(String(value == null ? '' : value));
   const uid770 = prefix => window.uid ? uid(prefix) : `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const today = () => new Date().toISOString().slice(0, 10);
@@ -18,7 +19,7 @@
   function errorText(error) {
     const raw = window.messageFromError ? messageFromError(error) : String(error?.message || error || 'Error');
     if (/staff_members|staff_tasks|staff_attendance|labor_costs|staff_payments/i.test(raw) && /does not exist|schema cache/i.test(raw)) {
-      return 'Falta ejecutar el SQL principal de Natura Vida V7.7.1 en Supabase.';
+      return 'Falta ejecutar el SQL principal de Natura Vida V7.7.1 y luego V8.0.0 en Supabase.';
     }
     return raw;
   }
@@ -78,9 +79,10 @@
   }
 
   function workforceTabs() {
-    const tabs = [
-      ['equipo', 'Equipo'], ['tareas', 'Tareas'], ['asistencia', 'Asistencia'], ['mano-obra', 'Mano de obra'], ['pagos', 'Pagos']
-    ];
+    const tabs = managerMode()
+      ? [['equipo','Equipo'],['tareas','Tareas'],['asistencia','Asistencia'],['mano-obra','Mano de obra'],['pagos','Pagos']]
+      : [['tareas','Mis tareas'],['asistencia','Mi asistencia']];
+    if (!tabs.some(([id]) => id === workforceTab)) workforceTab = tabs[0][0];
     return `<div class="v770WorkTabs">${tabs.map(([id, label]) => `<button data-work-tab="${id}" class="${workforceTab === id ? 'active' : ''}">${label}</button>`).join('')}</div>`;
   }
 
@@ -103,9 +105,10 @@
   }
 
   function managerOptions(selected = '') {
-    if (!admin()) return '';
-    const profiles = (AppState.allProfiles || []).filter(row => String(row.status || '').toLowerCase() === 'activo');
-    return `<div class="field"><label>Responsable / región</label><select id="staffManagerV770"><option value="${esc(currentUid())}">Administración central</option>${profiles.filter(row => row.id !== currentUid()).map(row => `<option value="${esc(row.id)}" ${row.id === selected ? 'selected' : ''}>${esc(row.full_name || row.email || 'Representante')}</option>`).join('')}</select></div>`;
+    if (!managerMode()) return '';
+    const profiles = ((AppState.manageableProfiles && AppState.manageableProfiles.length) ? AppState.manageableProfiles : (AppState.allProfiles || [])).filter(row => String(row.status || '').toLowerCase() === 'activo');
+    const ownLabel = admin() ? 'Administración central' : (AppState.session.roleShortName || 'Responsable regional');
+    return `<div class="field"><label>Responsable / región</label><select id="staffManagerV770"><option value="${esc(currentUid())}">${esc(ownLabel)}</option>${profiles.filter(row => row.id !== currentUid()).map(row => `<option value="${esc(row.id)}" ${row.id === selected ? 'selected' : ''}>${esc(row.full_name || row.email || 'Usuario')}</option>`).join('')}</select></div>`;
   }
 
   function roleLabel(value) {
@@ -113,7 +116,7 @@
   }
 
   function renderTeam() {
-    return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Equipo de trabajo</span><h2>Personal registrado</h2></div><button class="btn sm" id="newStaffV770">+ Persona</button></div>
+    return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Equipo de trabajo</span><h2>Personal registrado</h2></div>${managerMode()?'<button class="btn sm" id="newStaffV770">+ Persona</button>':''}</div>
       <div class="v770StaffGrid">${workforceCache.staff.map(row => {
         const open = workforceCache.tasks.filter(task => task.staff_id === row.id && ['pending', 'in_progress'].includes(task.status)).length;
         const linkedProfile=(AppState.allProfiles||[]).find(profile=>profile.id===row.linked_user_id)||{}; const avatar=window.avatarMarkupV771 ? avatarMarkupV771(linkedProfile.full_name||linkedProfile.email ? linkedProfile : {full_name:row.full_name},'staff') : `<div class="v770StaffAvatar">${esc((row.full_name||'P').charAt(0).toUpperCase())}</div>`; return `<article class="v770StaffCard">${avatar}<div class="v770StaffMain"><div class="v770StaffTitle"><h3>${esc(row.full_name)}</h3><em class="v770State ${esc(row.status)}">${statusText(row.status)}</em></div><p>${esc(roleLabel(row.operational_role||row.role_type))}${row.region ? ` · ${esc(row.region)}` : ''}</p><div class="v770StaffFacts"><span>${row.access_mode==='app'?'📲 Con acceso a la app':'📝 Gestionado sin cuenta'}</span><span>${row.phone ? `📱 ${esc(row.phone)}` : 'Sin celular'}</span><span>${open} tarea(s) abierta(s)</span><span>${esc(row.pay_mode === 'hour' ? `${fmtMoney(row.pay_rate)}/hora` : row.pay_mode === 'unit' ? `${fmtMoney(row.pay_rate)}/unidad` : row.pay_mode === 'day' ? `${fmtMoney(row.pay_rate)}/jornada` : 'Pago por tarea')}</span></div></div><button class="v770IconBtn" data-edit-staff="${esc(row.id)}" aria-label="Editar">✎</button></article>`;
@@ -162,7 +165,7 @@
       $('#retryWorkforceV770')?.addEventListener('click', () => renderWorkforceV770());
       return;
     }
-    main.innerHTML = `<section class="v770WorkHero nv771LimeHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V7.7.1</span><h1>Personal y mano de obra</h1><p>${admin() ? 'Diferencia personal con acceso, personal gestionado y ayudantes ocasionales.' : 'Gestiona tu equipo regional y registra su trabajo sin acceder a otras regiones.'}</p></section>${metricsHtml()}${workforceTabs()}<div id="workforceTabContentV771">${tabContent()}</div>`;
+    main.innerHTML = `<section class="v770WorkHero nv771LimeHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V8.0.0 XD</span><h1>${managerMode()?'Personal, funciones y mano de obra':'Mi trabajo'}</h1><p>${managerMode() ? 'Diferencia usuarios con acceso, personal gestionado y ayudantes ocasionales; asigna tareas según tu alcance.' : 'Consulta tus tareas y registros de asistencia sin acceder a información de otras personas.'}</p></section>${metricsHtml()}${workforceTabs()}<div id="workforceTabContentV771">${tabContent()}</div>`;
     bindWorkforceEvents();
     if (options.quiet) requestAnimationFrame(() => window.scrollTo({ top: scroll, behavior: 'auto' }));
   }
@@ -180,13 +183,14 @@
   }
 
   function openStaffFormV770(id = '') {
+    if (!managerMode()) return showToast('Tu perfil no administra personal.', 'error');
     const row = workforceCache.staff.find(item => item.id === id) || null;
     openSheet(`<h2>${row ? 'Editar personal' : 'Registrar personal'} <span class="x" id="closeSheet">✕</span></h2>
       <div class="field"><label>Nombre completo</label><input id="staffNameV770" value="${esc(row?.full_name || '')}" placeholder="Nombre y apellidos"></div>
       <div class="field-row"><div class="field"><label>Celular</label><input id="staffPhoneV770" inputmode="tel" value="${esc(row?.phone || '')}"></div><div class="field"><label>Región / ciudad</label><input id="staffRegionV770" value="${esc(row?.region || AppState.session.city || '')}"></div></div>
       <div class="field-row"><div class="field"><label>Área de trabajo</label><select id="staffRoleV770">${['production','sales','delivery','inventory','administration','support'].map(value => `<option value="${value}" ${(row?.operational_role||row?.role_type) === value ? 'selected' : ''}>${roleLabel(value)}</option>`).join('')}</select></div><div class="field"><label>Estado</label><select id="staffStatusV770">${['active','inactive','suspended','retired'].map(value => `<option value="${value}" ${row?.status === value ? 'selected' : ''}>${statusText(value)}</option>`).join('')}</select></div></div>
       <div class="field"><label>Forma de participación</label><select id="staffAccessModeV771"><option value="managed" ${row?.access_mode!=='app'?'selected':''}>Registrado sin acceso a la aplicación</option><option value="app" ${row?.access_mode==='app'?'selected':''}>Tendrá acceso a la aplicación</option></select></div>
-      <div class="field ${row?.access_mode==='app'?'':'hidden'}" id="linkedUserFieldV771"><label>Cuenta aprobada a vincular</label><select id="staffLinkedUserV771"><option value="">Seleccionar cuenta…</option>${(AppState.allProfiles||[]).filter(profile=>String(profile.status||'').toLowerCase()==='activo').map(profile=>`<option value="${esc(profile.id)}" ${row?.linked_user_id===profile.id?'selected':''}>${esc(profile.full_name||profile.email||'Usuario')} · ${esc(profile.email||'')}</option>`).join('')}</select><small>La persona crea primero su cuenta; después se vincula aquí con su función.</small></div>
+      <div class="field ${row?.access_mode==='app'?'':'hidden'}" id="linkedUserFieldV771"><label>Cuenta aprobada a vincular</label><select id="staffLinkedUserV771"><option value="">Seleccionar cuenta…</option>${(((AppState.manageableProfiles&&AppState.manageableProfiles.length)?AppState.manageableProfiles:AppState.allProfiles)||[]).filter(profile=>String(profile.status||'').toLowerCase()==='activo').map(profile=>`<option value="${esc(profile.id)}" ${row?.linked_user_id===profile.id?'selected':''}>${esc(profile.full_name||profile.email||'Usuario')} · ${esc(profile.email||'')}</option>`).join('')}</select><small>La persona crea primero su cuenta; después se vincula aquí con su función.</small></div>
       ${managerOptions(row?.manager_user_id || currentUid())}
       <div class="field-row"><div class="field"><label>Modalidad de pago</label><select id="staffPayModeV770">${[['day','Por jornada'],['hour','Por hora'],['unit','Por unidad'],['task','Por tarea']].map(([value, label]) => `<option value="${value}" ${row?.pay_mode === value ? 'selected' : ''}>${label}</option>`).join('')}</select></div><div class="field"><label>Tarifa referencial</label><input id="staffRateV770" type="number" min="0" step="0.01" value="${Number(row?.pay_rate || 0)}"></div></div>
       <div class="field"><label>Fecha de ingreso</label><input id="staffJoinedV770" type="date" value="${esc(row?.joined_on || today())}"></div>
@@ -199,7 +203,7 @@
         if (!name) return showToast('Ingresa el nombre del personal.', 'error');
         const payload = {
           id: row?.id || uid770('staff'),
-          manager_user_id: admin() ? ($('#staffManagerV770', overlay)?.value || currentUid()) : currentUid(),
+          manager_user_id: managerMode() ? ($('#staffManagerV770', overlay)?.value || currentUid()) : currentUid(),
           full_name: name,
           phone: $('#staffPhoneV770', overlay).value.trim(),
           role_type: $('#staffRoleV770', overlay).value,

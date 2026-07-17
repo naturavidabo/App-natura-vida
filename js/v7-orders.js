@@ -17,6 +17,13 @@
 
   function statusMeta(status) { return STATUS[status] || [status || 'Enviado', 'info']; }
   function centralStock(p) { return Math.max(0, Number(p.adminStock != null ? p.adminStock : p.stock) || 0); }
+  function assignedSupplierIdV800() { return AppState.session.supplierUserId || null; }
+  function assignedSupplierNameV800() {
+    const supplierId = assignedSupplierIdV800();
+    const fromProfiles = supplierId && window.profileNameV800 ? profileNameV800(supplierId) : '';
+    return fromProfiles || AppState.session.supplierName || 'Stock central Natura Vida';
+  }
+  function assignedRegionalManagerV800() { return AppState.session.managerUserId || null; }
   function representativeOrderPrice(p) {
     const base = representativePrice(p);
     const groupId = AppState.session.priceGroupId || '';
@@ -74,7 +81,7 @@
     const canEdit = representativeView && ['submitted', 'modified', 'approved_pending_payment'].includes(order.status);
     const canCancel = representativeView && !['paid', 'cancelled', 'rejected'].includes(order.status);
     return `<article class="v7OrderCard ${tone}">
-      <div class="v7OrderTop"><div><span class="v7DocNumber">${escapeHtml(order.orderNumber || 'Pedido')}</span><strong>${representativeView ? 'Compra a Natura Vida' : escapeHtml(order.representativeName || 'Representante')}</strong></div><span class="v7Status ${tone}">${escapeHtml(label)}</span></div>
+      <div class="v7OrderTop"><div><span class="v7DocNumber">${escapeHtml(order.orderNumber || 'Pedido')}</span><strong>${representativeView ? `Compra a ${escapeHtml(order.supplierName || assignedSupplierNameV800())}` : escapeHtml(order.representativeName || 'Representante')}</strong></div><span class="v7Status ${tone}">${escapeHtml(label)}</span></div>
       <div class="v7OrderItems">${(order.items || []).slice(0,4).map(i => `<span>${escapeHtml(i.productName)} <b>× ${i.qty}</b></span>`).join('')}${(order.items || []).length > 4 ? `<span>+ ${(order.items || []).length - 4} producto(s)</span>` : ''}</div>
       <div class="v7OrderFoot"><span>${fmtDateTime(order.createdAt)}</span><strong>${fmtMoney(order.total || 0)}</strong></div>
       <div class="v7OrderActions">
@@ -94,7 +101,7 @@
     const discount = Number(AppState.session.discountPercent || 0);
     const repGroup = (AppState.centralPriceGroups || []).find(g => g.id === (AppState.session.priceGroupId || ''));
     $('#mainArea').innerHTML = `
-      <section class="v7PageHead v7BuyHead"><span class="v7Eyebrow">Catálogo central</span><h1>Compra online</h1><p>Elige productos, envía tu solicitud y recibe el stock cuando el administrador confirme el pago.</p>${repGroup ? `<span class="v7DiscountChip">Grupo: ${escapeHtml(repGroup.name)}</span>` : ''}${discount > 0 ? `<span class="v7DiscountChip">Descuento personal: ${discount}%</span>` : ''}</section>
+      <section class="v7PageHead v7BuyHead"><span class="v7Eyebrow">Abastecimiento asignado</span><h1>Compra online</h1><p>Elige productos y envía la solicitud al proveedor asignado en tu estructura comercial.</p><span class="v7DiscountChip">Proveedor: ${escapeHtml(assignedSupplierNameV800())}</span>${repGroup ? `<span class="v7DiscountChip">Grupo: ${escapeHtml(repGroup.name)}</span>` : ''}${discount > 0 ? `<span class="v7DiscountChip">Descuento personal: ${discount}%</span>` : ''}</section>
       ${editingOrderId ? `<div class="v7EditBanner"><span>Editando pedido ${escapeHtml((orders.find(o=>o.id===editingOrderId)||{}).orderNumber || '')}</span><button id="cancelEditOrderV7">Cancelar edición</button></div>` : ''}
       <div class="v7SearchBox"><span>⌕</span><input id="v7OrderSearch" placeholder="Buscar producto o categoría" value="${escapeHtml(orderSearch)}"></div>
       <section class="v7ProductGrid">
@@ -140,9 +147,9 @@
     openSheet(`
       <h2>${editingOrderId ? 'Modificar pedido' : 'Confirmar pedido'} <span class="x" id="closeSheet">✕</span></h2>
       <div class="v7CartList">${items.map(i => `<div><span><strong>${escapeHtml(i.productName)}</strong><small>${i.qty} × ${fmtMoney(i.unitPrice)}</small></span><b>${fmtMoney(i.subtotal)}</b></div>`).join('')}</div>
-      <div class="field"><label>Nota para el administrador</label><textarea id="v7OrderNote" rows="3" placeholder="Ej.: enviar por flota, confirmar horario...">${escapeHtml(orderNote)}</textarea></div>
+      <div class="field"><label>Nota para el proveedor</label><textarea id="v7OrderNote" rows="3" placeholder="Ej.: enviar por flota, confirmar horario...">${escapeHtml(orderNote)}</textarea></div>
       <div class="v7TotalLine"><span>Total al contado</span><strong>${fmtMoney(cartTotal())}</strong></div>
-      <div class="v7CashNotice">El stock pasa a tu inventario únicamente cuando el administrador confirma el pago.</div>
+      <div class="v7CashNotice">Proveedor asignado: <strong>${escapeHtml(assignedSupplierNameV800())}</strong>. El stock pasa a tu inventario cuando el abastecimiento y el pago sean confirmados.</div>
       <button class="btn block" id="submitOrderV7">${editingOrderId ? 'Guardar modificación' : 'Enviar pedido'}</button>
       <button class="btn outline block" id="clearOrderV7">Vaciar carrito</button>
     `, (overlay, close) => {
@@ -151,7 +158,7 @@
       $('#submitOrderV7', overlay).addEventListener('click', async () => {
         if (!navigator.onLine) return showToast('Se necesita internet para enviar el pedido.', 'error');
         orderNote = $('#v7OrderNote', overlay).value.trim();
-        const payload = { items: cartItems(), total: cartTotal(), note: orderNote, representativeName: AppState.session.fullName, representativePhone: AppState.session.phone || '', representativeCity: AppState.session.city || '', source: 'representative', status: editingOrderId ? 'modified' : 'submitted', paymentStatus: 'pending', updatedAt: Date.now() };
+        const payload = { items: cartItems(), total: cartTotal(), note: orderNote, representativeName: AppState.session.fullName, representativePhone: AppState.session.phone || '', representativeCity: AppState.session.city || '', source: 'representative', status: editingOrderId ? 'modified' : 'submitted', paymentStatus: 'pending', supplierUserId: assignedSupplierIdV800(), supplierName: assignedSupplierNameV800(), regionName: AppState.session.regionName || AppState.session.city || '', regionalManagerUserId: assignedRegionalManagerV800(), updatedAt: Date.now() };
         const btn = $('#submitOrderV7', overlay); btn.disabled = true; btn.textContent = 'Guardando en Supabase…';
         const res = editingOrderId ? await representativeUpdateOrderV7(editingOrderId, payload) : await createPurchaseOrderV7(Object.assign({ id: uid('order'), createdAt: Date.now() }, payload));
         if (!res.ok) { btn.disabled = false; btn.textContent = 'Reintentar'; return showToast(res.message, 'error'); }

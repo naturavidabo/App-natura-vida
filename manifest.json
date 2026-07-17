@@ -1,12 +1,12 @@
 {
-  "name": "NATURA VIDA V7.7.1 — Integración Operativa",
+  "name": "NATURA VIDA V8.0.0 XD — Núcleo Modular y Territorio",
   "short_name": "NaturaVida",
-  "description": "Gestión Natura Vida con identidad visual renovada, perfiles con fotografía, entregas integradas, rutas, personal y Realtime estable.",
+  "description": "Gestión modular Natura Vida con roles funcionales, jerarquía regional, territorio, prospectos, visitas, mapas, ventas, stock, rutas y Supabase Realtime.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#F3FBF6",
+  "background_color": "#F3FBF0",
   "theme_color": "#087A49",
   "icons": [
     {

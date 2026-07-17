@@ -704,7 +704,15 @@ function mapPurchaseOrderToCloud(order) {
     status: order.status || 'pending',
     total: Number(order.total || 0),
     note: order.note || '',
-    payload: order
+    supplier_user_id: order.supplierUserId || AppState.session.supplierUserId || null,
+    supplier_name: order.supplierName || (window.profileNameV800 ? profileNameV800(order.supplierUserId || AppState.session.supplierUserId) : '') || 'Stock central Natura Vida',
+    region_name: order.regionName || AppState.session.regionName || AppState.session.city || '',
+    regional_manager_user_id: order.regionalManagerUserId || AppState.session.managerUserId || null,
+    payload: Object.assign({}, order, {
+      supplierUserId: order.supplierUserId || AppState.session.supplierUserId || null,
+      regionName: order.regionName || AppState.session.regionName || AppState.session.city || '',
+      regionalManagerUserId: order.regionalManagerUserId || AppState.session.managerUserId || null
+    })
   };
 }
 
@@ -728,6 +736,10 @@ async function fetchCloudPurchaseOrders() {
       status: row.status,
       total: Number(row.total || 0),
       note: row.note || '',
+      supplierUserId: row.supplier_user_id || (row.payload || {}).supplierUserId || null,
+      supplierName: row.supplier_name || (row.payload || {}).supplierName || 'Stock central Natura Vida',
+      regionName: row.region_name || (row.payload || {}).regionName || '',
+      regionalManagerUserId: row.regional_manager_user_id || (row.payload || {}).regionalManagerUserId || null,
       createdAt: new Date(row.created_at).getTime(),
       updatedAt: new Date(row.updated_at).getTime(),
       syncStatus: 'cloud'
@@ -949,6 +961,17 @@ async function refreshAfterEvent(table, payload = null) {
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
+    else if (['territory_prospects','territory_visits','territory_events'].includes(table)) {
+      if (window.handleTerritoryRealtimeV800) handleTerritoryRealtimeV800(table, payload);
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
+    else if (table === 'business_roles') {
+      if (window.fetchRoleCatalogV800) await fetchRoleCatalogV800().catch(() => {});
+      if (AppState.currentTab === 'roles-estructura' && window.renderRolesStructureV800) renderRolesStructureV800();
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
     await loadAllState();
     renderAfterCloudRefresh();
@@ -984,7 +1007,7 @@ function startRealtimeSubscriptions() {
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
   let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
-  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'delivery_requests', 'representative_regional_profiles', 'regional_restock_requests', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments'].forEach(table => {
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'delivery_requests', 'representative_regional_profiles', 'regional_restock_requests', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments', 'business_roles', 'territory_prospects', 'territory_visits', 'territory_events'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => refreshAfterEvent(table, payload));
   });
   channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
