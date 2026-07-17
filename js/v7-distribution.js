@@ -1,6 +1,6 @@
-/* NATURA VIDA V7.7.0 — distribución estable, Realtime sin parpadeos y mapa persistente. */
+/* NATURA VIDA V7.7.1 — entregas integradas, rutas estables y mapa persistente. */
 (() => {
-  let routeCache = { routes: [], stops: [], deliveries: [], geoEvents: [] };
+  let routeCache = { routes: [], stops: [], deliveries: [], geoEvents: [], requests: [] };
   let routeFilter = 'active';
   let activeRouteId = '';
   let activeMap = null;
@@ -28,15 +28,16 @@
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
       if (!sb() || !currentUid()) return { ok: false, message: 'Sesión no disponible.' };
-      const [routesRes, stopsRes, deliveriesRes, geoRes] = await Promise.all([
+      const [routesRes, stopsRes, deliveriesRes, geoRes, requestsRes] = await Promise.all([
         sb().from('delivery_routes').select('*').order('route_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
         sb().from('route_stops').select('*').order('sequence_no', { ascending: true }).limit(1200),
         sb().from('deliveries').select('*').order('delivered_at', { ascending: false }).limit(800),
-        sb().from('geo_events').select('*').order('created_at', { ascending: false }).limit(800)
+        sb().from('geo_events').select('*').order('created_at', { ascending: false }).limit(800),
+        sb().from('delivery_requests').select('*').order('requested_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false }).limit(500)
       ]);
-      const failed = [routesRes, stopsRes, deliveriesRes, geoRes].find(result => result.error);
+      const failed = [routesRes, stopsRes, deliveriesRes, geoRes, requestsRes].find(result => result.error);
       if (failed) return { ok: false, message: errorText(failed.error) };
-      routeCache = { routes: routesRes.data || [], stops: stopsRes.data || [], deliveries: deliveriesRes.data || [], geoEvents: geoRes.data || [] };
+      routeCache = { routes: routesRes.data || [], stops: stopsRes.data || [], deliveries: deliveriesRes.data || [], geoEvents: geoRes.data || [], requests: requestsRes.data || [] };
       distributionLoaded = true;
       return { ok: true, ...routeCache };
     })();
@@ -53,7 +54,8 @@
     return {
       todayRoutes: routeCache.routes.filter(route => route.route_date === today).length,
       pendingStops: routeCache.stops.filter(stop => ['pending', 'arrived'].includes(stop.status)).length,
-      delivered: routeCache.stops.filter(stop => stop.status === 'delivered').length
+      delivered: routeCache.stops.filter(stop => stop.status === 'delivered').length,
+      requests: routeCache.requests.filter(request => request.status === 'pending').length
     };
   }
 
@@ -63,28 +65,65 @@
     return `<article class="v760RouteCard"><header><div><h3>${esc(route.route_name || route.route_code)}</h3><small>${dateLabel(route.route_date)} · ${esc(route.driver_name || route.representative_name || 'Sin responsable')}</small></div><em class="v760Status ${esc(route.status)}">${statusLabel(route.status)}</em></header><div class="v760RouteMeta"><span><b>${stops.length}</b>paradas</span><span><b>${done}</b>entregas</span><span><b>${stops.filter(hasGps).length}</b>con GPS</span></div><div class="v760RouteActions"><button class="btn sm" data-open-route="${esc(route.id)}">Abrir ruta</button></div></article>`;
   }
 
+  function deliveryRequestCardV771(request) {
+    const items = Array.isArray(request.items) ? request.items : [];
+    const detail = items.slice(0, 3).map(item => `${esc(item.productName || item.product_name || item.name || 'Producto')} × ${Number(item.qty || item.quantity || 0)}`).join(' · ');
+    const source = request.source_type === 'sale' ? 'Venta' : request.source_type === 'order' ? 'Pedido' : 'Manual';
+    return `<label class="nv771DeliveryRequestCard"><input type="checkbox" data-delivery-request="${esc(request.id)}"><span class="nv771RequestCheck">✓</span><span><strong>${esc(request.client_name || 'Destino sin nombre')}</strong><small>${source}${request.source_code ? ` ${esc(request.source_code)}` : ''} · ${request.requested_date ? dateLabel(request.requested_date) : 'Sin fecha'}</small><em>${esc(request.address || request.location_label || 'Dirección pendiente')}</em>${detail ? `<i>${detail}</i>` : ''}</span><b>${fmtMoney(request.amount_due || 0)}</b></label>`;
+  }
+
+  function pendingRequestsHtmlV771() {
+    const requests = routeCache.requests.filter(request => request.status === 'pending');
+    return requests.map(deliveryRequestCardV771).join('') || '<div class="v7Empty small"><span>✓</span><h3>Sin entregas por programar</h3><p>Las ventas y pedidos marcados para entrega aparecerán aquí.</p></div>';
+  }
+
   function listHtml() {
     const metrics = routeMetrics();
-    return `<section class="v760RouteHero v770RouteHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V7.7.0</span><h1>Distribución y rutas</h1><p>${admin() ? 'Planifica rutas, asigna responsables y fiscaliza entregas con ubicación y evidencia.' : 'Gestiona tus recorridos, confirma visitas y registra entregas desde el celular.'}</p></section>
-      <section class="v7MetricGrid compact"><article class="v7MetricCard primary"><span>Rutas hoy</span><strong id="distMetricTodayV770">${metrics.todayRoutes}</strong><small>programadas</small></article><article class="v7MetricCard"><span>Pendientes</span><strong id="distMetricPendingV770">${metrics.pendingStops}</strong><small>paradas</small></article><article class="v7MetricCard notification"><span>Entregadas</span><strong id="distMetricDeliveredV770">${metrics.delivered}</strong><small>acumuladas</small></article></section>
-      <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Planificación</span><h2>Rutas de entrega</h2></div><button class="btn sm" id="newRouteV760">+ Nueva ruta</button></div>
+    return `<section class="v760RouteHero v770RouteHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V7.7.1</span><h1>Distribución y rutas</h1><p>${admin() ? 'Planifica rutas, asigna responsables y fiscaliza entregas con ubicación y evidencia.' : 'Gestiona tus recorridos, confirma visitas y registra entregas desde el celular.'}</p></section>
+      <section class="v7MetricGrid compact nv771RouteMetrics"><article class="v7MetricCard primary"><span>Rutas hoy</span><strong id="distMetricTodayV770">${metrics.todayRoutes}</strong><small>programadas</small></article><article class="v7MetricCard"><span>Paradas</span><strong id="distMetricPendingV770">${metrics.pendingStops}</strong><small>pendientes</small></article><article class="v7MetricCard notification"><span>Entregadas</span><strong id="distMetricDeliveredV770">${metrics.delivered}</strong><small>acumuladas</small></article><article class="v7MetricCard lime"><span>Por programar</span><strong id="distMetricRequestsV771">${metrics.requests}</strong><small>ventas y pedidos</small></article></section>
+      <section class="v7Panel nv771DeliveryQueue"><div class="v7PanelHead"><div><span class="v7Eyebrow">Integración operativa</span><h2>Entregas pendientes</h2></div><button class="btn sm" id="planSelectedRequestsV771">Crear ruta</button></div><div class="nv771QueueTools"><button class="btn sm outline" id="selectAllRequestsV771">Seleccionar todas</button><span id="selectedRequestsCountV771">0 seleccionadas</span></div><div id="deliveryRequestListV771" class="nv771DeliveryRequestList">${pendingRequestsHtmlV771()}</div></section>
+      <section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Planificación</span><h2>Rutas de entrega</h2></div><button class="btn sm" id="newRouteV760">+ Ruta manual</button></div>
         <div class="v760RouteFilters"><button data-route-filter="active" class="${routeFilter === 'active' ? 'active' : ''}">Activas</button><button data-route-filter="planned" class="${routeFilter === 'planned' ? 'active' : ''}">Planificadas</button><button data-route-filter="completed" class="${routeFilter === 'completed' ? 'active' : ''}">Completadas</button><button data-route-filter="all" class="${routeFilter === 'all' ? 'active' : ''}">Todas</button></div>
         <div class="v760RouteGrid" id="routeGridV770">${visibleRoutes().map(routeCard).join('') || '<div class="v7Empty"><span>🚚</span><h3>Sin rutas en esta vista</h3><p>Crea una ruta y agrega clientes o puntos de entrega.</p></div>'}</div>
       </section>`;
   }
 
+  function bindDeliveryQueueEventsV771() {
+    const updateSelected = () => {
+      const count = $all('[data-delivery-request]:checked').length;
+      const label = $('#selectedRequestsCountV771');
+      if (label) label.textContent = `${count} seleccionada${count === 1 ? '' : 's'}`;
+    };
+    $all('[data-delivery-request]').forEach(input => { input.onchange = updateSelected; });
+    const selectAll = $('#selectAllRequestsV771');
+    if (selectAll) selectAll.onclick = () => {
+      $all('[data-delivery-request]').forEach(input => { input.checked = true; });
+      updateSelected();
+    };
+    const planButton = $('#planSelectedRequestsV771');
+    if (planButton) planButton.onclick = () => {
+      const ids = $all('[data-delivery-request]:checked').map(input => input.dataset.deliveryRequest);
+      openPlanDeliveryRequestsV771(ids);
+    };
+    updateSelected();
+  }
+
   function bindListEvents() {
-    $('#newRouteV760')?.addEventListener('click', openNewRouteV760);
-    $all('[data-route-filter]').forEach(button => button.addEventListener('click', () => {
-      routeFilter = button.dataset.routeFilter;
-      $all('[data-route-filter]').forEach(item => item.classList.toggle('active', item.dataset.routeFilter === routeFilter));
-      patchRouteListV770();
-    }));
+    const newRoute = $('#newRouteV760');
+    if (newRoute) newRoute.onclick = openNewRouteV760;
+    bindDeliveryQueueEventsV771();
+    $all('[data-route-filter]').forEach(button => {
+      button.onclick = () => {
+        routeFilter = button.dataset.routeFilter;
+        $all('[data-route-filter]').forEach(item => item.classList.toggle('active', item.dataset.routeFilter === routeFilter));
+        patchRouteListV770();
+      };
+    });
     bindOpenRouteButtons();
   }
 
   function bindOpenRouteButtons(root = document) {
-    $all('[data-open-route]', root).forEach(button => button.addEventListener('click', () => openRouteDetailV760(button.dataset.openRoute)));
+    $all('[data-open-route]', root).forEach(button => { button.onclick = () => openRouteDetailV760(button.dataset.openRoute); });
   }
 
   async function renderDistributionV760(options = {}) {
@@ -106,15 +145,34 @@
   function patchRouteListV770() {
     if (AppState.currentTab !== 'distribucion' || activeRouteId) return;
     const metrics = routeMetrics();
-    const todayEl = $('#distMetricTodayV770'), pendingEl = $('#distMetricPendingV770'), deliveredEl = $('#distMetricDeliveredV770');
+    const todayEl = $('#distMetricTodayV770'), pendingEl = $('#distMetricPendingV770'), deliveredEl = $('#distMetricDeliveredV770'), requestsEl = $('#distMetricRequestsV771');
     if (todayEl) todayEl.textContent = metrics.todayRoutes;
     if (pendingEl) pendingEl.textContent = metrics.pendingStops;
     if (deliveredEl) deliveredEl.textContent = metrics.delivered;
+    if (requestsEl) requestsEl.textContent = metrics.requests;
+    const requestList = $('#deliveryRequestListV771');
+    if (requestList) requestList.innerHTML = pendingRequestsHtmlV771();
     const grid = $('#routeGridV770');
     if (grid) {
       grid.innerHTML = visibleRoutes().map(routeCard).join('') || '<div class="v7Empty"><span>🚚</span><h3>Sin rutas en esta vista</h3><p>Crea una ruta y agrega clientes o puntos de entrega.</p></div>';
       bindOpenRouteButtons(grid);
     }
+    bindDeliveryQueueEventsV771();
+  }
+
+  function openPlanDeliveryRequestsV771(requestIds = []) {
+    if (!requestIds.length) return showToast('Selecciona al menos una entrega pendiente.', 'error');
+    const date = new Date().toISOString().slice(0,10);
+    openSheet(`<h2>Crear ruta desde entregas <span class="x" id="closeSheet">✕</span></h2><div class="v7CashNotice">Se crearán ${requestIds.length} paradas con cliente, dirección, productos, monto y referencia de la venta o pedido.</div><div class="field"><label>Nombre de la ruta</label><input id="planRouteNameV771" value="Ruta de entregas · ${dateLabel(date)}"></div><div class="field"><label>Fecha</label><input id="planRouteDateV771" type="date" value="${date}"></div>${admin() ? `<div class="field"><label>Responsable</label><select id="planRouteRepV771"><option value="${esc(currentUid())}">${esc(AppState.session.fullName || 'Administrador')}</option>${representativeOptions()}</select></div>` : ''}<div class="field"><label>Observaciones</label><textarea id="planRouteNotesV771" placeholder="Zona, vehículo, prioridad u horario"></textarea></div><button class="btn block" id="confirmPlanRouteV771">Crear ruta con ${requestIds.length} entregas</button>`, (overlay, close) => {
+      $('#closeSheet',overlay).addEventListener('click',close);
+      $('#confirmPlanRouteV771',overlay).addEventListener('click',async()=>{
+        const select=$('#planRouteRepV771',overlay); const repId=select?.value || currentUid(); const repName=select ? select.options[select.selectedIndex].text : (AppState.session.fullName||'Responsable');
+        const button=$('#confirmPlanRouteV771',overlay); button.disabled=true;button.textContent='Creando ruta y paradas…';
+        const result=await planDeliveryRequestsV771(requestIds,{ name:$('#planRouteNameV771',overlay).value.trim(),date:$('#planRouteDateV771',overlay).value,representativeUserId:repId,driverUserId:repId,driverName:repName,notes:$('#planRouteNotesV771',overlay).value.trim() });
+        if(!result.ok){button.disabled=false;button.textContent='Reintentar';return showToast(result.message,'error');}
+        close();showToast(`Ruta creada con ${result.stops || requestIds.length} entregas.`);await refreshDistributionV760();openRouteDetailV760(result.route_id);
+      });
+    });
   }
 
   function representativeOptions() {
@@ -203,7 +261,8 @@
   function stopCard(stop) {
     const delivery = routeCache.deliveries.find(row => row.route_stop_id === stop.id);
     const geo = delivery ? (delivery.within_geofence ? '<span class="v760GeoBadge ok">✓ dentro de geocerca</span>' : delivery.distance_m != null ? `<span class="v760GeoBadge out">${Math.round(delivery.distance_m)} m del punto</span>` : '') : '';
-    return `<article class="v760Stop"><div class="v760StopNumber">${Number(stop.sequence_no || 0)}</div><div><h4>${esc(stop.client_name || 'Punto de entrega')}</h4><p>${esc(stop.address || stop.location_label || 'Sin dirección')}</p><span class="v760Status ${esc(stop.status)}">${statusLabel(stop.status)}</span>${hasGps(stop) ? '<span class="v760GeoBadge">📍 GPS registrado</span>' : '<span class="v760GeoBadge out">GPS pendiente</span>'}${geo}<div class="v760StopActions">${hasGps(stop) ? `<button class="btn sm ghost" data-nav-stop="${esc(stop.id)}">Navegar</button>` : ''}${stop.status === 'pending' ? `<button class="btn sm outline" data-arrive-stop="${esc(stop.id)}">Llegué</button>` : ''}${['pending', 'arrived', 'failed'].includes(stop.status) ? `<button class="btn sm" data-deliver-stop="${esc(stop.id)}">Entregar</button>` : ''}${['pending', 'arrived'].includes(stop.status) ? `<button class="btn sm ghost dangerText" data-fail-stop="${esc(stop.id)}">No entregado</button>` : ''}${delivery?.evidence_url ? `<a class="btn sm outline" href="${esc(delivery.evidence_url)}" target="_blank" rel="noopener">Evidencia</a>` : ''}</div></div></article>`;
+    const itemText = Array.isArray(stop.items) ? stop.items.slice(0,3).map(item => `${esc(item.productName || item.product_name || item.name || 'Producto')} × ${Number(item.qty || item.quantity || 0)}`).join(' · ') : '';
+    return `<article class="v760Stop"><div class="v760StopNumber">${Number(stop.sequence_no || 0)}</div><div><h4>${esc(stop.client_name || 'Punto de entrega')}</h4><p>${esc(stop.address || stop.location_label || 'Sin dirección')}</p>${stop.source_code ? `<small class="nv771StopSource">${esc(stop.source_type === 'sale' ? 'Venta' : stop.source_type === 'order' ? 'Pedido' : 'Origen')} ${esc(stop.source_code)}</small>` : ''}${itemText ? `<small class="nv771StopItems">${itemText}</small>` : ''}<span class="v760Status ${esc(stop.status)}">${statusLabel(stop.status)}</span>${hasGps(stop) ? '<span class="v760GeoBadge">📍 GPS registrado</span>' : '<span class="v760GeoBadge out">GPS pendiente</span>'}${geo}<div class="v760StopActions">${hasGps(stop) ? `<button class="btn sm ghost" data-nav-stop="${esc(stop.id)}">Navegar</button>` : ''}${stop.status === 'pending' ? `<button class="btn sm outline" data-arrive-stop="${esc(stop.id)}">Llegué</button>` : ''}${['pending', 'arrived', 'failed'].includes(stop.status) ? `<button class="btn sm" data-deliver-stop="${esc(stop.id)}">Entregar</button>` : ''}${['pending', 'arrived'].includes(stop.status) ? `<button class="btn sm ghost dangerText" data-fail-stop="${esc(stop.id)}">No entregado</button>` : ''}${delivery?.evidence_url ? `<a class="btn sm outline" href="${esc(delivery.evidence_url)}" target="_blank" rel="noopener">Evidencia</a>` : ''}</div></div></article>`;
   }
 
   function destroyMapV770() {

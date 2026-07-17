@@ -1,8 +1,8 @@
 {
-  "version": "7.7.0",
-  "build": "2026-07-16-v770-personal-centro-gestion-realtime-estable",
-  "releasedAt": "2026-07-16T15:30:00-04:00",
+  "version": "7.7.1",
+  "build": "2026-07-16-v771-estabilizacion-integracion-operativa-identidad-visual",
+  "releasedAt": "2026-07-16T16:55:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V7.7.0 - Personal, Centro de Gestión y Realtime Estable",
-  "createdAt": "2026-07-16T15:30:00-04:00"
+  "label": "Natura Vida V7.7.1 - Estabilización e Integración Operativa",
+  "createdAt": "2026-07-16T16:55:00-04:00"
 }

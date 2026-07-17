@@ -91,6 +91,20 @@
         AppState.session.phone = data.phone || AppState.session.phone || '';
         AppState.session.city = data.city || AppState.session.city || '';
         AppState.session.fullName = data.full_name || AppState.session.fullName;
+        AppState.session.avatarUrl = data.avatar_url || '';
+        AppState.session.avatar_url = data.avatar_url || '';
+      }
+      const { data: linkedStaff } = await sb.from('staff_members')
+        .select('id,full_name,operational_role,role_type,access_mode,status')
+        .eq('linked_user_id', AppState.session.onlineUserId)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle();
+      if (linkedStaff && AppState.session) {
+        const labels = { production:'Producción',sales:'Ventas',delivery:'Reparto',inventory:'Inventario',administration:'Administración',support:'Apoyo' };
+        AppState.session.linkedStaffId = linkedStaff.id || '';
+        AppState.session.operationalRole = linkedStaff.operational_role || linkedStaff.role_type || '';
+        AppState.session.operationalRoleLabel = labels[AppState.session.operationalRole] || '';
       }
     } catch (_) {}
     const failed = results.find(r => r && r.ok === false);

@@ -401,6 +401,7 @@ function openCheckoutSheet() {
     <div class="field"><label>Nombre del cliente</label><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><small>${(_saleType === 'market' || _saleType === 'representative_transfer') ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
     <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
     ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
+    <section class="nv771DeliveryToggle"><label><input id="ck_requiresDeliveryV771" type="checkbox"><span><strong>Requiere entrega</strong><small>Crear una entrega pendiente para planificarla en una ruta.</small></span></label><div id="ck_deliveryFieldsV771" class="hidden"><div class="field-row"><div class="field"><label>Fecha solicitada</label><input id="ck_deliveryDateV771" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Prioridad</label><select id="ck_deliveryPriorityV771"><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div></div><div class="field"><label>Dirección de entrega</label><input id="ck_deliveryAddressV771" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.address || '') : ''}" placeholder="Dirección, zona o referencia"></div><div class="field"><label>Observación de entrega</label><textarea id="ck_deliveryNotesV771" placeholder="Horario, persona de contacto o indicación especial"></textarea></div></div></section>
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
     <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" readonly value="0"></div></div>
     <div class="field"><label>Motivo si queda saldo pendiente</label><input id="ck_pendingReason" placeholder="Ej.: faltó cambio, transferencia pendiente, saldo por cobrar"></div>
@@ -414,6 +415,8 @@ function openCheckoutSheet() {
       operation.client = c;
       $('#ck_clientname', overlay).value = c.name || '';
       $('#ck_clientphone', overlay).value = c.phone || '';
+      const deliveryAddress = $('#ck_deliveryAddressV771', overlay);
+      if (deliveryAddress) deliveryAddress.value = c.address || c.locationLabel || '';
       let rebuildForBenefit = false;
       if (c.priceGroupId && (_saleType === 'market' || _saleType === 'representative_transfer' || sellerMode()) && c.priceGroupId !== _saleSelectedGroup) {
         const g = AppState.priceGroups.find(x => x.id === c.priceGroupId);
@@ -442,6 +445,9 @@ function openCheckoutSheet() {
     $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
     if ($('#registerWholesaleV725', overlay)) $('#registerWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#ck_clientname', overlay).value.trim(), phone: $('#ck_clientphone', overlay).value.trim(), customerType: 'wholesale' }); });
     $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
+    $('#ck_requiresDeliveryV771', overlay)?.addEventListener('change', event => {
+      $('#ck_deliveryFieldsV771', overlay)?.classList.toggle('hidden', !event.target.checked);
+    });
     const updatePaymentV725 = () => { const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0)); $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - paid)); };
     $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725); updatePaymentV725();
     $('#ck_clientname', overlay).addEventListener('blur', () => {
@@ -505,6 +511,9 @@ function openCheckoutSheet() {
             customerType: operation.client ? (operation.client.customerType || customerTypeForSaleV723(_saleType)) : customerTypeForSaleV723(_saleType),
             clientCity: operation.client ? (operation.client.city || '') : '',
             clientAddress: operation.client ? (operation.client.address || '') : '',
+            requiresDelivery: !!$('#ck_requiresDeliveryV771', overlay)?.checked,
+            deliveryRequestedDate: $('#ck_deliveryDateV771', overlay)?.value || '',
+            deliveryAddress: $('#ck_deliveryAddressV771', overlay)?.value.trim() || (operation.client ? (operation.client.address || '') : ''),
             clientBusinessName: operation.client ? (operation.client.businessName || '') : '',
             date: Date.now(),
             syncStatus: 'cloud'
@@ -514,7 +523,19 @@ function openCheckoutSheet() {
         await Promise.all([syncCloudProductsToLocal().catch(() => null), window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()]);
         if (!AppState.sales.some(x => x.id === operation.sale.id)) AppState.sales.push(operation.sale);
         await writeAudit('sale:create', 'sales', operation.sale.id, null, operation.sale).catch(() => {});
-        showToast('Venta registrada en Supabase.');
+        let deliveryWarning = '';
+        if (operation.sale.requiresDelivery && window.createDeliveryRequestFromSaleV771) {
+          const delivery = await createDeliveryRequestFromSaleV771(operation.sale, operation.client || {}, {
+            requestedDate: $('#ck_deliveryDateV771', overlay)?.value || new Date().toISOString().slice(0,10),
+            priority: $('#ck_deliveryPriorityV771', overlay)?.value || 'normal',
+            address: $('#ck_deliveryAddressV771', overlay)?.value.trim() || operation.sale.clientAddress || '',
+            latitude: operation.client?.latitude ?? null,
+            longitude: operation.client?.longitude ?? null,
+            notes: $('#ck_deliveryNotesV771', overlay)?.value.trim() || ''
+          });
+          if (!delivery.ok) deliveryWarning = delivery.message || 'No se pudo crear la entrega pendiente.';
+        }
+        showToast(deliveryWarning ? `Venta guardada, pero revisa la entrega: ${deliveryWarning}` : (operation.sale.requiresDelivery ? 'Venta guardada y enviada a Entregas pendientes.' : 'Venta registrada en Supabase.'), deliveryWarning ? 'error' : undefined);
         close();
         if (window.openV7ReceiptPreview) openV7ReceiptPreview(operation.sale, 'sale'); else openReceiptPreview(operation.sale);
         _cart = {}; _cartPrices = {}; renderVender();

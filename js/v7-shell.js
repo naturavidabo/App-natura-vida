@@ -1,4 +1,4 @@
-/* NATURA VIDA V7 — shell, navegación por rol y panel moderno. */
+/* NATURA VIDA V7.7.1 — shell, navegación por rol y cabecera insignia. */
 
 (() => {
   const oldRenderMas = window.renderMas;
@@ -57,12 +57,23 @@
     const name = AppState.settings.businessName || 'NATURA VIDA';
     const headerLogo = AppState.settings.logo || BRAND_MAIN_LOGO;
     $('#bizName').textContent = name;
-    $('#bizLogo').innerHTML = `<img src="${headerLogo}" alt="${escapeHtml(name)}">`;
+    $('#bizLogo').innerHTML = `<span class="nv771LogoHalo"></span><img src="${headerLogo}" alt="${escapeHtml(name)}">`;
     const subtitle = document.querySelector('header.top .bizsub');
-    if (subtitle) {
-      subtitle.textContent = requireAuth()
-        ? `${displayNameV7()} · ${isAdmin() ? 'Administración' : 'Representante'}`
-        : 'Te cuida por dentro y por fuera';
+    if (subtitle) subtitle.textContent = 'Te cuida por dentro y por fuera';
+
+    const avatarBox = $('#topProfileAvatarV771');
+    const avatarUrl = window.profileAvatarUrlV771 ? profileAvatarUrlV771(AppState.session || {}) : String(AppState.session?.avatarUrl || '');
+    if (avatarBox) avatarBox.innerHTML = avatarUrl
+      ? `<img src="${escapeHtml(avatarUrl)}" alt="Mi fotografía" loading="lazy" decoding="async">`
+      : `<b>${escapeHtml(displayInitialV7())}</b>`;
+    const profileName = $('#topProfileNameV771');
+    const profileRole = $('#topProfileRoleV771');
+    if (profileName) profileName.textContent = requireAuth() ? displayNameV7() : 'Mi perfil';
+    if (profileRole) profileRole.textContent = requireAuth() ? (isAdmin() ? 'Administración' : (AppState.session.operationalRoleLabel || 'Representante')) : 'Natura Vida';
+    const profileButton = $('#topProfileButtonV771');
+    if (profileButton && !profileButton.dataset.bound) {
+      profileButton.dataset.bound = '1';
+      profileButton.addEventListener('click', () => { if (requireAuth()) navigateToV7('perfil'); });
     }
     if (window.installInboxButton) {
       installInboxButton();
@@ -260,7 +271,7 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.7.0')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '7.7.1')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));

@@ -1,4 +1,4 @@
-/* NATURA VIDA V7.7.0 — Centro de gestión organizado, buscador, favoritos y recientes. */
+/* NATURA VIDA V7.7.1 — Centro de gestión organizado, buscador, favoritos y recientes. */
 (() => {
   let activeCategory = '';
   let searchTerm = '';
@@ -6,7 +6,7 @@
   const esc = value => escapeHtml(String(value == null ? '' : value));
   const admin = () => window.isAdmin && isAdmin();
   const userKey = () => String(AppState.session.onlineUserId || AppState.session.userId || 'guest');
-  const storeKey = name => `nv770_${name}_${userKey()}`;
+  const storeKey = name => `nv771_${name}_${userKey()}`;
 
   function readArray(name) {
     try { const data = JSON.parse(localStorage.getItem(storeKey(name)) || '[]'); return Array.isArray(data) ? data : []; }
@@ -117,7 +117,7 @@
   function renderMainView(actions) {
     const results = filteredActions(actions);
     const categories = categoryRegistryV770();
-    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Organización modular V7.7.0</span><h1>Centro de gestión</h1><p>Encuentra cada herramienta por área, sin listas interminables ni funciones mezcladas con Configuración.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
+    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Organización modular V7.7.1</span><h1>Centro de gestión</h1><p>Encuentra cada herramienta por área, sin listas interminables ni funciones mezcladas con Configuración.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
       ${searchTerm ? `<section class="v770SearchResults"><div class="v770SectionTitle"><span>Resultados</span><b>${results.length}</b></div>${results.map(action => actionButton(action, true)).join('') || '<div class="v770Hint"><span>⌕</span><p>No se encontró una función con ese nombre.</p></div>'}</section>` : `
       <section class="v770FavoriteSection"><div class="v770SectionTitle"><span>Favoritos</span><small>Accesos personalizados</small></div>${renderFavorites(actions)}</section>
       <section class="v770CategoryGrid">${categories.map(category => {
@@ -125,7 +125,7 @@
         return `<button class="v770CategoryCard ${esc(category.tone)}" data-category="${esc(category.id)}"><span class="v770CategoryGlow"></span><i>${category.icon}</i><span><strong>${esc(category.title)}</strong><small>${esc(category.subtitle)}</small></span><em>${count}</em><b>›</b></button>`;
       }).join('')}</section>${renderRecents(actions)}`}
       <section class="v770SettingsSeparation"><span>⚙️</span><div><strong>Configuración está separada de la operación</strong><p>Los ajustes del negocio están dentro de Administración; ventas, catálogo, stock y rutas permanecen como herramientas de trabajo.</p></div></section>
-      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '7.7.0')} · Centro modular · Supabase Realtime</div>`;
+      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '7.7.1')} · Centro modular · Supabase Realtime</div>`;
   }
 
   function bindCenterEvents(actions) {

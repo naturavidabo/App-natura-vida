@@ -17,7 +17,7 @@ require('actions/checkout@v6' in text, 'checkout no usa versión v6')
 require('actions/configure-pages@v6' in text, 'configure-pages no usa versión v6')
 require('actions/upload-pages-artifact@v5' in text, 'upload-pages-artifact no usa versión v5')
 require('actions/deploy-pages@v5' in text, 'deploy-pages no usa versión v5')
-require('tests/audit_site_v770.py' in text, 'workflow no ejecuta auditoría V7.7.0')
+require('tests/audit_site_v771.py' in text, 'workflow no ejecuta auditoría V7.7.1')
 require('tests/audit_deployment.py' in text, 'workflow no ejecuta auditoría de despliegue')
 require('cp index.html manifest.json service-worker.js app-version.json _site/' in text, 'workflow no copia archivos raíz')
 require('cp -R css icons img js _site/' in text, 'workflow no copia carpetas del sitio')
@@ -30,8 +30,8 @@ require((ROOT / 'index.html').read_text(encoding='utf-8').lstrip().startswith('<
 require(not list(ROOT.rglob('*.sql')), 'sitio limpio contiene SQL')
 
 if errors:
-    print(f'Auditoría de despliegue V7.7.0: {len(checks)-len(errors)}/{len(checks)} controles OK')
+    print(f'Auditoría de despliegue V7.7.1: {len(checks)-len(errors)}/{len(checks)} controles OK')
     for error in errors:
         print('ERROR:', error)
     sys.exit(1)
-print(f'Auditoría de despliegue V7.7.0: {len(checks)}/{len(checks)} controles OK')
+print(f'Auditoría de despliegue V7.7.1: {len(checks)}/{len(checks)} controles OK')

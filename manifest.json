@@ -1,12 +1,12 @@
 {
-  "name": "NATURA VIDA V7.7 — Personal y Centro de Gestión",
+  "name": "NATURA VIDA V7.7.1 — Integración Operativa",
   "short_name": "NaturaVida",
-  "description": "Gestión integral Natura Vida con centro modular, catálogo comercial visible, personal, mano de obra, rutas estables, Supabase y Realtime.",
+  "description": "Gestión Natura Vida con identidad visual renovada, perfiles con fotografía, entregas integradas, rutas, personal y Realtime estable.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#F2FAF5",
+  "background_color": "#F3FBF6",
   "theme_color": "#087A49",
   "icons": [
     {

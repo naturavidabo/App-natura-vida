@@ -205,7 +205,22 @@
   }
 
   async function approveAdminOrder(id) { const res=await adminApproveOrderV7(id); showToast(res.ok?'Pedido aprobado. Esperando pago.':res.message,res.ok?undefined:'error'); if(res.ok)renderAdminOrdersInboxV7(); }
-  async function confirmAdminOrderPayment(id) { if(!confirmDialog('¿Confirmas que el pago total fue recibido? Al confirmar, el stock pasará al representante.'))return; const res=await adminConfirmOrderPaymentV7(id); showToast(res.ok?'Pago confirmado y stock transferido.':res.message,res.ok?undefined:'error'); if(res.ok){await renderAdminOrdersInboxV7();const orders=await currentOrders();const o=orders.find(x=>x.id===id);if(o)openV7ReceiptPreview(o,'order');} }
+  async function confirmAdminOrderPayment(id) {
+    if(!confirmDialog('¿Confirmas que el pago total fue recibido? Al confirmar, el stock pasará al representante.')) return;
+    const res=await adminConfirmOrderPaymentV7(id);
+    if(!res.ok) return showToast(res.message,'error');
+    await renderAdminOrdersInboxV7();
+    const orders=await currentOrders();
+    const order=orders.find(item=>item.id===id);
+    let deliveryWarning='';
+    if(order && window.ensureDeliveryRequestFromOrderV771){
+      const profile=(AppState.allProfiles||[]).find(item=>item.id===(order.representativeId||order.representative_user_id))||{};
+      const delivery=await ensureDeliveryRequestFromOrderV771(Object.assign({},order,{ representativeCity:profile.city||'',representativeAddress:profile.city||'',representativePhone:profile.phone||'' }));
+      if(!delivery.ok) deliveryWarning=delivery.message||'No se creó la entrega pendiente.';
+    }
+    showToast(deliveryWarning?`Pago y stock confirmados. Revisa la entrega: ${deliveryWarning}`:'Pago confirmado, stock transferido y entrega enviada a planificación.',deliveryWarning?'error':undefined);
+    if(order) openV7ReceiptPreview(order,'order');
+  }
   async function rejectAdminOrder(id, orders) { if(!confirmDialog('¿Rechazar este pedido?'))return; const order=orders.find(o=>o.id===id);const res=await adminUpdateOrderV7(id,Object.assign({},order,{status:'rejected',updatedAt:Date.now()}));showToast(res.ok?'Pedido rechazado.':res.message,res.ok?undefined:'error');if(res.ok)renderAdminOrdersInboxV7(); }
 
   async function openDirectRepresentativeSale() {

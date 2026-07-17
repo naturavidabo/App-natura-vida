@@ -663,7 +663,7 @@ async function initApp() {
   }
 
   $('#brandClickArea') && $('#brandClickArea').addEventListener('click', () => {
-    if (requireAuth()) navigateTo('ajustes');
+    if (requireAuth()) navigateTo('inicio');
   });
 
   window.addEventListener('nv:connection', (event) => updateCloudStatusBadge(event.detail));

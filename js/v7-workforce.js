@@ -1,4 +1,4 @@
-/* NATURA VIDA V7.7.0 — personal, tareas, asistencia, mano de obra y pagos. */
+/* NATURA VIDA V7.7.1 — personal con/sin acceso, mano de obra ocasional y actualización silenciosa. */
 (() => {
   const emptyCache = () => ({ staff: [], tasks: [], attendance: [], labor: [], payments: [] });
   let workforceCache = emptyCache();
@@ -18,7 +18,7 @@
   function errorText(error) {
     const raw = window.messageFromError ? messageFromError(error) : String(error?.message || error || 'Error');
     if (/staff_members|staff_tasks|staff_attendance|labor_costs|staff_payments/i.test(raw) && /does not exist|schema cache/i.test(raw)) {
-      return 'Falta ejecutar el SQL principal de Natura Vida V7.7.0 en Supabase.';
+      return 'Falta ejecutar el SQL principal de Natura Vida V7.7.1 en Supabase.';
     }
     return raw;
   }
@@ -35,9 +35,9 @@
     catch (_) { return String(value); }
   }
 
-  function staffName(id) {
+  function staffName(id, fallback = '') {
     const row = workforceCache.staff.find(item => item.id === id);
-    return row ? row.full_name : 'Personal no disponible';
+    return row ? row.full_name : (fallback || 'Personal no disponible');
   }
 
   function statusText(value) {
@@ -91,10 +91,10 @@
     const laborTotal = workforceCache.labor.filter(row => String(row.work_date || '').startsWith(month)).reduce((sum, row) => sum + Number(row.total_cost || 0), 0);
     const paidTotal = workforceCache.payments.filter(row => String(row.payment_date || '').startsWith(month)).reduce((sum, row) => sum + Number(row.amount || 0), 0);
     return `<section class="v7MetricGrid compact v770WorkMetrics">
-      <article class="v7MetricCard primary"><span>Personal activo</span><strong>${active}</strong><small>en operación</small></article>
-      <article class="v7MetricCard"><span>Tareas abiertas</span><strong>${pendingTasks}</strong><small>pendientes o en proceso</small></article>
-      <article class="v7MetricCard notification"><span>Mano de obra mes</span><strong>${fmtMoney(laborTotal)}</strong><small>costo registrado</small></article>
-      <article class="v7MetricCard"><span>Pagos mes</span><strong>${fmtMoney(paidTotal)}</strong><small>al personal</small></article>
+      <article class="v7MetricCard primary"><span>Personal activo</span><strong id="workMetricActiveV771">${active}</strong><small>en operación</small></article>
+      <article class="v7MetricCard"><span>Tareas abiertas</span><strong id="workMetricTasksV771">${pendingTasks}</strong><small>pendientes o en proceso</small></article>
+      <article class="v7MetricCard notification"><span>Mano de obra mes</span><strong id="workMetricLaborV771">${fmtMoney(laborTotal)}</strong><small>costo registrado</small></article>
+      <article class="v7MetricCard"><span>Pagos mes</span><strong id="workMetricPaidV771">${fmtMoney(paidTotal)}</strong><small>al personal</small></article>
     </section>`;
   }
 
@@ -116,7 +116,7 @@
     return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Equipo de trabajo</span><h2>Personal registrado</h2></div><button class="btn sm" id="newStaffV770">+ Persona</button></div>
       <div class="v770StaffGrid">${workforceCache.staff.map(row => {
         const open = workforceCache.tasks.filter(task => task.staff_id === row.id && ['pending', 'in_progress'].includes(task.status)).length;
-        return `<article class="v770StaffCard"><div class="v770StaffAvatar">${esc((row.full_name || 'P').charAt(0).toUpperCase())}</div><div class="v770StaffMain"><div class="v770StaffTitle"><h3>${esc(row.full_name)}</h3><em class="v770State ${esc(row.status)}">${statusText(row.status)}</em></div><p>${esc(roleLabel(row.role_type))}${row.region ? ` · ${esc(row.region)}` : ''}</p><div class="v770StaffFacts"><span>${row.phone ? `📱 ${esc(row.phone)}` : 'Sin celular'}</span><span>${open} tarea(s) abierta(s)</span><span>${esc(row.pay_mode === 'hour' ? `${fmtMoney(row.pay_rate)}/hora` : row.pay_mode === 'unit' ? `${fmtMoney(row.pay_rate)}/unidad` : row.pay_mode === 'day' ? `${fmtMoney(row.pay_rate)}/jornada` : 'Pago por tarea')}</span></div></div><button class="v770IconBtn" data-edit-staff="${esc(row.id)}" aria-label="Editar">✎</button></article>`;
+        const linkedProfile=(AppState.allProfiles||[]).find(profile=>profile.id===row.linked_user_id)||{}; const avatar=window.avatarMarkupV771 ? avatarMarkupV771(linkedProfile.full_name||linkedProfile.email ? linkedProfile : {full_name:row.full_name},'staff') : `<div class="v770StaffAvatar">${esc((row.full_name||'P').charAt(0).toUpperCase())}</div>`; return `<article class="v770StaffCard">${avatar}<div class="v770StaffMain"><div class="v770StaffTitle"><h3>${esc(row.full_name)}</h3><em class="v770State ${esc(row.status)}">${statusText(row.status)}</em></div><p>${esc(roleLabel(row.operational_role||row.role_type))}${row.region ? ` · ${esc(row.region)}` : ''}</p><div class="v770StaffFacts"><span>${row.access_mode==='app'?'📲 Con acceso a la app':'📝 Gestionado sin cuenta'}</span><span>${row.phone ? `📱 ${esc(row.phone)}` : 'Sin celular'}</span><span>${open} tarea(s) abierta(s)</span><span>${esc(row.pay_mode === 'hour' ? `${fmtMoney(row.pay_rate)}/hora` : row.pay_mode === 'unit' ? `${fmtMoney(row.pay_rate)}/unidad` : row.pay_mode === 'day' ? `${fmtMoney(row.pay_rate)}/jornada` : 'Pago por tarea')}</span></div></div><button class="v770IconBtn" data-edit-staff="${esc(row.id)}" aria-label="Editar">✎</button></article>`;
       }).join('') || '<div class="v7Empty"><span>👥</span><h3>Aún no hay personal</h3><p>Registra producción, ventas, reparto o apoyo regional.</p></div>'}</div></section>`;
   }
 
@@ -129,13 +129,13 @@
   function renderAttendance() {
     const rows = workforceCache.attendance.slice(0, 120);
     return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Control operativo</span><h2>Asistencia</h2></div><button class="btn sm" id="newAttendanceV770">+ Registrar</button></div>
-      <div class="v770AttendanceList">${rows.map(row => `<article class="v770LineCard"><span><strong>${esc(staffName(row.staff_id))}</strong><small>${dateLabel(row.work_date)} · ${statusText(row.status)}</small></span><span class="v770TimePair"><b>${row.check_in ? new Date(row.check_in).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }) : '—'}</b><small>Entrada</small></span><span class="v770TimePair"><b>${row.check_out ? new Date(row.check_out).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }) : '—'}</b><small>Salida</small></span>${row.check_in && !row.check_out ? `<button class="btn sm outline" data-checkout="${esc(row.id)}">Marcar salida</button>` : ''}</article>`).join('') || '<div class="v7Empty"><span>🕒</span><h3>Sin asistencia</h3><p>Registra entrada, salida, atrasos, permisos o bajas médicas.</p></div>'}</div></section>`;
+      <div class="v770AttendanceList">${rows.map(row => `<article class="v770LineCard"><span><strong>${esc(staffName(row.staff_id,row.worker_name||''))}</strong><small>${row.worker_kind==='occasional'?'Ayudante ocasional · ':''}${dateLabel(row.work_date)} · ${statusText(row.status)}</small></span><span class="v770TimePair"><b>${row.check_in ? new Date(row.check_in).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }) : '—'}</b><small>Entrada</small></span><span class="v770TimePair"><b>${row.check_out ? new Date(row.check_out).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }) : '—'}</b><small>Salida</small></span>${row.check_in && !row.check_out ? `<button class="btn sm outline" data-checkout="${esc(row.id)}">Marcar salida</button>` : ''}</article>`).join('') || '<div class="v7Empty"><span>🕒</span><h3>Sin asistencia</h3><p>Registra entrada, salida, atrasos, permisos o bajas médicas.</p></div>'}</div></section>`;
   }
 
   function renderLabor() {
     const total = workforceCache.labor.reduce((sum, row) => sum + Number(row.total_cost || 0), 0);
     return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Costo productivo</span><h2>Mano de obra</h2><p>Total histórico: <b>${fmtMoney(total)}</b></p></div><button class="btn sm" id="newLaborV770">+ Costo</button></div>
-      <div class="v770LaborList">${workforceCache.labor.map(row => `<article class="v770LineCard"><span><strong>${esc(staffName(row.staff_id))}</strong><small>${dateLabel(row.work_date)}${row.production_batch_id ? ` · Lote ${esc(row.production_batch_id)}` : ''}</small></span><span><b>${Number(row.hours || 0)} h</b><small>${Number(row.units || 0)} unidades</small></span><span class="v770Money"><b>${fmtMoney(row.total_cost)}</b><small>${esc(row.notes || 'Costo de trabajo')}</small></span></article>`).join('') || '<div class="v7Empty"><span>🧰</span><h3>Sin costos de mano de obra</h3><p>Asocia jornadas, horas o unidades a una producción.</p></div>'}</div></section>`;
+      <div class="v770LaborList">${workforceCache.labor.map(row => `<article class="v770LineCard"><span><strong>${esc(staffName(row.staff_id,row.worker_name||''))}</strong><small>${row.worker_kind==='occasional'?'Ayudante ocasional · ':''}${dateLabel(row.work_date)}${row.production_batch_id ? ` · Lote ${esc(row.production_batch_id)}` : ''}</small></span><span><b>${Number(row.hours || 0)} h</b><small>${Number(row.units || 0)} unidades</small></span><span class="v770Money"><b>${fmtMoney(row.total_cost)}</b><small>${esc(row.notes || 'Costo de trabajo')} · ${row.payment_status==='paid'?'Pagado':'Pendiente'}</small></span></article>`).join('') || '<div class="v7Empty"><span>🧰</span><h3>Sin costos de mano de obra</h3><p>Asocia jornadas, horas o unidades a una producción.</p></div>'}</div></section>`;
   }
 
   function renderPayments() {
@@ -162,21 +162,21 @@
       $('#retryWorkforceV770')?.addEventListener('click', () => renderWorkforceV770());
       return;
     }
-    main.innerHTML = `<section class="v770WorkHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V7.7.0</span><h1>Personal y mano de obra</h1><p>${admin() ? 'Organiza equipos centrales y regionales, tareas, asistencia, costos y pagos.' : 'Gestiona tu equipo regional y registra su trabajo sin acceder a otras regiones.'}</p></section>${metricsHtml()}${workforceTabs()}${tabContent()}`;
+    main.innerHTML = `<section class="v770WorkHero nv771LimeHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V7.7.1</span><h1>Personal y mano de obra</h1><p>${admin() ? 'Diferencia personal con acceso, personal gestionado y ayudantes ocasionales.' : 'Gestiona tu equipo regional y registra su trabajo sin acceder a otras regiones.'}</p></section>${metricsHtml()}${workforceTabs()}<div id="workforceTabContentV771">${tabContent()}</div>`;
     bindWorkforceEvents();
     if (options.quiet) requestAnimationFrame(() => window.scrollTo({ top: scroll, behavior: 'auto' }));
   }
 
   function bindWorkforceEvents() {
-    $all('[data-work-tab]').forEach(button => button.addEventListener('click', () => { workforceTab = button.dataset.workTab; renderWorkforceV770({ quiet: true, skipRefresh: true }); }));
-    $('#newStaffV770')?.addEventListener('click', () => openStaffFormV770());
-    $all('[data-edit-staff]').forEach(button => button.addEventListener('click', () => openStaffFormV770(button.dataset.editStaff)));
-    $('#newTaskV770')?.addEventListener('click', openTaskFormV770);
-    $all('[data-complete-task]').forEach(button => button.addEventListener('click', () => completeTaskV770(button.dataset.completeTask)));
-    $('#newAttendanceV770')?.addEventListener('click', openAttendanceFormV770);
-    $all('[data-checkout]').forEach(button => button.addEventListener('click', () => markCheckoutV770(button.dataset.checkout)));
-    $('#newLaborV770')?.addEventListener('click', openLaborFormV770);
-    $('#newPaymentV770')?.addEventListener('click', openPaymentFormV770);
+    $all('[data-work-tab]').forEach(button => { button.onclick=()=>{ workforceTab=button.dataset.workTab; renderWorkforceV770({ quiet:true,skipRefresh:true }); }; });
+    const newStaff=$('#newStaffV770'); if(newStaff)newStaff.onclick=()=>openStaffFormV770();
+    $all('[data-edit-staff]').forEach(button => { button.onclick=()=>openStaffFormV770(button.dataset.editStaff); });
+    const newTask=$('#newTaskV770'); if(newTask)newTask.onclick=openTaskFormV770;
+    $all('[data-complete-task]').forEach(button => { button.onclick=()=>completeTaskV770(button.dataset.completeTask); });
+    const newAttendance=$('#newAttendanceV770'); if(newAttendance)newAttendance.onclick=openAttendanceFormV770;
+    $all('[data-checkout]').forEach(button => { button.onclick=()=>markCheckoutV770(button.dataset.checkout); });
+    const newLabor=$('#newLaborV770'); if(newLabor)newLabor.onclick=openLaborFormV770;
+    const newPayment=$('#newPaymentV770'); if(newPayment)newPayment.onclick=openPaymentFormV770;
   }
 
   function openStaffFormV770(id = '') {
@@ -184,13 +184,16 @@
     openSheet(`<h2>${row ? 'Editar personal' : 'Registrar personal'} <span class="x" id="closeSheet">✕</span></h2>
       <div class="field"><label>Nombre completo</label><input id="staffNameV770" value="${esc(row?.full_name || '')}" placeholder="Nombre y apellidos"></div>
       <div class="field-row"><div class="field"><label>Celular</label><input id="staffPhoneV770" inputmode="tel" value="${esc(row?.phone || '')}"></div><div class="field"><label>Región / ciudad</label><input id="staffRegionV770" value="${esc(row?.region || AppState.session.city || '')}"></div></div>
-      <div class="field-row"><div class="field"><label>Área de trabajo</label><select id="staffRoleV770">${['production','sales','delivery','inventory','administration','support'].map(value => `<option value="${value}" ${row?.role_type === value ? 'selected' : ''}>${roleLabel(value)}</option>`).join('')}</select></div><div class="field"><label>Estado</label><select id="staffStatusV770">${['active','inactive','suspended','retired'].map(value => `<option value="${value}" ${row?.status === value ? 'selected' : ''}>${statusText(value)}</option>`).join('')}</select></div></div>
+      <div class="field-row"><div class="field"><label>Área de trabajo</label><select id="staffRoleV770">${['production','sales','delivery','inventory','administration','support'].map(value => `<option value="${value}" ${(row?.operational_role||row?.role_type) === value ? 'selected' : ''}>${roleLabel(value)}</option>`).join('')}</select></div><div class="field"><label>Estado</label><select id="staffStatusV770">${['active','inactive','suspended','retired'].map(value => `<option value="${value}" ${row?.status === value ? 'selected' : ''}>${statusText(value)}</option>`).join('')}</select></div></div>
+      <div class="field"><label>Forma de participación</label><select id="staffAccessModeV771"><option value="managed" ${row?.access_mode!=='app'?'selected':''}>Registrado sin acceso a la aplicación</option><option value="app" ${row?.access_mode==='app'?'selected':''}>Tendrá acceso a la aplicación</option></select></div>
+      <div class="field ${row?.access_mode==='app'?'':'hidden'}" id="linkedUserFieldV771"><label>Cuenta aprobada a vincular</label><select id="staffLinkedUserV771"><option value="">Seleccionar cuenta…</option>${(AppState.allProfiles||[]).filter(profile=>String(profile.status||'').toLowerCase()==='activo').map(profile=>`<option value="${esc(profile.id)}" ${row?.linked_user_id===profile.id?'selected':''}>${esc(profile.full_name||profile.email||'Usuario')} · ${esc(profile.email||'')}</option>`).join('')}</select><small>La persona crea primero su cuenta; después se vincula aquí con su función.</small></div>
       ${managerOptions(row?.manager_user_id || currentUid())}
       <div class="field-row"><div class="field"><label>Modalidad de pago</label><select id="staffPayModeV770">${[['day','Por jornada'],['hour','Por hora'],['unit','Por unidad'],['task','Por tarea']].map(([value, label]) => `<option value="${value}" ${row?.pay_mode === value ? 'selected' : ''}>${label}</option>`).join('')}</select></div><div class="field"><label>Tarifa referencial</label><input id="staffRateV770" type="number" min="0" step="0.01" value="${Number(row?.pay_rate || 0)}"></div></div>
       <div class="field"><label>Fecha de ingreso</label><input id="staffJoinedV770" type="date" value="${esc(row?.joined_on || today())}"></div>
       <div class="field"><label>Observaciones</label><textarea id="staffNotesV770">${esc(row?.notes || '')}</textarea></div>
       <button class="btn block" id="saveStaffV770">${row ? 'Guardar cambios' : 'Registrar persona'}</button>`, (overlay, close) => {
       $('#closeSheet', overlay).addEventListener('click', close);
+      $('#staffAccessModeV771', overlay)?.addEventListener('change', event => $('#linkedUserFieldV771', overlay)?.classList.toggle('hidden', event.target.value !== 'app'));
       $('#saveStaffV770', overlay).addEventListener('click', async () => {
         const name = $('#staffNameV770', overlay).value.trim();
         if (!name) return showToast('Ingresa el nombre del personal.', 'error');
@@ -200,6 +203,9 @@
           full_name: name,
           phone: $('#staffPhoneV770', overlay).value.trim(),
           role_type: $('#staffRoleV770', overlay).value,
+          operational_role: $('#staffRoleV770', overlay).value,
+          access_mode: $('#staffAccessModeV771', overlay).value,
+          linked_user_id: $('#staffAccessModeV771', overlay).value === 'app' ? ($('#staffLinkedUserV771', overlay).value || null) : null,
           region: $('#staffRegionV770', overlay).value.trim(),
           status: $('#staffStatusV770', overlay).value,
           joined_on: $('#staffJoinedV770', overlay).value || today(),
@@ -213,7 +219,7 @@
         const button = $('#saveStaffV770', overlay); button.disabled = true; button.textContent = 'Guardando…';
         const { error } = await sb().from('staff_members').upsert(payload, { onConflict: 'id' });
         if (error) { button.disabled = false; button.textContent = 'Reintentar'; return showToast(errorText(error), 'error'); }
-        close(); showToast(row ? 'Personal actualizado.' : 'Personal registrado.'); await refreshWorkforceV770(); renderWorkforceV770({ quiet: true, skipRefresh: true });
+        close(); showToast(row ? 'Personal actualizado.' : 'Personal registrado.'); await refreshWorkforceV770(); patchWorkforceV771();
       });
     });
   }
@@ -235,7 +241,7 @@
         const button = $('#saveTaskV770', overlay); button.disabled = true; button.textContent = 'Guardando…';
         const { error } = await sb().from('staff_tasks').insert(row);
         if (error) { button.disabled = false; button.textContent = 'Reintentar'; return showToast(errorText(error), 'error'); }
-        close(); showToast('Tarea asignada.'); await refreshWorkforceV770(); renderWorkforceV770({ quiet: true, skipRefresh: true });
+        close(); showToast('Tarea asignada.'); await refreshWorkforceV770(); patchWorkforceV771();
       });
     });
   }
@@ -243,7 +249,7 @@
   async function completeTaskV770(id) {
     const { error } = await sb().from('staff_tasks').update({ status: 'completed', completed_at: nowIso(), updated_by: currentUid(), updated_at: nowIso() }).eq('id', id);
     if (error) return showToast(errorText(error), 'error');
-    showToast('Tarea completada.'); await refreshWorkforceV770(); renderWorkforceV770({ quiet: true, skipRefresh: true });
+    showToast('Tarea completada.'); await refreshWorkforceV770(); patchWorkforceV771();
   }
 
   function getPositionV770() {
@@ -269,7 +275,7 @@
         button.textContent = 'Guardando…';
         const { error } = await sb().from('staff_attendance').upsert(row, { onConflict: 'staff_id,work_date' });
         if (error) { button.disabled = false; button.textContent = 'Reintentar'; return showToast(errorText(error), 'error'); }
-        close(); showToast(pos ? 'Asistencia registrada con ubicación.' : 'Asistencia registrada sin ubicación.'); await refreshWorkforceV770(); renderWorkforceV770({ quiet: true, skipRefresh: true });
+        close(); showToast(pos ? 'Asistencia registrada con ubicación.' : 'Asistencia registrada sin ubicación.'); await refreshWorkforceV770(); patchWorkforceV771();
       });
     });
   }
@@ -277,26 +283,26 @@
   async function markCheckoutV770(id) {
     const { error } = await sb().from('staff_attendance').update({ check_out: nowIso(), updated_by: currentUid(), updated_at: nowIso() }).eq('id', id);
     if (error) return showToast(errorText(error), 'error');
-    showToast('Salida registrada.'); await refreshWorkforceV770(); renderWorkforceV770({ quiet: true, skipRefresh: true });
+    showToast('Salida registrada.'); await refreshWorkforceV770(); patchWorkforceV771();
   }
 
   function openLaborFormV770() {
-    if (!workforceCache.staff.length) return showToast('Registra primero una persona.', 'error');
-    openSheet(`<h2>Registrar mano de obra <span class="x" id="closeSheet">✕</span></h2><div class="field"><label>Personal</label><select id="laborStaffV770">${staffOptions()}</select></div><div class="field-row"><div class="field"><label>Fecha</label><input id="laborDateV770" type="date" value="${today()}"></div><div class="field"><label>Lote / referencia</label><input id="laborBatchV770" placeholder="Código de lote"></div></div><div class="field-row"><div class="field"><label>Horas</label><input id="laborHoursV770" type="number" min="0" step="0.25" value="0"></div><div class="field"><label>Unidades</label><input id="laborUnitsV770" type="number" min="0" step="1" value="0"></div></div><div class="field-row"><div class="field"><label>Tarifa aplicada</label><input id="laborRateV770" type="number" min="0" step="0.01" value="0"></div><div class="field"><label>Costo total</label><input id="laborTotalV770" type="number" min="0" step="0.01" value="0"></div></div><div class="field"><label>Detalle</label><textarea id="laborNotesV770"></textarea></div><button class="btn block" id="saveLaborV770">Guardar costo</button>`, (overlay, close) => {
-      const staffSelect = $('#laborStaffV770', overlay);
-      const rate = $('#laborRateV770', overlay), hours = $('#laborHoursV770', overlay), units = $('#laborUnitsV770', overlay), total = $('#laborTotalV770', overlay);
-      function applyStaffRate() { const staff = workforceCache.staff.find(item => item.id === staffSelect.value); rate.value = Number(staff?.pay_rate || 0); calculate(); }
-      function calculate() { const staff = workforceCache.staff.find(item => item.id === staffSelect.value); const r = Number(rate.value || 0); total.value = roundBs(staff?.pay_mode === 'unit' ? r * Number(units.value || 0) : r * Number(hours.value || 0)); }
-      staffSelect.addEventListener('change', applyStaffRate); [rate, hours, units].forEach(input => input.addEventListener('input', calculate)); applyStaffRate();
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#saveLaborV770', overlay).addEventListener('click', async () => {
-        const staffId = staffSelect.value; const staff = workforceCache.staff.find(item => item.id === staffId);
-        const row = { id: uid770('labor'), staff_id: staffId, manager_user_id: staff?.manager_user_id || currentUid(), production_batch_id: $('#laborBatchV770', overlay).value.trim(), work_date: $('#laborDateV770', overlay).value || today(), hours: Number(hours.value || 0), units: Number(units.value || 0), rate: Number(rate.value || 0), total_cost: Number(total.value || 0), notes: $('#laborNotesV770', overlay).value.trim(), created_by: currentUid(), updated_by: currentUid() };
-        if (row.total_cost <= 0) return showToast('El costo total debe ser mayor a cero.', 'error');
-        const button = $('#saveLaborV770', overlay); button.disabled = true; button.textContent = 'Guardando…';
-        const { error } = await sb().from('labor_costs').insert(row);
-        if (error) { button.disabled = false; button.textContent = 'Reintentar'; return showToast(errorText(error), 'error'); }
-        close(); showToast('Costo de mano de obra registrado.'); await refreshWorkforceV770(); renderWorkforceV770({ quiet: true, skipRefresh: true });
+    openSheet(`<h2>Registrar mano de obra <span class="x" id="closeSheet">✕</span></h2><div class="field"><label>Tipo de trabajador</label><select id="laborWorkerKindV771"><option value="registered">Personal registrado</option><option value="occasional">Ayudante ocasional / momentáneo</option></select></div><div class="field" id="laborRegisteredFieldV771"><label>Personal</label><select id="laborStaffV770">${staffOptions()}</select></div><div class="field hidden" id="laborOccasionalFieldV771"><label>Nombre o referencia</label><input id="laborWorkerNameV771" placeholder="Ej.: Ayudante de envasado"></div><div class="field-row"><div class="field"><label>Fecha</label><input id="laborDateV770" type="date" value="${today()}"></div><div class="field"><label>Lote / referencia</label><input id="laborBatchV770" placeholder="Código de lote o trabajo"></div></div><div class="field-row"><div class="field"><label>Horas</label><input id="laborHoursV770" type="number" min="0" step="0.25" value="0"></div><div class="field"><label>Unidades</label><input id="laborUnitsV770" type="number" min="0" step="1" value="0"></div></div><div class="field-row"><div class="field"><label>Tarifa aplicada</label><input id="laborRateV770" type="number" min="0" step="0.01" value="0"></div><div class="field"><label>Costo / gasto total</label><input id="laborTotalV770" type="number" min="0" step="0.01" value="0"></div></div><div class="field-row"><div class="field"><label>Estado del pago</label><select id="laborPaymentStatusV771"><option value="paid">Pagado</option><option value="pending">Pendiente</option></select></div><div class="field"><label>Forma de pago</label><select id="laborPaymentMethodV771"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otra</option></select></div></div><div class="field"><label>Detalle</label><textarea id="laborNotesV770" placeholder="Trabajo realizado y observaciones"></textarea></div><div class="v7CashNotice">El ayudante ocasional no necesita cuenta ni ficha permanente. Este registro funciona como costo de mano de obra y gasto puntual.</div><button class="btn block" id="saveLaborV770">Guardar costo / gasto</button>`, (overlay, close) => {
+      const kind=$('#laborWorkerKindV771',overlay), staffSelect=$('#laborStaffV770',overlay), rate=$('#laborRateV770',overlay), hours=$('#laborHoursV770',overlay), units=$('#laborUnitsV770',overlay), total=$('#laborTotalV770',overlay);
+      function applyStaffRate(){const staff=workforceCache.staff.find(item=>item.id===staffSelect.value);rate.value=Number(staff?.pay_rate||0);calculate();}
+      function calculate(){const staff=workforceCache.staff.find(item=>item.id===staffSelect.value);const r=Number(rate.value||0);total.value=roundBs(kind.value==='registered'&&staff?.pay_mode==='unit'?r*Number(units.value||0):r*Number(hours.value||0));}
+      kind.addEventListener('change',()=>{const occasional=kind.value==='occasional';$('#laborRegisteredFieldV771',overlay).classList.toggle('hidden',occasional);$('#laborOccasionalFieldV771',overlay).classList.toggle('hidden',!occasional);if(!occasional)applyStaffRate();});
+      staffSelect.addEventListener('change',applyStaffRate);[rate,hours,units].forEach(input=>input.addEventListener('input',calculate));if(workforceCache.staff.length)applyStaffRate();
+      $('#closeSheet',overlay).addEventListener('click',close);
+      $('#saveLaborV770',overlay).addEventListener('click',async()=>{
+        const occasional=kind.value==='occasional';const staffId=occasional?null:staffSelect.value;const staff=workforceCache.staff.find(item=>item.id===staffId);const workerName=occasional?$('#laborWorkerNameV771',overlay).value.trim():(staff?.full_name||'');
+        if(occasional&&workerName.length<2)return showToast('Ingresa el nombre o referencia del ayudante.','error');
+        if(!occasional&&!staff)return showToast('Selecciona una persona registrada.','error');
+        const paymentStatus=$('#laborPaymentStatusV771',overlay).value;
+        const row={id:uid770('labor'),staff_id:staffId,worker_name:workerName,worker_kind:occasional?'occasional':'registered',manager_user_id:staff?.manager_user_id||currentUid(),production_batch_id:$('#laborBatchV770',overlay).value.trim(),work_date:$('#laborDateV770',overlay).value||today(),hours:Number(hours.value||0),units:Number(units.value||0),rate:Number(rate.value||0),total_cost:Number(total.value||0),payment_status:paymentStatus,payment_date:paymentStatus==='paid'?($('#laborDateV770',overlay).value||today()):null,payment_method:$('#laborPaymentMethodV771',overlay).value,notes:$('#laborNotesV770',overlay).value.trim(),created_by:currentUid(),updated_by:currentUid()};
+        if(row.total_cost<=0)return showToast('El costo total debe ser mayor a cero.','error');
+        const button=$('#saveLaborV770',overlay);button.disabled=true;button.textContent='Guardando…';const {error}=await sb().from('labor_costs').insert(row);if(error){button.disabled=false;button.textContent='Reintentar';return showToast(errorText(error),'error');}
+        close();showToast(occasional?'Gasto de ayudante ocasional registrado.':'Costo de mano de obra registrado.');await refreshWorkforceV770();patchWorkforceV771();
       });
     });
   }
@@ -312,18 +318,31 @@
         const button = $('#savePaymentV770', overlay); button.disabled = true; button.textContent = 'Guardando…';
         const { error } = await sb().from('staff_payments').insert(row);
         if (error) { button.disabled = false; button.textContent = 'Reintentar'; return showToast(errorText(error), 'error'); }
-        close(); showToast('Pago registrado.'); await refreshWorkforceV770(); renderWorkforceV770({ quiet: true, skipRefresh: true });
+        close(); showToast('Pago registrado.'); await refreshWorkforceV770(); patchWorkforceV771();
       });
     });
+  }
+
+  function patchWorkforceV771() {
+    if (AppState.currentTab !== 'personal' || window.V7_FORM_DIRTY) return;
+    const active=workforceCache.staff.filter(row=>row.status==='active').length;
+    const pendingTasks=workforceCache.tasks.filter(row=>['pending','in_progress'].includes(row.status)).length;
+    const month=today().slice(0,7);
+    const laborTotal=workforceCache.labor.filter(row=>String(row.work_date||'').startsWith(month)).reduce((sum,row)=>sum+Number(row.total_cost||0),0);
+    const paidTotal=workforceCache.payments.filter(row=>String(row.payment_date||'').startsWith(month)).reduce((sum,row)=>sum+Number(row.amount||0),0);
+    const values=[['workMetricActiveV771',active],['workMetricTasksV771',pendingTasks],['workMetricLaborV771',fmtMoney(laborTotal)],['workMetricPaidV771',fmtMoney(paidTotal)]];
+    values.forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.textContent=value;});
+    const content=$('#workforceTabContentV771');
+    if(content){const scroll=window.scrollY;content.innerHTML=tabContent();bindWorkforceEvents();requestAnimationFrame(()=>window.scrollTo({top:scroll,behavior:'auto'}));}
   }
 
   function handleWorkforceRealtimeV770() {
     clearTimeout(realtimeTimer);
     realtimeTimer = setTimeout(async () => {
       await refreshWorkforceV770();
-      if (AppState.currentTab === 'personal' && !window.V7_FORM_DIRTY) renderWorkforceV770({ quiet: true, skipRefresh: true });
+      if (AppState.currentTab === 'personal' && !window.V7_FORM_DIRTY) patchWorkforceV771();
     }, 520);
   }
 
-  Object.assign(window, { renderWorkforceV770, refreshWorkforceV770, handleWorkforceRealtimeV770 });
+  Object.assign(window, { renderWorkforceV770, refreshWorkforceV770, handleWorkforceRealtimeV770, patchWorkforceV771 });
 })();

@@ -908,16 +908,38 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
 
 async function refreshAfterEvent(table, payload = null) {
   try {
-    if (table === 'products' || table === 'representative_stock' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
+    if (table === 'products' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
+    else if (table === 'representative_stock') {
+      await syncCloudProductsToLocal();
+      if (window.handleRegionalRealtimeV771) handleRegionalRealtimeV771(table, payload);
+      if (AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
+        hydrateRepresentativeCardsV730(AppState.allProfiles || []);
+      }
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if (table === 'clients') await syncCloudClientsToLocal();
-    else if (table === 'sales') await syncCloudSalesToLocal();
+    else if (table === 'sales') {
+      await syncCloudSalesToLocal();
+      await loadAllState();
+      if (AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
+        hydrateRepresentativeCardsV730(AppState.allProfiles || []);
+        setCloudConnectionState('online', `Realtime: ${table}`);
+        return;
+      }
+    }
     else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
     else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
     else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
     else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
-    else if (['delivery_routes','route_stops','deliveries','geo_events'].includes(table)) {
+    else if (['delivery_routes','route_stops','deliveries','geo_events','delivery_requests'].includes(table)) {
       if (window.handleDistributionRealtimeV770) handleDistributionRealtimeV770(table, payload);
       else if (window.refreshDistributionV760) await refreshDistributionV760();
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
+    else if (['representative_regional_profiles','regional_restock_requests'].includes(table)) {
+      if (window.handleRegionalRealtimeV771) handleRegionalRealtimeV771(table, payload);
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
@@ -962,7 +984,7 @@ function startRealtimeSubscriptions() {
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
   let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
-  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments'].forEach(table => {
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'delivery_requests', 'representative_regional_profiles', 'regional_restock_requests', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => refreshAfterEvent(table, payload));
   });
   channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
@@ -985,8 +1007,13 @@ function startRealtimeSubscriptions() {
           }
         }
       }
-      if (isAdmin() && AppState.currentTab === 'usuarios' && window.renderUsersFoundation && !shouldDeferCloudRender()) await renderUsersFoundation();
-      else renderAfterCloudRefresh();
+      if (window.syncV7Context) await syncV7Context().catch(() => {});
+      if (window.renderTopHeader) renderTopHeader();
+      if (isAdmin() && AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
+        hydrateRepresentativeCardsV730(AppState.allProfiles || []);
+      } else if (AppState.currentTab === 'perfil' && !shouldDeferCloudRender() && window.renderProfileV7) {
+        renderProfileV7();
+      }
     } catch (error) { console.warn('Realtime profiles:', error); }
   });
 

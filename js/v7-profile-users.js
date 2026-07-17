@@ -1,4 +1,4 @@
-/* NATURA VIDA V7 — perfil comercial, QR y gestión de representantes. */
+/* NATURA VIDA V7.7.1 — perfil visual, QR y gestión estable de representantes. */
 
 (() => {
   let qrImage = null;
@@ -19,14 +19,21 @@
     removeQrRequested = false;
     $('#fabAdd').classList.add('hidden');
     const cp = myCommercialProfile();
+    let pendingAvatarFile = null;
     const phoneReq = pendingOwnChange('phone');
     const cityReq = pendingOwnChange('city');
     window.V7_FORM_DIRTY = false;
     $('#mainArea').innerHTML = `
       <section class="v7PageHead"><span class="v7Eyebrow">Identidad y cobros</span><h1>Perfil comercial</h1><p>${isAdmin() ? 'Administra tus datos oficiales, presentación comercial y QR de cobro.' : 'Puedes actualizar tus datos de perfil y presentación comercial. El correo, rol y estado permanecen protegidos.'}</p></section>
-      <section class="v7ProfileCardMain">
-        <div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>
-        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : 'Representante activo'}</small></div>
+      <section class="v7ProfileCardMain nv771ProfileIdentity">
+        ${window.avatarMarkupV771 ? avatarMarkupV771(AppState.session || {}, 'profile-large') : `<div class="v7Avatar large">${escapeHtml(window.displayInitialV7 ? displayInitialV7() : (AppState.session.fullName || 'N').charAt(0).toUpperCase())}</div>`}
+        <div><h2>${escapeHtml(window.displayNameV7 ? displayNameV7() : (AppState.session.fullName || AppState.session.email || ''))}</h2><span>${escapeHtml(AppState.session.email || '')}</span><small>${isAdmin() ? 'Administrador principal' : (AppState.session.operationalRoleLabel || 'Representante activo')}</small></div>
+      </section>
+      <section class="nv771PhotoPanel">
+        <div><span class="v7Eyebrow">Identificación visual</span><h2>Fotografía de perfil</h2><p>Esta imagen aparecerá en la cabecera y ayudará a identificarte en representantes, regiones y equipos.</p></div>
+        <label class="nv771PhotoPicker"><span>📷 Elegir fotografía</span><input id="profilePhotoFileV771" type="file" accept="image/png,image/jpeg,image/webp"></label>
+        <img id="profilePhotoPreviewV771" class="nv771PhotoPreview hidden" alt="Vista previa">
+        <div class="actions two"><button class="btn" id="saveProfilePhotoV771" disabled>Guardar fotografía</button><button class="btn outline ${window.profileAvatarUrlV771 && profileAvatarUrlV771(AppState.session || {}) ? '' : 'hidden'}" id="removeProfilePhotoV771">Quitar fotografía</button></div>
       </section>
       <section class="v7Panel">
         <div class="v7PanelHead"><div><span class="v7Eyebrow">Datos de perfil</span><h2>Identificación</h2></div><span class="v7Lock">Correo protegido</span></div>
@@ -59,6 +66,32 @@
     `;
 
     $all('#mainArea input:not([readonly]), #mainArea textarea').forEach(el => el.addEventListener('input', () => { window.V7_FORM_DIRTY = true; }));
+    $('#profilePhotoFileV771')?.addEventListener('change', event => {
+      pendingAvatarFile = event.target.files?.[0] || null;
+      const preview = $('#profilePhotoPreviewV771');
+      const button = $('#saveProfilePhotoV771');
+      if (!pendingAvatarFile) { if (preview) preview.classList.add('hidden'); if (button) button.disabled = true; return; }
+      if (preview) { preview.src = URL.createObjectURL(pendingAvatarFile); preview.classList.remove('hidden'); }
+      if (button) button.disabled = false;
+    });
+    $('#saveProfilePhotoV771')?.addEventListener('click', async () => {
+      const button = $('#saveProfilePhotoV771');
+      button.disabled = true; button.textContent = 'Subiendo fotografía…';
+      const result = await uploadMyAvatarV771(pendingAvatarFile);
+      if (!result.ok) { button.disabled = false; button.textContent = 'Reintentar'; return showToast(result.message, 'error'); }
+      window.V7_FORM_DIRTY = false;
+      showToast('Fotografía de perfil actualizada.');
+      if (window.renderTopHeader) renderTopHeader();
+      renderProfileV7();
+    });
+    $('#removeProfilePhotoV771')?.addEventListener('click', async () => {
+      if (!confirm('¿Quitar tu fotografía de perfil?')) return;
+      const result = await removeMyAvatarV771();
+      if (!result.ok) return showToast(result.message, 'error');
+      showToast('Fotografía eliminada.');
+      if (window.renderTopHeader) renderTopHeader();
+      renderProfileV7();
+    });
     $('#saveOfficialProfileV7').addEventListener('click', async () => {
       const btn = $('#saveOfficialProfileV7');
       const fullName = $('#v7FullName').value.trim();
@@ -296,7 +329,7 @@
     $('#mainArea').innerHTML = `
       <section class="v7PageHead"><span class="v7Eyebrow">Equipo comercial</span><h1>Representantes</h1><p>Controla cuentas, grupos de precios, stock, pedidos, ventas y actividad comercial.</p></section>
       ${requests.length ? `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Solicitudes pendientes</span><h2>Cambios de perfil</h2></div><span class="v7BadgeCount">${requests.length}</span></div>${requests.map(r => { const p=profiles.find(x=>x.id===r.userId)||{}; return `<article class="v7ChangeRequest"><div><strong>${escapeHtml(p.full_name||p.email||'Usuario')}</strong><span>${r.fieldName==='phone'?'WhatsApp':'Ciudad'}: <b>${escapeHtml(r.oldValue||'—')}</b> → <b>${escapeHtml(r.newValue)}</b></span><small>${fmtDateTime(r.createdAt)}</small></div><div><button class="btn sm approveProfileChange" data-id="${r.id}">Aprobar</button><button class="btn sm outline rejectProfileChange" data-id="${r.id}">Rechazar</button></div></article>`; }).join('')}</section>` : ''}
-      <section class="v7UsersGrid">${profiles.map(p => { const [label,tone]=userStatus(p); const self=p.id===AppState.session.userId; const admin=String(p.role||'').toLowerCase()==='administrador'; return `<article class="v7UserCard ${admin?'admin':''}"><div class="v7UserTop"><div class="v7Avatar">${escapeHtml((p.full_name||p.email||'U').charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(p.full_name||'Sin nombre')}</strong><span>${escapeHtml(p.email||'')}</span><small>${escapeHtml(p.city||'')} ${p.phone?'· '+escapeHtml(p.phone):''}</small></div><em class="v7Status ${tone}">${label}</em></div>${admin?`<div class="v7AdminPrincipal">Administrador principal</div>`:`<div class="repQuickMetricsV730"><span><small>Stock</small><b data-rep-stock-units="${p.id}">Cargando…</b></span><span><small>Ventas</small><b data-rep-sales-total="${p.id}">Cargando…</b></span><span><small>Actividad</small><b data-rep-last-activity="${p.id}">Cargando…</b></span></div><div class="v7DiscountEditor"><label>Condición central de compra<select data-rep-group="${p.id}"><option value="">Precio base de representante</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${((((AppState.representatives||[]).find(r=>r.id===p.id)||{}).priceGroupId)||p.representative_price_group_id||'')===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></label><label>Descuento personal para compras<input type="number" min="0" max="100" step="0.5" value="${Number(p.representative_discount_percent||0)}" data-discount-input="${p.id}"></label><button class="btn sm outline saveDiscountV7" data-id="${p.id}">Guardar condición/descuento</button></div><div class="v7UserActions"><button class="btn sm detailRepresentativeV725" data-id="${p.id}">Ver stock y movimientos</button><button class="btn sm ghost editLegalNameV7" data-id="${p.id}">Corregir nombre</button>${String(p.status).toLowerCase()==='pendiente'?`<button class="btn sm approveUserV7" data-id="${p.id}">Aprobar</button>`:''}${String(p.status).toLowerCase()==='activo'?`<button class="btn sm outline blockUserV7" data-id="${p.id}">Bloquear</button>`:''}${String(p.status).toLowerCase()==='bloqueado'?`<button class="btn sm unblockUserV7" data-id="${p.id}">Reactivar</button>`:''}</div>`}</article>`; }).join('')}</section>`;
+      <section class="v7UsersGrid">${profiles.map(p => { const [label,tone]=userStatus(p); const self=p.id===AppState.session.userId; const admin=String(p.role||'').toLowerCase()==='administrador'; return `<article class="v7UserCard ${admin?'admin':''}"><div class="v7UserTop">${window.avatarMarkupV771 ? avatarMarkupV771(p, 'representative') : `<div class="v7Avatar">${escapeHtml((p.full_name||p.email||'U').charAt(0).toUpperCase())}</div>`}<div><strong>${escapeHtml(p.full_name||'Sin nombre')}</strong><span>${escapeHtml(p.email||'')}</span><small>${escapeHtml(p.city||'')} ${p.phone?'· '+escapeHtml(p.phone):''}</small></div><em class="v7Status ${tone}">${label}</em></div>${admin?`<div class="v7AdminPrincipal">Administrador principal</div>`:`<div class="repQuickMetricsV730"><span><small>Stock</small><b data-rep-stock-units="${p.id}">${escapeHtml(window.cachedRepresentativeMetricV771 ? cachedRepresentativeMetricV771(p.id,'units','—') : '—')}</b></span><span><small>Ventas</small><b data-rep-sales-total="${p.id}">${escapeHtml(window.cachedRepresentativeMetricV771 ? cachedRepresentativeMetricV771(p.id,'sales','—') : '—')}</b></span><span><small>Actividad</small><b data-rep-last-activity="${p.id}">${escapeHtml(window.cachedRepresentativeMetricV771 ? cachedRepresentativeMetricV771(p.id,'activity','—') : '—')}</b></span></div><div class="v7DiscountEditor"><label>Condición central de compra<select data-rep-group="${p.id}"><option value="">Precio base de representante</option>${AppState.priceGroups.map(g=>`<option value="${g.id}" ${((((AppState.representatives||[]).find(r=>r.id===p.id)||{}).priceGroupId)||p.representative_price_group_id||'')===g.id?'selected':''}>${escapeHtml(g.name)} (${g.mode==='discount'?'−':'+'}${g.percent}%)</option>`).join('')}</select></label><label>Descuento personal para compras<input type="number" min="0" max="100" step="0.5" value="${Number(p.representative_discount_percent||0)}" data-discount-input="${p.id}"></label><button class="btn sm outline saveDiscountV7" data-id="${p.id}">Guardar condición/descuento</button></div><div class="v7UserActions"><button class="btn sm detailRepresentativeV725" data-id="${p.id}">Ver stock y movimientos</button><button class="btn sm ghost editLegalNameV7" data-id="${p.id}">Corregir nombre</button>${String(p.status).toLowerCase()==='pendiente'?`<button class="btn sm approveUserV7" data-id="${p.id}">Aprobar</button>`:''}${String(p.status).toLowerCase()==='activo'?`<button class="btn sm outline blockUserV7" data-id="${p.id}">Bloquear</button>`:''}${String(p.status).toLowerCase()==='bloqueado'?`<button class="btn sm unblockUserV7" data-id="${p.id}">Reactivar</button>`:''}</div>`}</article>`; }).join('')}</section>`;
 
     $all('.editLegalNameV7').forEach(b=>b.addEventListener('click',()=>openLegalNameCorrection(b.dataset.id, profiles)));
     $all('.approveUserV7').forEach(b=>b.addEventListener('click',()=>runUserAction(b,adminApproveUser,'Cuenta aprobada.')));
