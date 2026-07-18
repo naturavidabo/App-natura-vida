@@ -1,14 +1,21 @@
-/* NATURA VIDA V8.0.0 XD — territorio, prospectos, visitas y mapa comercial. */
+/* NATURA VIDA V8.0.1 — territorio estable, mapa operativo y carga silenciosa. */
 (() => {
   const territory = {
     prospects: [], visits: [], events: [], loaded: false,
     view: 'map', ownerFilter: 'all', statusFilter: 'all', search: '',
-    map: null, layer: null, densityLayer: null, markerSignature: '', realtimeTimer: null
+    map: null, baseLayer: null, fallbackLayer: null, markerLayer: null,
+    densityLayer: null, locationLayer: null, temporaryLayer: null,
+    markerSignature: '', realtimeTimer: null, tileErrors: 0, tilesLoaded: false,
+    provider: 'osm', densityVisible: false, placingPoint: false, fullscreen: false,
+    savedView: null, lastFetchAt: 0
   };
   const esc = value => escapeHtml(String(value ?? ''));
   const currentUid = () => AppState.session?.onlineUserId || AppState.session?.userId || '';
   const canViewTeam = () => isAdmin() || (window.canManageTeamV800 && canManageTeamV800());
   const canCreateForTeam = () => canViewTeam();
+  const BOLIVIA_CENTER = [-16.2902, -63.5887];
+  const BOLIVIA_ZOOM = 5;
+  const MAP_VIEW_KEY = 'nv801-territory-map-view';
 
   function mapProspect(row={}) { return {
     id:row.id,ownerUserId:row.owner_user_id,managerUserId:row.manager_user_id,regionName:row.region_name||'',name:row.name||'',businessName:row.business_name||'',phone:row.phone||'',city:row.city||'',address:row.address||'',locationLabel:row.location_label||'',latitude:row.latitude==null?null:Number(row.latitude),longitude:row.longitude==null?null:Number(row.longitude),status:row.status||'prospect',potential:row.potential||'medium',convertedClientId:row.converted_client_id||'',notes:row.notes||'',createdAt:row.created_at?new Date(row.created_at).getTime():Date.now(),updatedAt:row.updated_at?new Date(row.updated_at).getTime():Date.now()
@@ -23,28 +30,30 @@
     const profiles=(AppState.manageableProfiles||[]).filter(p=>String(p.status||'').toLowerCase()==='activo');
     return `${includeAll?`<option value="all" ${selected==='all'?'selected':''}>Toda la actividad visible</option>`:''}${profiles.map(p=>`<option value="${esc(p.id)}" ${selected===p.id?'selected':''}>${esc(p.full_name||p.email)} · ${esc(roleShortNameV800(p.commercial_role))}</option>`).join('')}`;
   }
-  function statusLabel(status) { return ({prospect:'Prospecto',contacted:'Contactado',qualified:'Calificado',converted:'Cliente convertido',inactive:'Inactivo',lost:'Descartado'})[status]||status; }
+  function statusLabel(status) { return ({prospect:'Prospecto',contacted:'Contactado',qualified:'Calificado',converted:'Cliente activo',inactive:'Inactivo',lost:'Descartado'})[status]||status; }
   function outcomeLabel(value) { return ({pending:'Pendiente',no_contact:'Sin contacto',interested:'Interesado',quoted:'Cotizado',sale:'Venta',collection:'Cobranza',not_interested:'No interesado',completed:'Completada'})[value]||value; }
   function visitTypeLabel(value) { return ({prospecting:'Prospección',follow_up:'Seguimiento',sale:'Venta',collection:'Cobranza',delivery:'Entrega',other:'Otra'})[value]||value; }
-  function pointValid(item) { return Number.isFinite(Number(item.latitude))&&Number.isFinite(Number(item.longitude)); }
+  function pointValid(item) { return Number.isFinite(Number(item?.latitude))&&Number.isFinite(Number(item?.longitude)); }
+  function publicCanManage(userId){ return window.canManageTeamV800&&canManageTeamV800()&&(AppState.manageableProfiles||[]).some(p=>p.id===userId&&p.manager_user_id===currentUid()); }
 
-  async function fetchTerritoryV800() {
+  async function fetchTerritoryV801(options={}) {
     try {
       const sb=await requireClient();
-      const [prospectsRes,visitsRes,eventsRes,profilesRes]=await Promise.all([
+      const [prospectsRes,visitsRes,eventsRes]=await Promise.all([
         sb.from('territory_prospects').select('*').order('updated_at',{ascending:false}).limit(1000),
         sb.from('territory_visits').select('*').order('visited_at',{ascending:false}).limit(1000),
-        sb.from('territory_events').select('*').order('created_at',{ascending:false}).limit(300),
-        fetchManageableProfilesV800()
+        sb.from('territory_events').select('*').order('created_at',{ascending:false}).limit(300)
       ]);
       const failed=[prospectsRes,visitsRes,eventsRes].find(r=>r.error); if(failed) throw failed.error;
       territory.prospects=(prospectsRes.data||[]).map(mapProspect);
       territory.visits=(visitsRes.data||[]).map(mapVisit);
       territory.events=(eventsRes.data||[]).map(mapEvent);
-      territory.loaded=true;
+      territory.loaded=true; territory.lastFetchAt=Date.now();
+      if (!options.skipProfiles && window.fetchManageableProfilesV800) await fetchManageableProfilesV800().catch(()=>{});
       return {ok:true};
     }catch(error){ return {ok:false,message:messageFromError(error)}; }
   }
+  const fetchTerritoryV800 = fetchTerritoryV801;
 
   function visibleOwner(item) { return territory.ownerFilter==='all' || item.ownerUserId===territory.ownerFilter; }
   function filteredProspects() {
@@ -58,111 +67,169 @@
   function filteredVisits() { return territory.visits.filter(v=>visibleOwner(v)); }
   function filteredEvents() { return territory.events.filter(e=>visibleOwner(e)); }
 
-  function metricHtml() {
+  function metricValues(){
     const prospects=filteredProspects(),clients=visibleClients(),visits=filteredVisits();
-    const today=new Date().toDateString(); const todayVisits=visits.filter(v=>new Date(v.visitedAt).toDateString()===today);
-    const mapped=[...prospects,...clients].filter(pointValid).length;
-    return `<article class="v7MetricCard"><span>Prospectos</span><strong id="territoryMetricProspects">${prospects.filter(p=>!['converted','lost'].includes(p.status)).length}</strong><small>en desarrollo</small></article><article class="v7MetricCard"><span>Clientes visibles</span><strong id="territoryMetricClients">${clients.length}</strong><small>cartera territorial</small></article><article class="v7MetricCard"><span>Visitas hoy</span><strong id="territoryMetricVisits">${todayVisits.length}</strong><small>actividad registrada</small></article><article class="v7MetricCard"><span>Puntos con GPS</span><strong id="territoryMetricMapped">${mapped}</strong><small>cobertura trazable</small></article>`;
+    const today=new Date().toDateString();
+    return {prospects:prospects.filter(p=>!['converted','lost'].includes(p.status)).length,clients:clients.length,visits:visits.filter(v=>new Date(v.visitedAt).toDateString()===today).length,mapped:[...prospects,...clients].filter(pointValid).length};
+  }
+  function metricHtml() {
+    const m=metricValues();
+    return `<article class="v7MetricCard"><span>Prospectos</span><strong id="territoryMetricProspects">${m.prospects}</strong><small>en desarrollo</small></article><article class="v7MetricCard"><span>Clientes visibles</span><strong id="territoryMetricClients">${m.clients}</strong><small>cartera territorial</small></article><article class="v7MetricCard"><span>Visitas hoy</span><strong id="territoryMetricVisits">${m.visits}</strong><small>actividad registrada</small></article><article class="v7MetricCard"><span>Puntos con GPS</span><strong id="territoryMetricMapped">${m.mapped}</strong><small>cobertura trazable</small></article>`;
   }
 
   function prospectCard(p) {
-    const owner=ownerName(p.ownerUserId); const canEdit=p.ownerUserId===currentUid()||isAdmin()||publicCanManage(p.ownerUserId);
-    return `<article class="v800ProspectCard status-${esc(p.status)}"><div class="v800ProspectHead"><span class="v800MapDot ${esc(p.status)}"></span><div><strong>${esc(p.businessName||p.name)}</strong>${p.businessName&&p.name!==p.businessName?`<span>${esc(p.name)}</span>`:''}<small>${esc(p.city||p.address||'Sin dirección')} · ${esc(owner)}</small></div><em>${esc(statusLabel(p.status))}</em></div><div class="v800ProspectMeta"><span>☎ ${esc(p.phone||'sin teléfono')}</span><span>Potencial: ${esc(({low:'Bajo',medium:'Medio',high:'Alto'})[p.potential]||p.potential)}</span><span>${pointValid(p)?'📍 GPS registrado':'○ Sin GPS'}</span></div>${p.notes?`<p>${esc(p.notes)}</p>`:''}<div class="v800CardActions"><button class="btn sm registerVisitV800" data-prospect="${esc(p.id)}">Registrar visita</button>${pointValid(p)?`<button class="btn sm outline locateTerritoryV800" data-kind="prospect" data-id="${esc(p.id)}">Ver mapa</button>`:''}${canEdit?`<button class="btn sm ghost editProspectV800" data-id="${esc(p.id)}">Editar</button>`:''}${p.ownerUserId===currentUid()&&p.status!=='converted'?`<button class="btn sm ghost convertProspectV800" data-id="${esc(p.id)}">Convertir en cliente</button>`:''}</div></article>`;
+    const canEdit=p.ownerUserId===currentUid()||isAdmin()||publicCanManage(p.ownerUserId);
+    return `<article class="v800ProspectCard status-${esc(p.status)}"><div class="v800ProspectHead"><span class="v800MapDot ${esc(p.status)}"></span><div><strong>${esc(p.businessName||p.name)}</strong>${p.businessName&&p.name!==p.businessName?`<span>${esc(p.name)}</span>`:''}<small>${esc(p.city||p.address||'Sin dirección')} · ${esc(ownerName(p.ownerUserId))}</small></div><em>${esc(statusLabel(p.status))}</em></div><div class="v800ProspectMeta"><span>☎ ${esc(p.phone||'sin teléfono')}</span><span>Potencial: ${esc(({low:'Bajo',medium:'Medio',high:'Alto'})[p.potential]||p.potential)}</span><span>${pointValid(p)?'📍 GPS registrado':'○ Sin GPS'}</span></div>${p.notes?`<p>${esc(p.notes)}</p>`:''}<div class="v800CardActions"><button class="btn sm registerVisitV801" data-prospect="${esc(p.id)}">Registrar visita</button>${pointValid(p)?`<button class="btn sm outline locateTerritoryV801" data-kind="prospect" data-id="${esc(p.id)}">Ver mapa</button>`:''}${canEdit?`<button class="btn sm ghost editProspectV801" data-id="${esc(p.id)}">Editar</button>`:''}${p.ownerUserId===currentUid()&&p.status!=='converted'?`<button class="btn sm ghost convertProspectV801" data-id="${esc(p.id)}">Convertir en cliente</button>`:''}</div></article>`;
   }
-  function visitCard(v) { return `<article class="v800VisitCard"><span class="v800VisitIcon">${v.visitType==='sale'?'🛒':v.visitType==='collection'?'💳':v.visitType==='delivery'?'🚚':'📍'}</span><div><strong>${esc(v.targetName||'Visita')}</strong><span>${esc(visitTypeLabel(v.visitType))} · ${esc(outcomeLabel(v.outcome))}</span><small>${esc(ownerName(v.ownerUserId))} · ${fmtDateTime(v.visitedAt)}${v.nextActionDate?` · Próxima: ${esc(v.nextActionDate)}`:''}</small>${v.notes?`<p>${esc(v.notes)}</p>`:''}</div>${pointValid(v)?`<button class="btn sm outline locateTerritoryV800" data-kind="visit" data-id="${esc(v.id)}">Mapa</button>`:''}</article>`; }
+  function visitCard(v) { return `<article class="v800VisitCard"><span class="v800VisitIcon">${v.visitType==='sale'?'🛒':v.visitType==='collection'?'💳':v.visitType==='delivery'?'🚚':'📍'}</span><div><strong>${esc(v.targetName||'Visita')}</strong><span>${esc(visitTypeLabel(v.visitType))} · ${esc(outcomeLabel(v.outcome))}</span><small>${esc(ownerName(v.ownerUserId))} · ${fmtDateTime(v.visitedAt)}${v.nextActionDate?` · Próxima: ${esc(v.nextActionDate)}`:''}</small>${v.notes?`<p>${esc(v.notes)}</p>`:''}</div>${pointValid(v)?`<button class="btn sm outline locateTerritoryV801" data-kind="visit" data-id="${esc(v.id)}">Mapa</button>`:''}</article>`; }
   function eventCard(e) { return `<article class="v800EventRow"><span>${e.eventType==='visit_registered'?'📍':e.eventType==='prospect_created'?'✦':'↻'}</span><div><strong>${esc(e.title)}</strong><p>${esc(e.summary)}</p><small>${esc(ownerName(e.ownerUserId))} · ${fmtDateTime(e.createdAt)}</small></div></article>`; }
-  function publicCanManage(userId){ return window.canManageTeamV800&&canManageTeamV800()&&(AppState.manageableProfiles||[]).some(p=>p.id===userId&&p.manager_user_id===currentUid()); }
+
+  function mapPanelHtml(){
+    return `<section class="v800MapPanel" id="territoryMapPanelV801">
+      <div class="v800MapToolbar"><div><strong>Mapa territorial</strong><span>Calles, clientes, prospectos, visitas y cobertura</span></div><button class="v801MapIconBtn" id="fullscreenMapV801" title="Ampliar mapa">⛶</button></div>
+      <div class="v801MapSearch"><input id="mapAddressSearchV801" placeholder="Buscar calle, mercado, tienda o ciudad"><button id="runMapSearchV801">Buscar</button></div>
+      <div class="v801MapActions"><button id="myLocationV801">⌖ Mi ubicación</button><button id="placePointV801">＋ Marcar punto</button><label><input type="checkbox" id="densityToggleV801" ${territory.densityVisible?'checked':''}> Densidad</label><button id="retryTilesV801">↻ Mapa</button></div>
+      <div class="v801MapWrap"><div class="v801MapStatus" id="mapStatusV801"><span class="spinner"></span><b>Cargando calles…</b><small>Conectando con la cartografía</small></div><div id="territoryMapV801" class="v800TerritoryMap"></div></div>
+      <div id="mapSearchResultsV801" class="v801MapSearchResults hidden"></div>
+      <div class="v800MapLegend"><span><i></i>Clientes</span><span><i class="prospect"></i>Prospectos</span><span><i class="qualified"></i>Calificados</span><span><i class="inactive"></i>Inactivos</span></div>
+    </section>`;
+  }
 
   function contentHtml() {
     const prospects=filteredProspects(),visits=filteredVisits(),events=filteredEvents();
-    if(territory.view==='prospects') return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Desarrollo comercial</span><h2>Prospectos</h2></div><button class="btn sm" id="newProspectV800">Nuevo prospecto</button></div><div class="v800ProspectList" id="territoryProspectList">${prospects.map(prospectCard).join('')||'<div class="v7Empty"><span>✦</span><h3>Sin prospectos</h3><p>Registra tiendas y personas potenciales desde el trabajo de campo.</p></div>'}</div></section>`;
-    if(territory.view==='visits') return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Trabajo de campo</span><h2>Visitas</h2></div><button class="btn sm" id="newVisitV800">Registrar visita</button></div><div class="v800VisitList" id="territoryVisitList">${visits.map(visitCard).join('')||'<div class="v7Empty"><span>📍</span><h3>Sin visitas</h3><p>Las visitas y resultados aparecerán aquí.</p></div>'}</div></section>`;
-    if(territory.view==='activity') return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Actualización silenciosa</span><h2>Actividad territorial</h2></div><span class="v770SyncChip">Realtime</span></div><div class="v800EventList" id="territoryEventList">${events.map(eventCard).join('')||'<div class="v7Empty"><span>🌿</span><h3>Sin actividad</h3><p>Los nuevos prospectos y visitas aparecerán sin recargar la pantalla.</p></div>'}</div></section>`;
-    return `<section class="v800MapPanel"><div class="v800MapToolbar"><div><strong>Mapa territorial</strong><span>Clientes, prospectos, visitas y densidad comercial</span></div><label class="v800DensityToggle"><input type="checkbox" id="territoryDensityV800" checked> Densidad</label></div><div id="territoryMapV800" class="v800TerritoryMap"></div><div class="v800MapLegend"><span><i class="client"></i>Clientes</span><span><i class="prospect"></i>Prospectos</span><span><i class="qualified"></i>Calificados</span><span><i class="inactive"></i>Inactivos</span></div></section>`;
+    if(territory.view==='prospects') return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Desarrollo comercial</span><h2>Prospectos</h2></div><button class="btn sm" id="newProspectV801">Nuevo prospecto</button></div><div class="v800ProspectList" id="territoryProspectList">${prospects.map(prospectCard).join('')||'<div class="v7Empty"><span>✦</span><h3>Sin prospectos</h3><p>Registra tiendas y personas potenciales desde el trabajo de campo.</p></div>'}</div></section>`;
+    if(territory.view==='visits') return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Trabajo de campo</span><h2>Visitas</h2></div><button class="btn sm" id="newVisitV801">Registrar visita</button></div><div class="v800VisitList">${visits.map(visitCard).join('')||'<div class="v7Empty"><span>📍</span><h3>Sin visitas</h3><p>Registra cada recorrido, resultado y próxima acción.</p></div>'}</div></section>`;
+    if(territory.view==='activity') return `<section class="v7Panel"><div class="v7PanelHead"><div><span class="v7Eyebrow">Realtime silencioso</span><h2>Actividad territorial</h2></div></div><div class="v800EventList">${events.map(eventCard).join('')||'<div class="v7Empty"><span>↻</span><h3>Sin actividad</h3><p>Las novedades del equipo aparecerán aquí sin recargar la pantalla.</p></div>'}</div></section>`;
+    return mapPanelHtml();
   }
 
-  function fullHtml() {
-    if(!canViewTeam()) territory.ownerFilter=currentUid();
-    return `<section class="v800ModuleHero territory"><span class="v800Orb one"></span><span class="v800Orb two"></span><span class="v7Eyebrow">Territorio V8 XD</span><h1>Clientes, prospectos y actividad de campo</h1><p>Cada visita y punto GPS construye progresivamente el mapa comercial de Natura Vida, sin mezclarlo con el registro laboral de Personal.</p></section>
-      <section class="v7MetricGrid compact v800TerritoryMetrics">${metricHtml()}</section>
-      <section class="v800TerritoryControls"><div class="v800ViewTabs">${[['map','Mapa'],['prospects','Prospectos'],['visits','Visitas'],['activity','Actividad']].map(([id,label])=>`<button data-territory-view="${id}" class="${territory.view===id?'active':''}">${label}</button>`).join('')}</div><div class="v800TerritoryFilters">${canViewTeam()?`<select id="territoryOwnerFilter">${ownerOptions(territory.ownerFilter,true)}</select>`:''}<select id="territoryStatusFilter"><option value="all">Todos los estados</option>${['prospect','contacted','qualified','converted','inactive','lost'].map(s=>`<option value="${s}" ${territory.statusFilter===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select><input id="territorySearch" placeholder="Buscar tienda, cliente o zona" value="${esc(territory.search)}"></div></section>
-      <div id="territoryContentV800">${contentHtml()}</div>`;
-  }
-
-  async function renderTerritoryV800(options={}) {
+  async function renderTerritoryV801() {
     $('#fabAdd').classList.add('hidden'); const main=$('#mainArea');
-    if(!territory.loaded&&!options.silent) main.innerHTML='<div class="loading">Cargando territorio…</div>';
-    const result=await fetchTerritoryV800();
-    if(!result.ok){ if(territory.loaded&&options.silent)return; main.innerHTML=`<div class="v7Empty"><span>⚠️</span><h3>No se pudo cargar Territorio</h3><p>${esc(result.message)}</p><button class="btn" id="retryTerritoryV800">Reintentar</button></div>`; $('#retryTerritoryV800')?.addEventListener('click',renderTerritoryV800); return; }
-    if(options.patch&&$('#territoryContentV800')) return patchTerritoryV800();
-    main.innerHTML=fullHtml(); bindTerritoryEvents(); if(territory.view==='map')setTimeout(initTerritoryMapV800,60);
+    if(!territory.loaded) main.innerHTML='<div class="loading">Preparando territorio…</div>';
+    const result=await fetchTerritoryV801();
+    if(!result.ok){main.innerHTML=`<div class="v7Empty"><span>⚠️</span><h3>No se pudo cargar Territorio</h3><p>${esc(result.message)}</p><button class="btn" id="retryTerritoryV801">Reintentar</button></div>`;$('#retryTerritoryV801')?.addEventListener('click',renderTerritoryV801);return;}
+    main.innerHTML=`<section class="v800ModuleHero territory"><span class="v800Orb one"></span><span class="v800Orb two"></span><span class="v7Eyebrow">Territorio Natura Vida</span><h1>Clientes, prospectos y cobertura</h1><p>El mapa se construye con el trabajo real. Puedes usar el GPS del teléfono, buscar una dirección o marcar un punto manualmente.</p></section><section class="v7MetricGrid" id="territoryMetricGrid">${metricHtml()}</section><section class="v800TerritoryControls"><div class="v800ViewTabs">${[['map','Mapa'],['prospects','Prospectos'],['visits','Visitas'],['activity','Actividad']].map(([id,label])=>`<button data-view="${id}" class="${territory.view===id?'active':''}">${label}</button>`).join('')}</div><div class="v800TerritoryFilters">${canViewTeam()?`<select id="territoryOwnerFilter">${ownerOptions(territory.ownerFilter,true)}</select>`:''}<select id="territoryStatusFilter"><option value="all">Todos los estados</option>${['prospect','contacted','qualified','converted','inactive','lost'].map(s=>`<option value="${s}" ${territory.statusFilter===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select><input id="territorySearch" placeholder="Buscar tienda, cliente o zona" value="${esc(territory.search)}"></div></section><div id="territoryDynamicContent">${contentHtml()}</div>`;
+    bindTerritoryControlsV801(); if(territory.view==='map') setTimeout(initTerritoryMapV801,60);
+  }
+  const renderTerritoryV800=renderTerritoryV801;
+
+  function bindTerritoryControlsV801(){
+    $all('.v800ViewTabs button').forEach(btn=>btn.onclick=()=>{territory.view=btn.dataset.view;patchTerritoryV801({rebuildContent:true});});
+    $('#territoryOwnerFilter')?.addEventListener('change',e=>{territory.ownerFilter=e.target.value;patchTerritoryV801({rebuildContent:true,fit:true});});
+    $('#territoryStatusFilter')?.addEventListener('change',e=>{territory.statusFilter=e.target.value;patchTerritoryV801({rebuildContent:true,fit:true});});
+    $('#territorySearch')?.addEventListener('input',e=>{territory.search=e.target.value;clearTimeout(territory.searchTimer);territory.searchTimer=setTimeout(()=>patchTerritoryV801({rebuildContent:true,fit:true}),220);});
+    bindDynamicTerritoryActionsV801();
+  }
+  function bindDynamicTerritoryActionsV801(){
+    $('#newProspectV801')?.addEventListener('click',()=>openProspectFormV801());
+    $('#newVisitV801')?.addEventListener('click',()=>openVisitFormV801());
+    $all('.editProspectV801').forEach(b=>b.onclick=()=>openProspectFormV801(b.dataset.id));
+    $all('.registerVisitV801').forEach(b=>b.onclick=()=>openVisitFormV801({prospectId:b.dataset.prospect}));
+    $all('.convertProspectV801').forEach(b=>b.onclick=()=>convertProspectV801(b.dataset.id));
+    $all('.locateTerritoryV801').forEach(b=>b.onclick=()=>locateItemV801(b.dataset.kind,b.dataset.id));
   }
 
-  function patchTerritoryV800(){
-    if(AppState.currentTab!=='territorio'||window.V7_FORM_DIRTY)return;
-    const metrics=$('.v800TerritoryMetrics'); if(metrics)metrics.innerHTML=metricHtml();
-    const content=$('#territoryContentV800'); if(content&&territory.view!=='map'){content.innerHTML=contentHtml();bindContentEvents();}
-    if(territory.view==='map')updateTerritoryMapV800();
+  function patchMetricsV801(){const m=metricValues();[['Prospects','prospects'],['Clients','clients'],['Visits','visits'],['Mapped','mapped']].forEach(([id,key])=>{const el=$(`#territoryMetric${id}`);if(el&&String(el.textContent)!==String(m[key]))el.textContent=String(m[key]);});}
+  function patchTerritoryV801(options={}){
+    if(AppState.currentTab!=='territorio')return false;
+    patchMetricsV801();
+    const dynamic=$('#territoryDynamicContent');
+    if(options.rebuildContent&&dynamic){
+      if(territory.view!=='map'&&territory.map) destroyTerritoryMapV801();
+      dynamic.innerHTML=contentHtml(); bindDynamicTerritoryActionsV801();
+      if(territory.view==='map')setTimeout(()=>initTerritoryMapV801({fit:options.fit}),45);
+    }else if(territory.view==='map'&&territory.map){updateTerritoryMarkersV801({fit:!!options.fit});}
+    return true;
   }
 
-  function bindTerritoryEvents(){
-    $all('[data-territory-view]').forEach(button=>button.addEventListener('click',()=>{territory.view=button.dataset.territoryView; $all('[data-territory-view]').forEach(x=>x.classList.toggle('active',x===button)); const content=$('#territoryContentV800'); if(content)content.innerHTML=contentHtml();bindContentEvents();if(territory.view==='map')setTimeout(initTerritoryMapV800,40);}));
-    $('#territoryOwnerFilter')?.addEventListener('change',e=>{territory.ownerFilter=e.target.value;patchTerritoryV800();});
-    $('#territoryStatusFilter')?.addEventListener('change',e=>{territory.statusFilter=e.target.value;patchTerritoryV800();});
-    $('#territorySearch')?.addEventListener('input',e=>{territory.search=e.target.value;clearTimeout(e.target._t);e.target._t=setTimeout(patchTerritoryV800,180);});
-    bindContentEvents();
+  function readSavedMapViewV801(){try{return JSON.parse(localStorage.getItem(MAP_VIEW_KEY)||'null');}catch(_){return null;}}
+  function saveMapViewV801(){if(!territory.map)return;const c=territory.map.getCenter();try{localStorage.setItem(MAP_VIEW_KEY,JSON.stringify({lat:c.lat,lng:c.lng,zoom:territory.map.getZoom()}));}catch(_){}}
+  function mapStatusV801(type,title,detail=''){
+    const el=$('#mapStatusV801');if(!el)return;
+    el.className=`v801MapStatus ${type||''}`;
+    el.innerHTML=type==='hidden'?'':`${type==='loading'?'<span class="spinner"></span>':type==='error'?'<span>!</span>':'<span>✓</span>'}<b>${esc(title)}</b><small>${esc(detail)}</small>`;
   }
-  function bindContentEvents(){
-    $('#newProspectV800')?.addEventListener('click',()=>openProspectFormV800());
-    $('#newVisitV800')?.addEventListener('click',()=>openVisitFormV800());
-    $('#territoryDensityV800')?.addEventListener('change',updateTerritoryMapV800);
-    $all('.editProspectV800').forEach(b=>b.addEventListener('click',()=>openProspectFormV800(b.dataset.id)));
-    $all('.registerVisitV800').forEach(b=>b.addEventListener('click',()=>openVisitFormV800({prospectId:b.dataset.prospect})));
-    $all('.locateTerritoryV800').forEach(b=>b.addEventListener('click',()=>locatePointV800(b.dataset.kind,b.dataset.id)));
-    $all('.convertProspectV800').forEach(b=>b.addEventListener('click',()=>convertProspectV800(b.dataset.id)));
+  function removeBaseLayersV801(){if(!territory.map)return;[territory.baseLayer,territory.fallbackLayer].forEach(layer=>{if(layer&&territory.map.hasLayer(layer))territory.map.removeLayer(layer);});territory.baseLayer=null;territory.fallbackLayer=null;}
+  function addMapProviderV801(provider='osm'){
+    if(!territory.map||!window.L)return;
+    removeBaseLayersV801();territory.provider=provider;territory.tileErrors=0;territory.tilesLoaded=false;mapStatusV801('loading','Cargando calles…',provider==='osm'?'OpenStreetMap':'Cartografía alternativa');
+    const options={maxZoom:19,crossOrigin:true,updateWhenIdle:true,keepBuffer:3};
+    const url=provider==='osm'?'https://tile.openstreetmap.org/{z}/{x}/{y}.png':'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    const attr=provider==='osm'?'© OpenStreetMap':'© OpenStreetMap · CARTO';
+    const layer=L.tileLayer(url,Object.assign({},options,{attribution:attr}));
+    territory.baseLayer=layer.addTo(territory.map);
+    layer.on('load',()=>{territory.tilesLoaded=true;mapStatusV801('hidden','','');});
+    layer.on('tileerror',()=>{territory.tileErrors+=1;if(territory.tileErrors>=4&&!territory.tilesLoaded&&provider==='osm'){addMapProviderV801('carto');}else if(territory.tileErrors>=8&&!territory.tilesLoaded){mapStatusV801('error','No se pudieron cargar las calles','Revisa internet y pulsa ↻ Mapa.');}});
+    setTimeout(()=>{if(!territory.tilesLoaded&&territory.provider===provider){if(provider==='osm')addMapProviderV801('carto');else mapStatusV801('error','Cartografía no disponible','Tu ubicación y puntos siguen guardados. Reintenta cuando haya conexión.');}},8000);
+  }
+  function destroyTerritoryMapV801(){if(territory.map){saveMapViewV801();territory.map.remove();}territory.map=null;territory.baseLayer=null;territory.markerLayer=null;territory.densityLayer=null;territory.locationLayer=null;territory.temporaryLayer=null;territory.markerSignature='';}
+
+  function initTerritoryMapV801(options={}){
+    const container=$('#territoryMapV801');if(!container)return;
+    if(!window.L){mapStatusV801('error','No cargó el motor del mapa','Pulsa ↻ Mapa o revisa la conexión.');return;}
+    if(territory.map&&territory.map.getContainer()!==container)destroyTerritoryMapV801();
+    if(!territory.map){
+      territory.map=L.map(container,{zoomControl:true,preferCanvas:true,attributionControl:true});
+      territory.markerLayer=L.layerGroup().addTo(territory.map);territory.densityLayer=L.layerGroup().addTo(territory.map);territory.locationLayer=L.layerGroup().addTo(territory.map);territory.temporaryLayer=L.layerGroup().addTo(territory.map);
+      const saved=readSavedMapViewV801();if(saved&&Number.isFinite(saved.lat)&&Number.isFinite(saved.lng))territory.map.setView([saved.lat,saved.lng],saved.zoom||BOLIVIA_ZOOM);else territory.map.setView(BOLIVIA_CENTER,BOLIVIA_ZOOM);
+      territory.map.on('moveend zoomend',saveMapViewV801);
+      territory.map.on('click',e=>{if(!territory.placingPoint)return;territory.placingPoint=false;$('#placePointV801')?.classList.remove('active');showTemporaryPointV801(e.latlng.lat,e.latlng.lng,true);});
+      addMapProviderV801('osm');
+    }
+    bindMapControlsV801();updateTerritoryMarkersV801({fit:options.fit||!readSavedMapViewV801()});setTimeout(()=>territory.map?.invalidateSize({pan:false}),120);
   }
 
-  function pointCollection(){
-    const points=[];
-    visibleClients().filter(pointValid).forEach(c=>points.push({kind:'client',id:c.id,name:c.businessName||c.name,lat:Number(c.latitude),lng:Number(c.longitude),status:commercialStatusV723(c).label,owner:c.ownerUserId}));
-    filteredProspects().filter(pointValid).forEach(p=>points.push({kind:'prospect',id:p.id,name:p.businessName||p.name,lat:Number(p.latitude),lng:Number(p.longitude),status:p.status,owner:p.ownerUserId}));
-    return points;
+  function clientPointV801(c){return {kind:'client',id:c.id,name:c.businessName||c.name||'Cliente',status:'converted',ownerUserId:c.ownerUserId,latitude:Number(c.latitude),longitude:Number(c.longitude),phone:c.phone||'',city:c.city||'',address:c.address||''};}
+  function mapPointsV801(){return [...filteredProspects().filter(pointValid).map(p=>Object.assign({kind:'prospect'},p)),...visibleClients().filter(pointValid).map(clientPointV801)];}
+  function markerColorV801(p){if(p.kind==='client'||p.status==='converted')return'#078c55';if(p.status==='qualified')return'#8fc91f';if(['inactive','lost'].includes(p.status))return'#74877d';if(p.status==='contacted')return'#42a96b';return'#f0a83b';}
+  function markerIconV801(p){return L.divIcon({className:'v800LeafletMarkerWrap',html:`<span class="v800LeafletMarker" style="--marker:${markerColorV801(p)}">${p.kind==='client'?'C':'P'}</span>`,iconSize:[34,34],iconAnchor:[17,31]});}
+  function updateTerritoryMarkersV801(options={}){
+    if(!territory.map||!territory.markerLayer)return;
+    const points=mapPointsV801();const signature=points.map(p=>`${p.kind}:${p.id}:${p.latitude}:${p.longitude}:${p.status}`).sort().join('|')+`|d:${territory.densityVisible}`;
+    if(signature===territory.markerSignature&&!options.fit)return;
+    territory.markerSignature=signature;territory.markerLayer.clearLayers();territory.densityLayer?.clearLayers();
+    const bounds=[];
+    points.forEach(p=>{const latlng=[Number(p.latitude),Number(p.longitude)];bounds.push(latlng);const marker=L.marker(latlng,{icon:markerIconV801(p)}).bindPopup(`<div class="v801MapPopup"><strong>${esc(p.businessName||p.name)}</strong><span>${esc(statusLabel(p.status))} · ${esc(ownerName(p.ownerUserId))}</span><small>${esc(p.address||p.city||'Sin dirección')}</small>${p.phone?`<a href="https://wa.me/${String(p.phone).replace(/\D/g,'')}" target="_blank" rel="noopener">WhatsApp</a>`:''}<button onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}','_blank')">Navegar</button></div>`);territory.markerLayer.addLayer(marker);});
+    if(territory.densityVisible){
+      const grouped=new Map();points.forEach(p=>{const key=`${Number(p.latitude).toFixed(3)},${Number(p.longitude).toFixed(3)}`;const row=grouped.get(key)||{lat:Number(p.latitude),lng:Number(p.longitude),count:0};row.count+=1;grouped.set(key,row);});
+      grouped.forEach(g=>territory.densityLayer.addLayer(L.circleMarker([g.lat,g.lng],{radius:Math.min(30,8+g.count*3),color:'#7bb82a',weight:2,fillColor:'#a6d855',fillOpacity:.20,interactive:false})));
+    }
+    if(options.fit&&bounds.length){territory.map.fitBounds(bounds,{padding:[36,36],maxZoom:15});}
+    else if(options.fit&&!bounds.length)territory.map.setView(BOLIVIA_CENTER,BOLIVIA_ZOOM);
   }
-  function markerColor(point){ if(point.kind==='client')return '#0a8f55'; return ({qualified:'#9bcf22',contacted:'#44b36f',inactive:'#7a8b82',lost:'#ad5f5f',converted:'#0a8f55'})[point.status]||'#f0a83b'; }
-  function initTerritoryMapV800(){
-    const el=$('#territoryMapV800'); if(!el||!window.L)return;
-    if(territory.map){territory.map.remove();territory.map=null;}
-    territory.map=L.map(el,{zoomControl:true,attributionControl:true}).setView([-17.7833,-63.1821],12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(territory.map);
-    territory.layer=L.layerGroup().addTo(territory.map); territory.densityLayer=L.layerGroup().addTo(territory.map); territory.markerSignature='';
-    updateTerritoryMapV800(true); setTimeout(()=>territory.map?.invalidateSize(),180);
-  }
-  function densityGroups(points){const map=new Map();points.forEach(p=>{const key=`${p.lat.toFixed(2)},${p.lng.toFixed(2)}`;const row=map.get(key)||{lat:0,lng:0,count:0};row.lat+=p.lat;row.lng+=p.lng;row.count++;map.set(key,row);});return Array.from(map.values()).map(r=>({lat:r.lat/r.count,lng:r.lng/r.count,count:r.count}));}
-  function updateTerritoryMapV800(fit=false){
-    if(!territory.map||!territory.layer)return; const points=pointCollection(); const signature=points.map(p=>`${p.kind}:${p.id}:${p.lat}:${p.lng}:${p.status}`).join('|');
-    if(signature!==territory.markerSignature){territory.layer.clearLayers();points.forEach(p=>{const icon=L.divIcon({className:'v800LeafletMarkerWrap',html:`<span class="v800LeafletMarker" style="--marker:${markerColor(p)}">${p.kind==='client'?'C':'P'}</span>`,iconSize:[32,38],iconAnchor:[16,34]});L.marker([p.lat,p.lng],{icon}).bindPopup(`<strong>${esc(p.name)}</strong><br>${p.kind==='client'?'Cliente':'Prospecto'} · ${esc(p.status)}<br><small>${esc(ownerName(p.owner))}</small>`).addTo(territory.layer);});territory.markerSignature=signature;if((fit||!territory._fitDone)&&points.length){territory.map.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lng])).pad(.18),{maxZoom:15});territory._fitDone=true;}}
-    territory.densityLayer?.clearLayers(); if($('#territoryDensityV800')?.checked!==false){densityGroups(points).filter(g=>g.count>=2).forEach(g=>L.circle([g.lat,g.lng],{radius:Math.min(900,180+g.count*85),color:'#70b92b',weight:1,fillColor:'#9ddc39',fillOpacity:Math.min(.34,.12+g.count*.035)}).bindTooltip(`${g.count} puntos en esta zona`).addTo(territory.densityLayer));}
-  }
-  function locatePointV800(kind,id){territory.view='map';renderTerritoryV800().then(()=>setTimeout(()=>{const item=kind==='prospect'?territory.prospects.find(x=>x.id===id):kind==='visit'?territory.visits.find(x=>x.id===id):(AppState.clients||[]).find(x=>x.id===id);if(item&&pointValid(item)&&territory.map)territory.map.setView([Number(item.latitude),Number(item.longitude)],17);},100));}
 
-  function getGps(button,overlay){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Este dispositivo no permite geolocalización.'));button.disabled=true;button.textContent='Capturando GPS…';navigator.geolocation.getCurrentPosition(pos=>{button.disabled=false;button.textContent='GPS capturado';resolve({latitude:Number(pos.coords.latitude.toFixed(6)),longitude:Number(pos.coords.longitude.toFixed(6)),accuracy:Number(pos.coords.accuracy||0)});},err=>{button.disabled=false;button.textContent='Capturar ubicación actual';reject(new Error(err.message||'No se pudo obtener la ubicación.'));},{enableHighAccuracy:true,timeout:15000,maximumAge:10000});});}
+  function bindMapControlsV801(){
+    $('#fullscreenMapV801')?.addEventListener('click',toggleMapFullscreenV801);
+    $('#myLocationV801')?.addEventListener('click',centerMyLocationV801);
+    $('#placePointV801')?.addEventListener('click',e=>{territory.placingPoint=!territory.placingPoint;e.currentTarget.classList.toggle('active',territory.placingPoint);showToast(territory.placingPoint?'Toca el lugar exacto en el mapa.':'Marcación cancelada.');});
+    $('#densityToggleV801')?.addEventListener('change',e=>{territory.densityVisible=e.target.checked;territory.markerSignature='';updateTerritoryMarkersV801();});
+    $('#retryTilesV801')?.addEventListener('click',()=>addMapProviderV801(territory.provider==='osm'?'carto':'osm'));
+    $('#runMapSearchV801')?.addEventListener('click',searchMapAddressV801);
+    $('#mapAddressSearchV801')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchMapAddressV801();}});
+  }
+  function toggleMapFullscreenV801(){const panel=$('#territoryMapPanelV801');if(!panel)return;territory.fullscreen=!territory.fullscreen;panel.classList.toggle('v801MapFullscreen',territory.fullscreen);document.body.classList.toggle('nv801MapOpen',territory.fullscreen);$('#fullscreenMapV801').textContent=territory.fullscreen?'✕':'⛶';setTimeout(()=>territory.map?.invalidateSize({pan:false}),180);}
+  function centerMyLocationV801(){const btn=$('#myLocationV801');if(!navigator.geolocation)return showToast('Este dispositivo no permite geolocalización.','error');btn.disabled=true;btn.textContent='Ubicando…';navigator.geolocation.getCurrentPosition(pos=>{btn.disabled=false;btn.textContent='⌖ Mi ubicación';const lat=Number(pos.coords.latitude),lng=Number(pos.coords.longitude),accuracy=Number(pos.coords.accuracy||0);territory.locationLayer.clearLayers();const marker=L.marker([lat,lng]).bindPopup(`<strong>Mi ubicación</strong><br>Precisión aproximada: ${Math.round(accuracy)} m`).addTo(territory.locationLayer);L.circle([lat,lng],{radius:Math.min(Math.max(accuracy,8),150),color:'#0b9360',weight:2,fillColor:'#6fd69b',fillOpacity:.12,interactive:false}).addTo(territory.locationLayer);territory.map.setView([lat,lng],Math.max(16,territory.map.getZoom()));marker.openPopup();},err=>{btn.disabled=false;btn.textContent='⌖ Mi ubicación';showToast(err.code===1?'Autoriza la ubicación en el navegador para centrar el mapa.':'No se pudo obtener la ubicación.','error');},{enableHighAccuracy:true,timeout:18000,maximumAge:30000});}
+  function showTemporaryPointV801(lat,lng,openForm=false,label='Punto seleccionado'){territory.temporaryLayer?.clearLayers();const marker=L.marker([lat,lng],{draggable:true}).addTo(territory.temporaryLayer).bindPopup(`<strong>${esc(label)}</strong><br><button id="createHereV801">Registrar prospecto aquí</button>`).openPopup();marker.on('dragend',()=>{const p=marker.getLatLng();lat=p.lat;lng=p.lng;});setTimeout(()=>$('#createHereV801')?.addEventListener('click',()=>openProspectFormV801('',{latitude:lat,longitude:lng,locationLabel:label})),60);if(openForm)showToast('Punto marcado. Ajusta el pin o registra el prospecto.');}
+  async function searchMapAddressV801(){const input=$('#mapAddressSearchV801'),box=$('#mapSearchResultsV801');const q=input?.value.trim();if(!q)return showToast('Escribe una calle, mercado, tienda o ciudad.','error');box.classList.remove('hidden');box.innerHTML='<div class="v801MapResultLoading">Buscando ubicación…</div>';try{const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=bo&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`;const response=await fetch(url,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error('Servicio de búsqueda no disponible');const rows=await response.json();box.innerHTML=(rows||[]).map((r,i)=>`<button data-index="${i}"><strong>${esc((r.display_name||'').split(',')[0])}</strong><small>${esc(r.display_name||'')}</small></button>`).join('')||'<p>No se encontraron resultados en Bolivia.</p>';[...box.querySelectorAll('button')].forEach(btn=>btn.onclick=()=>{const r=rows[Number(btn.dataset.index)];const lat=Number(r.lat),lng=Number(r.lon);territory.map.setView([lat,lng],17);showTemporaryPointV801(lat,lng,false,r.display_name||q);box.classList.add('hidden');});}catch(error){box.innerHTML=`<p>No se pudo buscar la dirección. Revisa la conexión y vuelve a intentar.</p>`;}}
+  function locateItemV801(kind,id){territory.view='map';patchTerritoryV801({rebuildContent:true});setTimeout(()=>{const item=kind==='prospect'?territory.prospects.find(p=>p.id===id):territory.visits.find(v=>v.id===id);if(item&&pointValid(item)&&territory.map)territory.map.setView([Number(item.latitude),Number(item.longitude)],17);},140);}
 
-  function openProspectFormV800(id=''){
-    const current=territory.prospects.find(p=>p.id===id)||{}; let lat=current.latitude??'',lng=current.longitude??'';
-    openSheet(`<h2>${id?'Editar':'Nuevo'} prospecto <span class="x" id="closeSheet">✕</span></h2>${canCreateForTeam()?`<div class="field"><label>Responsable de la cuenta</label><select id="tpOwner">${ownerOptions(current.ownerUserId||currentUid(),false)}</select></div>`:''}<div class="field"><label>Tienda / prospecto</label><input id="tpBusiness" value="${esc(current.businessName||current.name||'')}" placeholder="Nombre visible del negocio"></div><div class="field-row"><div class="field"><label>Persona de contacto</label><input id="tpName" value="${esc(current.name||'')}"></div><div class="field"><label>WhatsApp</label><input id="tpPhone" inputmode="tel" value="${esc(current.phone||'')}"></div></div><div class="field-row"><div class="field"><label>Ciudad</label><input id="tpCity" value="${esc(current.city||'')}"></div><div class="field"><label>Potencial</label><select id="tpPotential"><option value="low" ${current.potential==='low'?'selected':''}>Bajo</option><option value="medium" ${!current.potential||current.potential==='medium'?'selected':''}>Medio</option><option value="high" ${current.potential==='high'?'selected':''}>Alto</option></select></div></div><div class="field"><label>Dirección / referencia</label><input id="tpAddress" value="${esc(current.address||'')}"></div><div class="field"><label>Estado</label><select id="tpStatus">${['prospect','contacted','qualified','converted','inactive','lost'].map(s=>`<option value="${s}" ${current.status===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select></div><div class="field-row"><div class="field"><label>Latitud</label><input id="tpLat" readonly value="${lat}"></div><div class="field"><label>Longitud</label><input id="tpLng" readonly value="${lng}"></div></div><button class="btn ghost block" id="tpGps">Capturar ubicación actual</button><div class="field"><label>Dato de ubicación</label><input id="tpLocation" value="${esc(current.locationLabel||'')}"></div><div class="field"><label>Observaciones</label><textarea id="tpNotes" rows="3">${esc(current.notes||'')}</textarea></div><button class="btn block" id="saveProspectV800">Guardar prospecto</button>`,(overlay,close)=>{
-      $('#closeSheet',overlay).onclick=close; $('#tpGps',overlay).onclick=async()=>{try{const gps=await getGps($('#tpGps',overlay),overlay);lat=gps.latitude;lng=gps.longitude;$('#tpLat',overlay).value=lat;$('#tpLng',overlay).value=lng;if(!$('#tpLocation',overlay).value.trim())$('#tpLocation',overlay).value=`GPS ${lat}, ${lng}`;}catch(error){showToast(error.message,'error');}};
-      $('#saveProspectV800',overlay).onclick=async()=>{const business=$('#tpBusiness',overlay).value.trim(),name=$('#tpName',overlay).value.trim();if(!business&&!name)return showToast('Ingresa el nombre del prospecto o tienda.','error');const btn=$('#saveProspectV800',overlay);btn.disabled=true;btn.textContent='Guardando…';try{const sb=await requireClient();const row={id:id||uid('pros'),owner_user_id:$('#tpOwner',overlay)?.value||current.ownerUserId||currentUid(),name:name||business,business_name:business,phone:$('#tpPhone',overlay).value.trim(),city:$('#tpCity',overlay).value.trim(),address:$('#tpAddress',overlay).value.trim(),location_label:$('#tpLocation',overlay).value.trim(),latitude:lat===''?null:Number(lat),longitude:lng===''?null:Number(lng),status:$('#tpStatus',overlay).value,potential:$('#tpPotential',overlay).value,notes:$('#tpNotes',overlay).value.trim()};const {error}=await sb.from('territory_prospects').upsert(row,{onConflict:'id'});if(error)throw error;close();showToast('Prospecto guardado.');await fetchTerritoryV800();patchTerritoryV800();}catch(error){btn.disabled=false;btn.textContent='Reintentar';showToast(messageFromError(error),'error');}};
+  function getGps(button){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Este dispositivo no permite geolocalización.'));button.disabled=true;button.textContent='Capturando GPS…';navigator.geolocation.getCurrentPosition(pos=>{button.disabled=false;button.textContent='GPS capturado';resolve({latitude:Number(pos.coords.latitude.toFixed(6)),longitude:Number(pos.coords.longitude.toFixed(6)),accuracy:Number(pos.coords.accuracy||0)});},err=>{button.disabled=false;button.textContent='Capturar ubicación actual';reject(new Error(err.code===1?'Debes autorizar la ubicación en el navegador.':err.message||'No se pudo obtener la ubicación.'));},{enableHighAccuracy:true,timeout:18000,maximumAge:10000});});}
+
+  function openProspectFormV801(id='',prefill={}){
+    const current=territory.prospects.find(p=>p.id===id)||{};let lat=prefill.latitude??current.latitude??'',lng=prefill.longitude??current.longitude??'';
+    openSheet(`<h2>${id?'Editar':'Nuevo'} prospecto <span class="x" id="closeSheet">✕</span></h2>${canCreateForTeam()?`<div class="field"><label>Responsable de la cuenta</label><select id="tpOwner">${ownerOptions(current.ownerUserId||currentUid(),false)}</select></div>`:''}<div class="field"><label>Tienda / prospecto</label><input id="tpBusiness" value="${esc(current.businessName||current.name||'')}" placeholder="Nombre visible del negocio"></div><div class="field-row"><div class="field"><label>Persona de contacto</label><input id="tpName" value="${esc(current.name||'')}"></div><div class="field"><label>WhatsApp</label><input id="tpPhone" inputmode="tel" value="${esc(current.phone||'')}"></div></div><div class="field-row"><div class="field"><label>Ciudad</label><input id="tpCity" value="${esc(current.city||AppState.session?.operationCity||AppState.session?.city||'')}"></div><div class="field"><label>Potencial</label><select id="tpPotential"><option value="low" ${current.potential==='low'?'selected':''}>Bajo</option><option value="medium" ${!current.potential||current.potential==='medium'?'selected':''}>Medio</option><option value="high" ${current.potential==='high'?'selected':''}>Alto</option></select></div></div><div class="field"><label>Dirección / referencia</label><input id="tpAddress" value="${esc(current.address||'')}"></div><div class="field"><label>Estado</label><select id="tpStatus">${['prospect','contacted','qualified','converted','inactive','lost'].map(s=>`<option value="${s}" ${current.status===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select></div><div class="field-row"><div class="field"><label>Latitud</label><input id="tpLat" inputmode="decimal" value="${lat}"></div><div class="field"><label>Longitud</label><input id="tpLng" inputmode="decimal" value="${lng}"></div></div><button class="btn ghost block" id="tpGps">Capturar ubicación actual</button><div class="field"><label>Dato de ubicación</label><input id="tpLocation" value="${esc(prefill.locationLabel||current.locationLabel||'')}"></div><div class="field"><label>Observaciones</label><textarea id="tpNotes" rows="3">${esc(current.notes||'')}</textarea></div><button class="btn block" id="saveProspectV801">Guardar prospecto</button>`,(overlay,close)=>{
+      $('#closeSheet',overlay).onclick=close;$('#tpGps',overlay).onclick=async()=>{try{const gps=await getGps($('#tpGps',overlay));lat=gps.latitude;lng=gps.longitude;$('#tpLat',overlay).value=lat;$('#tpLng',overlay).value=lng;if(!$('#tpLocation',overlay).value.trim())$('#tpLocation',overlay).value=`GPS ${lat}, ${lng}`;}catch(error){showToast(error.message,'error');}};
+      $('#saveProspectV801',overlay).onclick=async()=>{const business=$('#tpBusiness',overlay).value.trim(),name=$('#tpName',overlay).value.trim();if(!business&&!name)return showToast('Ingresa el nombre del prospecto o tienda.','error');lat=$('#tpLat',overlay).value.trim();lng=$('#tpLng',overlay).value.trim();if((lat&&!Number.isFinite(Number(lat)))||(lng&&!Number.isFinite(Number(lng))))return showToast('Revisa las coordenadas ingresadas.','error');const btn=$('#saveProspectV801',overlay);btn.disabled=true;btn.textContent='Guardando…';try{const sb=await requireClient();const row={id:id||uid('pros'),owner_user_id:$('#tpOwner',overlay)?.value||current.ownerUserId||currentUid(),name:name||business,business_name:business,phone:$('#tpPhone',overlay).value.trim(),city:$('#tpCity',overlay).value.trim(),address:$('#tpAddress',overlay).value.trim(),location_label:$('#tpLocation',overlay).value.trim(),latitude:lat===''?null:Number(lat),longitude:lng===''?null:Number(lng),status:$('#tpStatus',overlay).value,potential:$('#tpPotential',overlay).value,notes:$('#tpNotes',overlay).value.trim()};const {error}=await sb.from('territory_prospects').upsert(row,{onConflict:'id'});if(error)throw error;close();showToast('Prospecto guardado.');await fetchTerritoryV801({skipProfiles:true});patchTerritoryV801({rebuildContent:true});}catch(error){btn.disabled=false;btn.textContent='Reintentar';showToast(messageFromError(error),'error');}};
     });
   }
 
-  function targetOptions(selectedProspect='',selectedClient=''){
-    return `<optgroup label="Prospectos">${territory.prospects.map(p=>`<option value="p:${esc(p.id)}" ${selectedProspect===p.id?'selected':''}>${esc(p.businessName||p.name)} · ${esc(ownerName(p.ownerUserId))}</option>`).join('')}</optgroup><optgroup label="Clientes">${(AppState.clients||[]).map(c=>`<option value="c:${esc(c.id)}" ${selectedClient===c.id?'selected':''}>${esc(c.businessName||c.name)} · ${esc(ownerName(c.ownerUserId))}</option>`).join('')}</optgroup>`;
-  }
-  function openVisitFormV800(prefill={}){let lat='',lng='',accuracy=null;const selected=`${prefill.prospectId?'p:'+prefill.prospectId:prefill.clientId?'c:'+prefill.clientId:''}`;openSheet(`<h2>Registrar visita <span class="x" id="closeSheet">✕</span></h2>${canCreateForTeam()?`<div class="field"><label>Persona que realizó la visita</label><select id="tvOwner">${ownerOptions(prefill.ownerUserId||currentUid(),false)}</select></div>`:''}<div class="field"><label>Cliente o prospecto</label><select id="tvTarget"><option value="">Seleccionar…</option>${targetOptions(prefill.prospectId,prefill.clientId)}</select></div><div class="field-row"><div class="field"><label>Tipo de visita</label><select id="tvType"><option value="prospecting">Prospección</option><option value="follow_up">Seguimiento</option><option value="sale">Venta</option><option value="collection">Cobranza</option><option value="delivery">Entrega</option><option value="other">Otra</option></select></div><div class="field"><label>Resultado</label><select id="tvOutcome"><option value="pending">Pendiente</option><option value="no_contact">Sin contacto</option><option value="interested">Interesado</option><option value="quoted">Cotizado</option><option value="sale">Venta</option><option value="collection">Cobranza</option><option value="not_interested">No interesado</option><option value="completed">Completada</option></select></div></div><div class="field"><label>Próxima acción</label><input id="tvNext" type="date"></div><button class="btn ghost block" id="tvGps">Registrar ubicación de la visita</button><div class="field"><label>Observaciones</label><textarea id="tvNotes" rows="4" placeholder="Resultado, pedido, necesidad o próximo paso"></textarea></div><button class="btn block" id="saveVisitV800">Guardar visita</button>`,(overlay,close)=>{$('#closeSheet',overlay).onclick=close;if(selected)$('#tvTarget',overlay).value=selected;$('#tvGps',overlay).onclick=async()=>{try{const gps=await getGps($('#tvGps',overlay),overlay);lat=gps.latitude;lng=gps.longitude;accuracy=gps.accuracy;showToast('Ubicación de visita capturada.');}catch(error){showToast(error.message,'error');}};$('#saveVisitV800',overlay).onclick=async()=>{const raw=$('#tvTarget',overlay).value;if(!raw)return showToast('Selecciona un cliente o prospecto.','error');const [kind,id]=raw.split(':');const target=kind==='p'?territory.prospects.find(p=>p.id===id):(AppState.clients||[]).find(c=>c.id===id);if(!target)return showToast('No se encontró el punto seleccionado.','error');const btn=$('#saveVisitV800',overlay);btn.disabled=true;btn.textContent='Guardando…';try{const sb=await requireClient();const row={id:uid('visit'),owner_user_id:$('#tvOwner',overlay)?.value||currentUid(),prospect_id:kind==='p'?id:null,client_id:kind==='c'?id:null,target_name:target.businessName||target.name||'Visita',visit_type:$('#tvType',overlay).value,outcome:$('#tvOutcome',overlay).value,latitude:lat===''?(pointValid(target)?Number(target.latitude):null):Number(lat),longitude:lng===''?(pointValid(target)?Number(target.longitude):null):Number(lng),accuracy_m:accuracy,next_action_date:$('#tvNext',overlay).value||null,notes:$('#tvNotes',overlay).value.trim(),visited_at:new Date().toISOString()};const {error}=await sb.from('territory_visits').insert(row);if(error)throw error;close();showToast('Visita registrada.');await fetchTerritoryV800();patchTerritoryV800();}catch(error){btn.disabled=false;btn.textContent='Reintentar';showToast(messageFromError(error),'error');}};});}
+  function targetOptions(selectedProspect='',selectedClient=''){return `<optgroup label="Prospectos">${territory.prospects.map(p=>`<option value="p:${esc(p.id)}" ${selectedProspect===p.id?'selected':''}>${esc(p.businessName||p.name)} · ${esc(ownerName(p.ownerUserId))}</option>`).join('')}</optgroup><optgroup label="Clientes">${(AppState.clients||[]).map(c=>`<option value="c:${esc(c.id)}" ${selectedClient===c.id?'selected':''}>${esc(c.businessName||c.name)} · ${esc(ownerName(c.ownerUserId))}</option>`).join('')}</optgroup>`;}
+  function openVisitFormV801(prefill={}){let lat='',lng='',accuracy=null;const selected=`${prefill.prospectId?'p:'+prefill.prospectId:prefill.clientId?'c:'+prefill.clientId:''}`;openSheet(`<h2>Registrar visita <span class="x" id="closeSheet">✕</span></h2>${canCreateForTeam()?`<div class="field"><label>Persona que realizó la visita</label><select id="tvOwner">${ownerOptions(prefill.ownerUserId||currentUid(),false)}</select></div>`:''}<div class="field"><label>Cliente o prospecto</label><select id="tvTarget"><option value="">Seleccionar…</option>${targetOptions(prefill.prospectId,prefill.clientId)}</select></div><div class="field-row"><div class="field"><label>Tipo de visita</label><select id="tvType"><option value="prospecting">Prospección</option><option value="follow_up">Seguimiento</option><option value="sale">Venta</option><option value="collection">Cobranza</option><option value="delivery">Entrega</option><option value="other">Otra</option></select></div><div class="field"><label>Resultado</label><select id="tvOutcome"><option value="pending">Pendiente</option><option value="no_contact">Sin contacto</option><option value="interested">Interesado</option><option value="quoted">Cotizado</option><option value="sale">Venta</option><option value="collection">Cobranza</option><option value="not_interested">No interesado</option><option value="completed">Completada</option></select></div></div><div class="field"><label>Próxima acción</label><input id="tvNext" type="date"></div><button class="btn ghost block" id="tvGps">Registrar ubicación de la visita</button><div class="field"><label>Observaciones</label><textarea id="tvNotes" rows="4" placeholder="Resultado, pedido, necesidad o próximo paso"></textarea></div><button class="btn block" id="saveVisitV801">Guardar visita</button>`,(overlay,close)=>{$('#closeSheet',overlay).onclick=close;if(selected)$('#tvTarget',overlay).value=selected;$('#tvGps',overlay).onclick=async()=>{try{const gps=await getGps($('#tvGps',overlay));lat=gps.latitude;lng=gps.longitude;accuracy=gps.accuracy;showToast('Ubicación de visita capturada.');}catch(error){showToast(error.message,'error');}};$('#saveVisitV801',overlay).onclick=async()=>{const raw=$('#tvTarget',overlay).value;if(!raw)return showToast('Selecciona un cliente o prospecto.','error');const [kind,id]=raw.split(':');const target=kind==='p'?territory.prospects.find(p=>p.id===id):(AppState.clients||[]).find(c=>c.id===id);if(!target)return showToast('No se encontró el punto seleccionado.','error');const btn=$('#saveVisitV801',overlay);btn.disabled=true;btn.textContent='Guardando…';try{const sb=await requireClient();const row={id:uid('visit'),owner_user_id:$('#tvOwner',overlay)?.value||currentUid(),prospect_id:kind==='p'?id:null,client_id:kind==='c'?id:null,target_name:target.businessName||target.name||'Visita',visit_type:$('#tvType',overlay).value,outcome:$('#tvOutcome',overlay).value,latitude:lat===''?(pointValid(target)?Number(target.latitude):null):Number(lat),longitude:lng===''?(pointValid(target)?Number(target.longitude):null):Number(lng),accuracy_m:accuracy,next_action_date:$('#tvNext',overlay).value||null,notes:$('#tvNotes',overlay).value.trim(),visited_at:new Date().toISOString()};const {error}=await sb.from('territory_visits').insert(row);if(error)throw error;close();showToast('Visita registrada.');await fetchTerritoryV801({skipProfiles:true});patchTerritoryV801({rebuildContent:true});}catch(error){btn.disabled=false;btn.textContent='Reintentar';showToast(messageFromError(error),'error');}};});}
 
-  async function convertProspectV800(id){const p=territory.prospects.find(x=>x.id===id);if(!p||p.ownerUserId!==currentUid())return showToast('Solo el responsable puede convertir este prospecto.','error');if(!confirm(`¿Convertir ${p.businessName||p.name} en cliente?`))return;try{const client=buildClientRecordV723({}, {name:p.businessName||p.name,phone:p.phone,customerType:'wholesale',businessName:p.businessName||p.name,city:p.city,address:p.address,latitude:p.latitude??'',longitude:p.longitude??'',locationLabel:p.locationLabel,notes:p.notes,ownerUserId:p.ownerUserId});await saveClientV723(client);const sb=await requireClient();const {error}=await sb.from('territory_prospects').update({status:'converted',converted_client_id:client.id}).eq('id',id);if(error)throw error;showToast('Prospecto convertido en cliente.');await fetchTerritoryV800();patchTerritoryV800();}catch(error){showToast(messageFromError(error),'error');}}
+  async function convertProspectV801(id){const p=territory.prospects.find(x=>x.id===id);if(!p||p.ownerUserId!==currentUid())return showToast('Solo el responsable puede convertir este prospecto.','error');if(!confirm(`¿Convertir ${p.businessName||p.name} en cliente?`))return;try{const client=buildClientRecordV723({}, {name:p.businessName||p.name,phone:p.phone,customerType:'wholesale',businessName:p.businessName||p.name,city:p.city,address:p.address,latitude:p.latitude??'',longitude:p.longitude??'',locationLabel:p.locationLabel,notes:p.notes,ownerUserId:p.ownerUserId});await saveClientV723(client);const sb=await requireClient();const {error}=await sb.from('territory_prospects').update({status:'converted',converted_client_id:client.id}).eq('id',id);if(error)throw error;showToast('Prospecto convertido en cliente.');await fetchTerritoryV801({skipProfiles:true});patchTerritoryV801({rebuildContent:true});}catch(error){showToast(messageFromError(error),'error');}}
 
-  function handleTerritoryRealtimeV800(){clearTimeout(territory.realtimeTimer);territory.realtimeTimer=setTimeout(async()=>{const result=await fetchTerritoryV800();if(result.ok&&AppState.currentTab==='territorio'&&!window.V7_FORM_DIRTY)patchTerritoryV800();},520);}
+  function handleTerritoryRealtimeV801(){clearTimeout(territory.realtimeTimer);territory.realtimeTimer=setTimeout(async()=>{const result=await fetchTerritoryV801({skipProfiles:true});if(result.ok&&AppState.currentTab==='territorio'&&!window.V7_FORM_DIRTY){patchTerritoryV801({rebuildContent:territory.view!=='map'});}},650);}
+  function nv801PatchTerritoryView(context={}){if(AppState.currentTab!=='territorio')return false;patchTerritoryV801({rebuildContent:territory.view!=='map'});return true;}
 
-  Object.assign(window,{renderTerritoryV800,fetchTerritoryV800,handleTerritoryRealtimeV800});
+  Object.assign(window,{renderTerritoryV801,renderTerritoryV800,fetchTerritoryV801,fetchTerritoryV800,handleTerritoryRealtimeV801,handleTerritoryRealtimeV800:handleTerritoryRealtimeV801,nv801PatchTerritoryView});
 })();

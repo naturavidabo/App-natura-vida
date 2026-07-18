@@ -11,6 +11,8 @@ let _realtimeRestartTimer = null;
 let _backgroundStarted = false;
 let _refreshInFlight = null;
 let _deferredRenderPending = false;
+let _authObserverSubscription = null;
+const NV801_PROFILE_CACHE_PREFIX = 'nv801-profile-cache:';
 
 const CloudConnection = {
   state: navigator.onLine ? 'connecting' : 'offline',
@@ -27,14 +29,16 @@ function shouldDeferCloudRender() {
   return ['INPUT','TEXTAREA','SELECT'].includes(tag) && !active.readOnly && !active.disabled;
 }
 
-function renderAfterCloudRefresh() {
-  if (!window.render) return;
+function renderAfterCloudRefresh(context = {}) {
   if (shouldDeferCloudRender()) {
     _deferredRenderPending = true;
     return;
   }
   _deferredRenderPending = false;
-  render();
+  // V8.0.1: primero intenta una actualización localizada. La pantalla solo se
+  // reconstruye cuando el módulo no dispone de un parche silencioso.
+  if (window.nv801PatchCurrentView && nv801PatchCurrentView(context) === true) return;
+  if (window.render) render();
 }
 
 function flushDeferredCloudRender() {
@@ -155,6 +159,7 @@ async function onlineSignIn(email, password) {
     const { error: ensureError } = await sb.rpc('ensure_my_profile');
     if (ensureError) return { ok: false, message: messageFromError(ensureError) };
     const profile = await fetchCurrentProfile(data.user.id);
+    if (profile) cacheOnlineProfileV801(data.user.id, profile);
     if (!profile) return { ok: false, message: 'La cuenta existe, pero su perfil no fue creado. Ejecuta la migración SQL de Natura Vida V7.' };
     if (String(profile.status).toLowerCase() === 'bloqueado') {
       await sb.auth.signOut();
@@ -175,12 +180,88 @@ async function onlineSignOut() {
   setCloudConnectionState(navigator.onLine ? 'connecting' : 'offline', 'Sesión cerrada');
 }
 
+function profileCacheKeyV801(userId) { return `${NV801_PROFILE_CACHE_PREFIX}${userId}`; }
+function cacheOnlineProfileV801(userId, profile) {
+  if (!userId || !profile) return;
+  try { localStorage.setItem(profileCacheKeyV801(userId), JSON.stringify({ profile, cachedAt: Date.now() })); } catch (_) {}
+}
+function readCachedOnlineProfileV801(userId) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(profileCacheKeyV801(userId)) || 'null');
+    return parsed && parsed.profile ? parsed.profile : null;
+  } catch (_) { return null; }
+}
+
 async function getOnlineSessionProfile() {
-  try { return await ensureSignedInProfile(); }
+  const sb = getSupabaseClient();
+  if (!sb) return { status: 'profile_unavailable', user: null, profile: null, reason: 'Supabase no está disponible.' };
+  let sessionResult;
+  try { sessionResult = await sb.auth.getSession(); }
   catch (error) {
-    console.warn('No se pudo restaurar sesión:', messageFromError(error));
-    return null;
+    console.warn('No se pudo consultar la sesión:', messageFromError(error));
+    return { status: 'profile_unavailable', user: null, profile: null, reason: messageFromError(error) };
   }
+  if (sessionResult && sessionResult.error) {
+    return { status: 'session_error', user: null, profile: null, reason: messageFromError(sessionResult.error) };
+  }
+  const session = sessionResult && sessionResult.data && sessionResult.data.session;
+  const user = session && session.user;
+  if (!user) return null;
+
+  // La sesión existe. Una falla de red o de perfil no debe convertirse en un
+  // falso cierre de sesión: se conserva la identidad y se usa la última ficha.
+  const cachedProfile = readCachedOnlineProfileV801(user.id);
+  if (!navigator.onLine) {
+    return { user, profile: cachedProfile, status: 'profile_unavailable', degraded: true, reason: 'Sin conexión. Se conserva la sesión.' };
+  }
+  try {
+    const { error: ensureError } = await sb.rpc('ensure_my_profile');
+    if (ensureError) throw ensureError;
+    const profile = await fetchCurrentProfile(user.id);
+    if (!profile) throw new Error('El perfil todavía no está disponible.');
+    cacheOnlineProfileV801(user.id, profile);
+    return { user, profile, status: 'ready', degraded: false };
+  } catch (error) {
+    console.warn('Sesión conservada; perfil temporalmente no disponible:', messageFromError(error));
+    return { user, profile: cachedProfile, status: 'profile_unavailable', degraded: true, reason: messageFromError(error) };
+  }
+}
+
+function installAuthObserverV801() {
+  const sb = getSupabaseClient();
+  if (!sb || _authObserverSubscription) return;
+  const listener = sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_OUT') {
+      if (window.clearSession) clearSession();
+      if (window.renderLoginScreen) renderLoginScreen();
+      return;
+    }
+    if (session && session.user && ['SIGNED_IN','TOKEN_REFRESHED','USER_UPDATED'].includes(event)) {
+      setCloudConnectionState('connecting', event === 'TOKEN_REFRESHED' ? 'Sesión renovada' : 'Verificando perfil');
+      getOnlineSessionProfile().then(current => {
+        if (current && current.user && current.profile && window.applyOnlineSession) {
+          applyOnlineSession(current.user, current.profile);
+          if (window.renderTopHeader) renderTopHeader();
+          setCloudConnectionState(current.degraded ? 'connecting' : 'online', current.degraded ? 'Perfil en reconexión' : 'Sesión activa');
+        }
+      }).catch(() => {});
+    }
+  });
+  _authObserverSubscription = listener && listener.data && listener.data.subscription;
+}
+
+async function resendSignupConfirmation(email) {
+  try {
+    const sb = await requireClient();
+    const clean = String(email || '').trim().toLowerCase();
+    if (!clean) return { ok: false, message: 'Ingresa el correo utilizado al registrarte.' };
+    const { error } = await sb.auth.resend({
+      type: 'signup',
+      email: clean,
+      options: { emailRedirectTo: appRedirectUrl() }
+    });
+    return error ? { ok: false, message: messageFromError(error) } : { ok: true, message: `Correo de confirmación reenviado a ${clean}.` };
+  } catch (error) { return { ok: false, message: messageFromError(error) }; }
 }
 
 async function upsertCloudProfileForUser(userId, _username, profile = {}) {
@@ -226,6 +307,7 @@ async function signUpEmailAccount(email, password, fullName, extra = {}) {
     const { error: ensureError } = await sb.rpc('ensure_my_profile');
     if (ensureError) return { ok: false, message: messageFromError(ensureError) };
     const profile = await fetchCurrentProfile(data.user.id);
+    if (profile) cacheOnlineProfileV801(data.user.id, profile);
     setCloudConnectionState('online', 'Cuenta creada');
     return { ok: true, user: data.user, profile };
   } catch (error) {
@@ -379,7 +461,11 @@ function mapProductFromCloud(row, repStockMap = null, repPrefsMap = null) {
     unitPriceFixed: Number(row.public_price || 0),
     stock: window.isReseller && isReseller() ? ownStock : centralStock,
     adminStock: centralStock,
-    resellerAcquisitionCost: acquisitionCost || Number(row.reseller_price || 0),
+    resellerAcquisitionCost: acquisitionCost || (AppState.session?.commercialRole === 'field_seller' ? 0 : Number(row.reseller_price || 0)),
+    stockOwnerUserId: stockEntry && stockEntry.stockOwnerUserId || null,
+    stockPointId: stockEntry && stockEntry.stockPointId || null,
+    stockSourceLabel: stockEntry && stockEntry.stockSourceLabel || (window.isReseller && isReseller() ? 'Stock propio' : 'Stock central'),
+    stockReadOnly: !!(stockEntry && stockEntry.readOnly),
     photo: row.photo_url || null,
     status: row.status || 'active',
     syncStatus: 'cloud',
@@ -390,13 +476,29 @@ function mapProductFromCloud(row, repStockMap = null, repPrefsMap = null) {
 async function fetchRepresentativeStockMap() {
   if (!AppState.session || !AppState.session.onlineUserId) return new Map();
   const sb = await requireClient();
+  if (AppState.session.commercialRole === 'field_seller') {
+    const { data, error } = await sb.rpc('nv801_my_sellable_stock');
+    if (error) throw new Error(messageFromError(error));
+    return new Map((data || []).map(row => [row.product_id, {
+      stock: Number(row.quantity || 0),
+      acquisitionCost: 0,
+      stockOwnerUserId: row.stock_owner_user_id || null,
+      stockPointId: row.stock_point_id || null,
+      stockSourceLabel: row.stock_source_label || 'Stock asignado',
+      readOnly: true
+    }]));
+  }
   const { data, error } = await sb.from('representative_stock')
     .select('product_id,stock,acquisition_cost')
     .eq('representative_user_id', AppState.session.onlineUserId);
   if (error) throw new Error(messageFromError(error));
   return new Map((data || []).map(row => [row.product_id, {
     stock: Number(row.stock || 0),
-    acquisitionCost: Number(row.acquisition_cost || 0)
+    acquisitionCost: Number(row.acquisition_cost || 0),
+    stockOwnerUserId: AppState.session.onlineUserId,
+    stockPointId: null,
+    stockSourceLabel: 'Stock propio',
+    readOnly: false
   }]));
 }
 
@@ -408,16 +510,18 @@ async function syncCloudProductsToLocal() {
   let repPrefsMap = null;
   if (window.isReseller && isReseller()) {
     repStockMap = await fetchRepresentativeStockMap();
-    const { data: prefRows, error: prefError } = await sb.from('representative_product_preferences')
-      .select('*').eq('representative_user_id', AppState.session.onlineUserId);
-    if (prefError) return { ok: false, message: messageFromError(prefError) };
-    repPrefsMap = new Map((prefRows || []).map(row => [row.product_id, {
-      resellerAdditionalCost: Number(row.additional_cost || 0),
-      resellerLocalUnitPrice: Number(row.unit_price || 0),
-      resellerLocalWholesalePrice: Number(row.wholesale_price || 0),
-      resellerLocalNote: row.note || '',
-      resellerLocalUpdatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
-    }]));
+    if (AppState.session.commercialRole !== 'field_seller') {
+      const { data: prefRows, error: prefError } = await sb.from('representative_product_preferences')
+        .select('*').eq('representative_user_id', AppState.session.onlineUserId);
+      if (prefError) return { ok: false, message: messageFromError(prefError) };
+      repPrefsMap = new Map((prefRows || []).map(row => [row.product_id, {
+        resellerAdditionalCost: Number(row.additional_cost || 0),
+        resellerLocalUnitPrice: Number(row.unit_price || 0),
+        resellerLocalWholesalePrice: Number(row.wholesale_price || 0),
+        resellerLocalNote: row.note || '',
+        resellerLocalUpdatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+      }]));
+    } else repPrefsMap = new Map();
   }
   const products = (data || []).map(row => mapProductFromCloud(row, repStockMap, repPrefsMap));
   await DB.clear('products');
@@ -556,6 +660,12 @@ function mapSaleFromCloud(row) {
     type: row.sale_type || 'unit',
     total: Number(row.total || 0),
     sellerProfit: Number(row.seller_profit || 0),
+    stockOwnerUserId: row.stock_owner_user_id || payload.stockOwnerUserId || null,
+    ownerUserId: row.stock_owner_user_id || payload.stockOwnerUserId || row.seller_user_id,
+    stockPointId: row.stock_point_id || payload.stockPointId || null,
+    regionName: row.region_name || payload.regionName || '',
+    operationCity: row.operation_city || payload.operationCity || '',
+    linkedSeller: !!payload.linkedSeller,
     date: new Date(row.created_at).getTime(),
     updatedAt: new Date(row.updated_at).getTime(),
     syncStatus: 'cloud'
@@ -589,8 +699,20 @@ async function insertCloudSale(sale) {
       product_id: item.productId,
       qty: Number(item.qty || 0)
     }));
-    const { data, error } = await sb.rpc('register_sale_atomic', {
-      p_sale: sale,
+    const rpcName = AppState.session?.commercialRole === 'field_seller'
+      ? 'nv801_register_linked_sale_atomic'
+      : 'register_sale_atomic';
+    const enrichedSale = AppState.session?.commercialRole === 'field_seller'
+      ? Object.assign({}, sale, {
+          stockOwnerUserId: AppState.session.stockOwnerUserId || null,
+          stockPointId: AppState.session.stockPointId || null,
+          regionName: AppState.session.regionName || '',
+          operationCity: AppState.session.operationCity || AppState.session.city || '',
+          linkedSeller: true
+        })
+      : sale;
+    const { data, error } = await sb.rpc(rpcName, {
+      p_sale: enrichedSale,
       p_items: items
     });
     if (!error) return { ok: true, sale: data };
@@ -962,7 +1084,14 @@ async function refreshAfterEvent(table, payload = null) {
       return;
     }
     else if (['territory_prospects','territory_visits','territory_events'].includes(table)) {
-      if (window.handleTerritoryRealtimeV800) handleTerritoryRealtimeV800(table, payload);
+      if (window.handleTerritoryRealtimeV801) handleTerritoryRealtimeV801(table, payload);
+      else if (window.handleTerritoryRealtimeV800) handleTerritoryRealtimeV800(table, payload);
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
+    else if (['stock_points','stock_point_balances','stock_point_movements','seller_restock_requests'].includes(table)) {
+      if (window.handleLinkedStockRealtimeV801) handleLinkedStockRealtimeV801(table, payload);
+      if (['stock_point_balances','stock_point_movements'].includes(table)) await syncCloudProductsToLocal();
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
@@ -1001,13 +1130,14 @@ function stopRealtimeSubscriptions() {
 }
 
 function startRealtimeSubscriptions() {
+  installAuthObserverV801();
   const sb = getSupabaseClient();
   if (!sb || !requireAuth()) return;
   stopRealtimeSubscriptions();
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
   let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
-  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'delivery_requests', 'representative_regional_profiles', 'regional_restock_requests', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments', 'business_roles', 'territory_prospects', 'territory_visits', 'territory_events'].forEach(table => {
+  ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'delivery_requests', 'representative_regional_profiles', 'regional_restock_requests', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments', 'business_roles', 'territory_prospects', 'territory_visits', 'territory_events', 'stock_points', 'stock_point_balances', 'stock_point_movements', 'seller_restock_requests'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => refreshAfterEvent(table, payload));
   });
   channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async payload => {
@@ -1153,3 +1283,7 @@ Object.assign(window, {
   createPreSyncLocalSnapshot,
   openSafeCloudSyncSheet
 });
+
+window.resendSignupConfirmation = resendSignupConfirmation;
+window.installAuthObserverV801 = installAuthObserverV801;
+window.readCachedOnlineProfileV801 = readCachedOnlineProfileV801;

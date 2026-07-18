@@ -30,9 +30,9 @@ const ROLE_DEFINITIONS_V800 = {
     permissions: ['products:read','catalog:use','clients:manage','quotes:manage','sales:create','receivables:manage','orders:create','inventory:own','routes:own','territory:manage','own_reports:read']
   },
   field_seller: {
-    name: 'Vendedor de campo', short: 'Vendedor', level: 40,
-    summary: 'Registra prospectos, visitas, clientes y ventas en su territorio.',
-    permissions: ['products:read','catalog:use','clients:manage','quotes:manage','sales:create','territory:manage','tasks:own','own_reports:read']
+    name: 'Vendedor vinculado', short: 'Vendedor', level: 40,
+    summary: 'Vende con el stock de un responsable asignado, sin comprar inventario ni modificarlo.',
+    permissions: ['products:read','catalog:use','clients:manage','quotes:manage','sales:create','inventory:delegated_read','restock:request','territory:manage','tasks:own','own_reports:read']
   },
   delivery: {
     name: 'Repartidor', short: 'Reparto', level: 35,
@@ -114,6 +114,11 @@ function applyOnlineSession(user, profile) {
     regionName: profile.region_name || profile.city || '',
     managerUserId: profile.manager_user_id || null,
     supplierUserId: profile.supplier_user_id || null,
+    stockOwnerUserId: profile.stock_owner_user_id || null,
+    stockPointId: profile.stock_point_id || null,
+    operationCity: profile.operation_city || profile.city || '',
+    sellerCanCollect: !!profile.seller_can_collect,
+    sessionDegraded: !!profile.__degraded,
     roleNote: profile.role_note || '',
     statusCanonical,
     pendingApproval: statusCanonical === 'pendiente',
@@ -128,14 +133,19 @@ function clearSession() {
 
 async function restoreSession() {
   try {
-    if (!window.isOnlineConfigured || !isOnlineConfigured()) return false;
-    const online = await getOnlineSessionProfile().catch(() => null);
-    if (online && online.user && online.profile) {
-      applyOnlineSession(online.user, online.profile);
-      return true;
+    if (!window.isOnlineConfigured || !isOnlineConfigured()) return { status: 'signed_out' };
+    if (window.installAuthObserverV801) installAuthObserverV801();
+    const online = await getOnlineSessionProfile().catch(error => ({ status: 'profile_unavailable', reason: error?.message }));
+    if (!online || !online.user) return { status: online?.status === 'session_error' ? 'recovering' : 'signed_out', reason: online?.reason || '' };
+    if (online.profile) {
+      const profile = Object.assign({}, online.profile, { __degraded: !!online.degraded });
+      applyOnlineSession(online.user, profile);
+      return { status: online.degraded ? 'recovering' : 'ready', user: online.user, profile };
     }
-    return false;
-  } catch (_) { return false; }
+    // Existe sesión auténtica, pero todavía no se recuperó la ficha. No se
+    // reemplaza la pantalla por el acceso ni se solicita nuevamente contraseña.
+    return { status: 'recovering', user: online.user, reason: online.reason || 'Perfil en reconexión' };
+  } catch (error) { return { status: 'recovering', reason: error?.message || 'Reconectando' }; }
 }
 
 async function clearTransientSessionData() {
@@ -203,6 +213,8 @@ function canUseWorkforceV800() {
 function canHoldStockV800() {
   return isAdmin() || hasCommercialRoleV800('regional_admin','regional_advanced','commercial_representative');
 }
+function isLinkedSellerV801() { return hasCommercialRoleV800('field_seller'); }
+function canReadAssignedStockV801() { return canHoldStockV800() || hasPermission('inventory:delegated_read'); }
 
 function canOperate() {
   return !!(AppState.session && AppState.session.isAuthenticated &&
@@ -235,7 +247,7 @@ async function registerNewAccount({ fullName, email, phone, city, password } = {
 
   if (!res.ok) return res;
   if (res.needsEmailConfirmation) {
-    return { ok: true, needsEmailConfirmation: true,
+    return { ok: true, needsEmailConfirmation: true, email: cleanEmail,
       message: 'Cuenta creada. Revisa tu Gmail para confirmar antes de iniciar sesión.' };
   }
   applyOnlineSession(res.user, res.profile);
@@ -297,6 +309,11 @@ window.requireAuth = requireAuth;
 window.isAdmin = isAdmin;
 window.isReseller = isReseller;
 window.canOperate = canOperate;
+window.isLinkedSellerV801 = isLinkedSellerV801;
+window.canReadAssignedStockV801 = canReadAssignedStockV801;
+window.canHoldStockV800 = canHoldStockV800;
+window.canManageTeamV800 = canManageTeamV800;
+window.hasCommercialRoleV800 = hasCommercialRoleV800;
 window.isGmailAddress = isGmailAddress;
 window.registerNewAccount = registerNewAccount;
 window.loginWithEmail = loginWithEmail;

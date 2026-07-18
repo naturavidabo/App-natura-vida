@@ -18,13 +18,9 @@ function updateCloudStatusBadge(status) {
 
 function renderTopHeader() {
   $('#bizName').textContent = AppState.settings.businessName || 'NATURA VIDA';
-  $('#bizLogo').innerHTML = AppState.settings.logo ? `<img src="${AppState.settings.logo}" alt="">` : '🌿';
+  $('#bizLogo').innerHTML = AppState.settings.logo ? `<img src="${AppState.settings.logo}" alt="Logotipo Natura Vida">` : '<img src="img/brand/natura-vida-logo.jpeg" alt="Logotipo Natura Vida">';
   const subtitle = document.querySelector('header.top .bizsub');
-  if (subtitle) {
-    subtitle.textContent = requireAuth()
-      ? `${AppState.session.fullName || AppState.session.username} · ${AppState.session.roleName}`
-      : (AppState.settings.businessModel || 'Administrador → Representantes → Clientes');
-  }
+  if (subtitle) subtitle.textContent = 'Te cuida por dentro y por fuera';
   if (window.installInboxButton) {
     installInboxButton();
     refreshInboxBadge({ silent: true }).catch(() => {});
@@ -51,110 +47,143 @@ function icon(name) {
   return icons[name] || '';
 }
 
-function renderLoginScreen() {
+
+const NV801_PENDING_CONFIRMATION_KEY = 'nv801_pending_email_confirmation';
+function savePendingEmailConfirmationV801(email) {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean) return;
+  try { localStorage.setItem(NV801_PENDING_CONFIRMATION_KEY, JSON.stringify({ email: clean, createdAt: Date.now() })); } catch (_) {}
+}
+function readPendingEmailConfirmationV801() {
+  try { return JSON.parse(localStorage.getItem(NV801_PENDING_CONFIRMATION_KEY) || 'null'); } catch (_) { return null; }
+}
+function clearPendingEmailConfirmationV801() { try { localStorage.removeItem(NV801_PENDING_CONFIRMATION_KEY); } catch (_) {} }
+
+function renderEmailConfirmationScreenV801(email) {
+  const clean = String(email || readPendingEmailConfirmationV801()?.email || '').trim().toLowerCase();
+  if (clean) savePendingEmailConfirmationV801(clean);
   $('#bottomNav').innerHTML = '';
   $('#fabAdd').classList.add('hidden');
-  // V6.7: pantalla unica con tres modos. Flujo legacy (usuario/telefono) ELIMINADO.
+  $('#mainArea').innerHTML = `<section class="loginShell nv801ConfirmShell"><div class="loginCard nv801ConfirmCard">
+    <div class="nv801MailSeal"><span>✉</span></div>
+    <span class="v7Eyebrow">Cuenta creada correctamente</span>
+    <h2>Confirma tu correo</h2>
+    <p class="nv801ConfirmLead">Enviamos el enlace de verificación a:</p>
+    <strong class="nv801ConfirmEmail">${escapeHtml(clean || 'tu correo Gmail')}</strong>
+    <div class="nv801ConfirmSteps"><span><b>1</b>Abre Gmail y busca el mensaje de Natura Vida.</span><span><b>2</b>Revisa también Spam y Promociones.</span><span><b>3</b>Confirma el enlace y vuelve a iniciar sesión.</span></div>
+    <button class="btn block nv801GmailBtn" id="openGmailV801">Abrir Gmail</button>
+    <button class="btn outline block" id="resendConfirmV801">Reenviar confirmación</button>
+    <small id="resendStatusV801" class="nv801ResendStatus">Podrás solicitar un nuevo correo si el anterior no llegó.</small>
+    <div class="loginLinks"><button class="secondaryActionBtn" id="confirmedV801">Ya confirmé · Iniciar sesión</button><button class="secondaryActionBtn subtle" id="changeEmailV801">Cambiar correo</button></div>
+  </div></section>`;
+  $('#openGmailV801')?.addEventListener('click', () => window.open('https://mail.google.com/mail/u/0/#inbox', '_blank', 'noopener'));
+  $('#confirmedV801')?.addEventListener('click', () => { clearPendingEmailConfirmationV801(); renderLoginScreen({ email: clean }); });
+  $('#changeEmailV801')?.addEventListener('click', () => { clearPendingEmailConfirmationV801(); renderLoginScreen({ mode: 'register', email: clean }); });
+  const resend = $('#resendConfirmV801');
+  const status = $('#resendStatusV801');
+  let seconds = 0; let timer = null;
+  const tick = () => {
+    if (seconds <= 0) { resend.disabled = false; resend.textContent = 'Reenviar confirmación'; clearInterval(timer); timer = null; return; }
+    resend.disabled = true; resend.textContent = `Reenviar en ${seconds}s`; seconds -= 1;
+  };
+  resend?.addEventListener('click', async () => {
+    if (!clean) return showToast('No se encontró el correo del registro.', 'error');
+    resend.disabled = true; resend.textContent = 'Enviando…';
+    const result = window.resendSignupConfirmation ? await resendSignupConfirmation(clean) : { ok: false, message: 'La función de reenvío no está disponible.' };
+    status.textContent = result.message || (result.ok ? 'Correo reenviado.' : 'No se pudo reenviar.');
+    status.classList.toggle('error', !result.ok);
+    if (!result.ok) { resend.disabled = false; resend.textContent = 'Reintentar reenvío'; return; }
+    seconds = 59; tick(); timer = setInterval(tick, 1000);
+  });
+}
+
+function renderSessionRecoveryScreenV801(details = {}) {
+  $('#bottomNav').innerHTML = '';
+  $('#fabAdd').classList.add('hidden');
+  $('#mainArea').innerHTML = `<section class="loginShell"><div class="loginCard nv801RecoveryCard">
+    <div class="nv801ReconnectOrb"><span></span></div><h2>Restaurando tu sesión</h2>
+    <p>No necesitas volver a escribir tu contraseña. Natura Vida conserva la sesión mientras recupera tu perfil y la conexión con Supabase.</p>
+    <small id="sessionRecoveryDetailV801">${escapeHtml(details.reason || 'Reconectando de forma segura…')}</small>
+    <button class="btn block" id="retrySessionV801">Reintentar ahora</button>
+    <button class="btn outline block" id="explicitLoginV801">Usar otra cuenta</button>
+  </div></section>`;
+  $('#retrySessionV801')?.addEventListener('click', async () => {
+    const btn=$('#retrySessionV801'); btn.disabled=true; btn.textContent='Reconectando…';
+    const restored=await restoreSession();
+    if ((restored?.status==='ready' || restored?.status==='recovering') && requireAuth()) {
+      await afterLoginSuccess({ok:true,pendingApproval:AppState.session?.pendingApproval});
+      return;
+    }
+    btn.disabled=false; btn.textContent='Reintentar ahora';
+    $('#sessionRecoveryDetailV801').textContent=restored?.reason || 'La conexión todavía no está disponible.';
+  });
+  $('#explicitLoginV801')?.addEventListener('click', async () => {
+    if (window.onlineSignOut) await onlineSignOut().catch(()=>{});
+    clearSession(); renderLoginScreen();
+  });
+}
+
+function renderLoginScreen(options = {}) {
+  $('#bottomNav').innerHTML = '';
+  $('#fabAdd').classList.add('hidden');
   function showMode(mode) {
+    const prefillEmail = String(options.email || readPendingEmailConfirmationV801()?.email || '');
     $('#mainArea').innerHTML = `
       <section class="loginShell">
         <div class="loginCard">
-          <div class="loginBrand">
-            <h1>Natura Vida</h1>
-          </div>
+          <div class="loginBrand"><h1>Natura Vida</h1><small>Te cuida por dentro y por fuera</small></div>
           ${mode === 'login' ? `
             <h2>Iniciar sesión</h2>
             <form id="loginForm" class="loginForm" autocomplete="on">
-              <div class="field"><label>Correo Gmail</label>
-                <input type="email" id="lEmail" autocomplete="email" inputmode="email" placeholder="tucorreo@gmail.com" required></div>
-              <div class="field"><label>Contraseña</label>
-                <input type="password" id="lPass" autocomplete="current-password" placeholder="Contraseña" required></div>
+              <div class="field"><label>Correo Gmail</label><input type="email" id="lEmail" autocomplete="email" inputmode="email" placeholder="tucorreo@gmail.com" value="${escapeHtml(prefillEmail)}" required></div>
+              <div class="field"><label>Contraseña</label><input type="password" id="lPass" autocomplete="current-password" placeholder="Contraseña" required></div>
               <button class="btn block" type="submit">Entrar</button>
             </form>
-            <div class="loginLinks">
-              <button class="secondaryActionBtn" id="goRegister">Crear cuenta nueva</button>
-              <button class="secondaryActionBtn subtle" id="goRecover">Olvidé mi contraseña</button>
-            </div>
+            <div class="loginLinks"><button class="secondaryActionBtn" id="goRegister">Crear cuenta nueva</button><button class="secondaryActionBtn subtle" id="goRecover">Olvidé mi contraseña</button></div>
           ` : mode === 'register' ? `
             <h2>Crear cuenta</h2>
             <form id="regForm" class="loginForm" autocomplete="on">
-              <div class="field"><label>Nombre completo</label>
-                <input type="text" id="rName" autocomplete="name" placeholder="Tu nombre completo" required></div>
-              <div class="field"><label>Correo Gmail</label>
-                <input type="email" id="rEmail" autocomplete="email" inputmode="email" placeholder="tucorreo@gmail.com" required></div>
-              <div class="field"><label>Celular</label>
-                <input type="tel" id="rPhone" autocomplete="tel" inputmode="numeric" placeholder="Ej.: 70700000" required></div>
-              <div class="field"><label>Ciudad</label>
-                <input type="text" id="rCity" placeholder="Ej.: La Paz, Santa Cruz" required></div>
-              <div class="field"><label>Contraseña</label>
-                <input type="password" id="rPass" autocomplete="new-password" placeholder="Mínimo 6 caracteres" required minlength="6"></div>
-              <p class="loginHint">El administrador se reconoce por el correo principal configurado en Supabase. Los demás usuarios quedan pendientes de aprobación.</p>
+              <div class="field"><label>Nombre completo</label><input type="text" id="rName" autocomplete="name" placeholder="Tu nombre completo" required></div>
+              <div class="field"><label>Correo Gmail</label><input type="email" id="rEmail" autocomplete="email" inputmode="email" placeholder="tucorreo@gmail.com" value="${escapeHtml(prefillEmail)}" required></div>
+              <div class="field"><label>Celular</label><input type="tel" id="rPhone" autocomplete="tel" inputmode="numeric" placeholder="Ej.: 70700000" required></div>
+              <div class="field"><label>Ciudad</label><input type="text" id="rCity" placeholder="Ej.: La Paz, Santa Cruz" required></div>
+              <div class="field"><label>Contraseña</label><input type="password" id="rPass" autocomplete="new-password" placeholder="Mínimo 6 caracteres" required minlength="6"></div>
+              <p class="loginHint">Después de crear la cuenta deberás confirmar el enlace enviado a tu Gmail. Luego el administrador asignará tu función.</p>
               <button class="btn block" type="submit">Crear cuenta</button>
             </form>
-            <div class="loginLinks">
-              <button class="secondaryActionBtn" id="goLogin">Ya tengo cuenta</button>
-            </div>
+            <div class="loginLinks"><button class="secondaryActionBtn" id="goLogin">Ya tengo cuenta</button></div>
           ` : `
-            <h2>Recuperar acceso</h2>
-            <p class="loginHint">Te enviaremos un enlace a tu Gmail para restablecer tu contraseña.</p>
-            <form id="recoverForm" class="loginForm">
-              <div class="field"><label>Correo Gmail</label>
-                <input type="email" id="recEmail" inputmode="email" placeholder="tucorreo@gmail.com" required></div>
-              <button class="btn block" type="submit">Enviar enlace</button>
-            </form>
-            <div class="loginLinks">
-              <button class="secondaryActionBtn" id="goLogin">Volver a iniciar sesión</button>
-            </div>
+            <h2>Recuperar acceso</h2><p class="loginHint">Te enviaremos un enlace a tu Gmail para restablecer tu contraseña.</p>
+            <form id="recoverForm" class="loginForm"><div class="field"><label>Correo Gmail</label><input type="email" id="recEmail" inputmode="email" placeholder="tucorreo@gmail.com" value="${escapeHtml(prefillEmail)}" required></div><button class="btn block" type="submit">Enviar enlace</button></form>
+            <div class="loginLinks"><button class="secondaryActionBtn" id="goLogin">Volver a iniciar sesión</button></div>
           `}
         </div>
-      </section>
-    `;
-    $('#goLogin') && $('#goLogin').addEventListener('click', () => showMode('login'));
-    $('#goRegister') && $('#goRegister').addEventListener('click', () => showMode('register'));
-    $('#goRecover') && $('#goRecover').addEventListener('click', () => showMode('recover'));
-
-    if (mode === 'login') {
-      $('#loginForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('button[type=submit]');
-        btn.disabled = true; btn.textContent = 'Ingresando...';
-        const result = await loginWithEmail($('#lEmail').value.trim(), $('#lPass').value);
-        btn.disabled = false; btn.textContent = 'Entrar';
-        if (!result.ok) { showToast(result.message || 'No se pudo iniciar sesion.', 'error'); return; }
-        await afterLoginSuccess(result);
-      });
-    }
-    if (mode === 'register') {
-      $('#regForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('button[type=submit]');
-        btn.disabled = true; btn.textContent = 'Creando cuenta...';
-        const result = await registerNewAccount({
-          fullName: $('#rName').value.trim(),
-          email: $('#rEmail').value.trim(),
-          phone: $('#rPhone').value.trim(),
-          city: $('#rCity').value.trim(),
-          password: $('#rPass').value
-        });
-        btn.disabled = false; btn.textContent = 'Crear cuenta';
-        if (!result.ok) { showToast(result.message || 'No se pudo crear la cuenta.', 'error'); return; }
-        if (result.needsEmailConfirmation) { showToast(result.message); showMode('login'); return; }
-        await afterLoginSuccess(result);
-      });
-    }
-    if (mode === 'recover') {
-      $('#recoverForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('button[type=submit]');
-        btn.disabled = true; btn.textContent = 'Enviando...';
-        const result = await requestPasswordRecovery($('#recEmail').value.trim());
-        btn.disabled = false; btn.textContent = 'Enviar enlace';
-        showToast(result.message, result.ok ? undefined : 'error');
-        if (result.ok) showMode('login');
-      });
-    }
+      </section>`;
+    $('#goLogin')?.addEventListener('click', () => showMode('login'));
+    $('#goRegister')?.addEventListener('click', () => showMode('register'));
+    $('#goRecover')?.addEventListener('click', () => showMode('recover'));
+    if (mode === 'login') $('#loginForm').addEventListener('submit', async e => {
+      e.preventDefault(); const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='Ingresando…';
+      const attemptedEmail=$('#lEmail').value.trim(); const result=await loginWithEmail(attemptedEmail,$('#lPass').value); btn.disabled=false; btn.textContent='Entrar';
+      if (!result.ok) {
+        if (/confirma|confirm/i.test(String(result.message||''))) { savePendingEmailConfirmationV801(attemptedEmail); renderEmailConfirmationScreenV801(attemptedEmail); return; }
+        showToast(result.message||'No se pudo iniciar sesión.','error'); return;
+      }
+      clearPendingEmailConfirmationV801(); await afterLoginSuccess(result);
+    });
+    if (mode === 'register') $('#regForm').addEventListener('submit', async e => {
+      e.preventDefault(); const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='Creando cuenta…';
+      const result=await registerNewAccount({fullName:$('#rName').value.trim(),email:$('#rEmail').value.trim(),phone:$('#rPhone').value.trim(),city:$('#rCity').value.trim(),password:$('#rPass').value});
+      btn.disabled=false; btn.textContent='Crear cuenta'; if(!result.ok){showToast(result.message||'No se pudo crear la cuenta.','error');return;}
+      if(result.needsEmailConfirmation){const email=result.email||$('#rEmail').value.trim();savePendingEmailConfirmationV801(email);renderEmailConfirmationScreenV801(email);return;}
+      await afterLoginSuccess(result);
+    });
+    if (mode === 'recover') $('#recoverForm').addEventListener('submit', async e => {
+      e.preventDefault(); const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='Enviando…';
+      const result=await requestPasswordRecovery($('#recEmail').value.trim()); btn.disabled=false; btn.textContent='Enviar enlace'; showToast(result.message,result.ok?undefined:'error'); if(result.ok)showMode('login');
+    });
   }
-  showMode('login');
+  showMode(options.mode || 'login');
 }
 
 function isPasswordRecoveryRedirect() {
@@ -311,13 +340,13 @@ function render() {
 }
 
 function getTodaySales() {
-  return AppState.sales.filter(s => (!sellerMode || !sellerMode() || s.sellerId === AppState.session.userId) && fmtDate(s.date) === fmtDate(Date.now()));
+  return AppState.sales.filter(s => (window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (!sellerMode || !sellerMode() || s.sellerId === AppState.session.userId)) && fmtDate(s.date) === fmtDate(Date.now()));
 }
 
 function getMonthSales() {
   const now = new Date();
   return AppState.sales.filter(s => {
-    if (sellerMode && sellerMode() && s.sellerId !== AppState.session.userId) return false;
+    if (window.saleVisibleToCurrentBusinessV801 ? !saleVisibleToCurrentBusinessV801(s) : (sellerMode && sellerMode() && s.sellerId !== AppState.session.userId)) return false;
     const d = new Date(s.date);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
@@ -338,7 +367,7 @@ function saleProfit(sale) {
 
 function topProducts(limit = 4) {
   const map = new Map();
-  AppState.sales.filter(s => !sellerMode || !sellerMode() || s.sellerId === AppState.session.userId).forEach(sale => {
+  AppState.sales.filter(s => window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (!sellerMode || !sellerMode() || s.sellerId === AppState.session.userId)).forEach(sale => {
     (sale.items || []).forEach(item => {
       const current = map.get(item.productId) || { name: item.productName, qty: 0, total: 0 };
       current.qty += Number(item.qty) || 0;
@@ -486,7 +515,7 @@ function renderResumen() {
   $('#fabAdd').classList.add('hidden');
   const main = $('#mainArea');
   const metrics = productMetrics();
-  const visibleSales = AppState.sales.filter(s => !sellerMode || !sellerMode() || s.sellerId === AppState.session.userId);
+  const visibleSales = AppState.sales.filter(s => window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (!sellerMode || !sellerMode() || s.sellerId === AppState.session.userId));
   const totalVendidoMonto = visibleSales.reduce((s, v) => s + (Number(v.total) || 0), 0);
   const ganancia = visibleSales.reduce((s, v) => s + saleProfit(v), 0);
 
@@ -647,19 +676,24 @@ async function initApp() {
     renderPasswordResetScreen();
     return;
   }
-  const sessionOk = await restoreSession();
-  if (sessionOk && requireAuth()) {
+  const restored = await restoreSession();
+  if ((restored?.status === 'ready' || restored?.status === 'recovering') && requireAuth()) {
     if (AppState.session && AppState.session.pendingApproval) {
       await afterLoginSuccess({ ok: true, pendingApproval: true });
     } else {
       renderBottomNav();
-      if (window.syncAfterLogin) await syncAfterLogin().catch(() => {});
+      if (window.syncAfterLogin && navigator.onLine) await syncAfterLogin().catch(() => {});
       await loadAllState();
       if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
       render();
+      if (restored.status === 'recovering') setCloudConnectionState('connecting', 'Sesión conservada · perfil en reconexión');
     }
+  } else if (restored?.status === 'recovering') {
+    renderSessionRecoveryScreenV801(restored);
   } else {
-    renderLoginScreen();
+    const pending = readPendingEmailConfirmationV801();
+    if (pending?.email) renderEmailConfirmationScreenV801(pending.email);
+    else renderLoginScreen();
   }
 
   $('#brandClickArea') && $('#brandClickArea').addEventListener('click', () => {
@@ -681,4 +715,7 @@ window.renderTopHeader = renderTopHeader;
 window.renderBottomNav = renderBottomNav;
 window.afterLoginSuccess = afterLoginSuccess;
 window.renderUsersFoundation = renderUsersFoundation;
+window.renderLoginScreen = renderLoginScreen;
+window.renderEmailConfirmationScreenV801 = renderEmailConfirmationScreenV801;
+window.renderSessionRecoveryScreenV801 = renderSessionRecoveryScreenV801;
 document.addEventListener('DOMContentLoaded', initApp);

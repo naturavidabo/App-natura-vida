@@ -1,7 +1,7 @@
 {
-  "name": "NATURA VIDA V8.0.0 XD — Núcleo Modular y Territorio",
+  "name": "NATURA VIDA V8.0.1 XD — Acceso confiable, vendedores vinculados y mapa estable",
   "short_name": "NaturaVida",
-  "description": "Gestión modular Natura Vida con roles funcionales, jerarquía regional, territorio, prospectos, visitas, mapas, ventas, stock, rutas y Supabase Realtime.",
+  "description": "Gestión modular Natura Vida con sesión confiable, confirmación de correo, vendedores vinculados, stock en custodia, ventas delegadas, territorio, mapas operables y Supabase Realtime estable.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

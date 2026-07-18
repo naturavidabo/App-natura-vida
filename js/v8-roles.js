@@ -1,4 +1,4 @@
-/* NATURA VIDA V8.0.0 XD — administración de roles y estructura funcional. */
+/* NATURA VIDA V8.0.1 — administración de roles y estructura funcional. */
 (() => {
   const esc = value => escapeHtml(String(value ?? ''));
   const currentUserId = () => AppState.session?.onlineUserId || AppState.session?.userId || '';
@@ -16,6 +16,7 @@
     const role = roleCatalogItemV800(profile.commercial_role);
     const manager = profileNameV800(profile.manager_user_id) || (profile.commercial_role === 'central_admin' ? 'No aplica' : 'Administración central');
     const supplier = profileNameV800(profile.supplier_user_id) || (profile.commercial_role === 'central_admin' ? 'No aplica' : 'Stock central Natura Vida');
+    const stockOwner = profileNameV800(profile.stock_owner_user_id) || (profile.commercial_role === 'field_seller' ? 'Pendiente de asignación' : 'No aplica');
     const self = profile.id === currentUserId();
     const canEdit = canOpenRolesV800() && !self && (isAdmin() || profile.manager_user_id === currentUserId());
     return `<article class="v800UserRoleCard" data-user-id="${esc(profile.id)}">
@@ -26,16 +27,16 @@
       </div>
       <div class="v800AssignedRole"><small>Función actual</small><strong>${esc(role.roleName)}</strong><p>${esc(role.summary)}</p></div>
       <div class="v800RolePills">${roleCapabilityPillsV800(profile.commercial_role)}</div>
-      <dl class="v800MiniMeta"><div><dt>Región</dt><dd>${esc(profile.region_name || 'Sin definir')}</dd></div><div><dt>Responsable</dt><dd>${esc(manager)}</dd></div><div><dt>Proveedor</dt><dd>${esc(supplier)}</dd></div></dl>
+      <dl class="v800MiniMeta"><div><dt>Región</dt><dd>${esc(profile.region_name || 'Sin definir')}</dd></div><div><dt>Responsable</dt><dd>${esc(manager)}</dd></div><div><dt>Proveedor</dt><dd>${esc(supplier)}</dd></div>${profile.commercial_role==='field_seller'?`<div><dt>Stock de</dt><dd>${esc(stockOwner)}</dd></div><div><dt>Punto</dt><dd>${esc(profile.stock_point_id||'Stock general')}</dd></div>`:''}</dl>
       ${profile.role_note ? `<div class="v800RoleNote">${esc(profile.role_note)}</div>` : ''}
       ${canEdit ? `<button class="btn block assignRoleV800" data-id="${esc(profile.id)}">Asignar función y alcance</button>` : ''}
     </article>`;
   }
 
-  async function renderRolesStructureV800() {
+  async function renderRolesStructureV800(options = {}) {
     $('#fabAdd').classList.add('hidden');
     const main = $('#mainArea');
-    if (!(AppState.roleCatalog || []).length || !(AppState.manageableProfiles || []).length) {
+    if (!options.quiet && (!(AppState.roleCatalog || []).length || !(AppState.manageableProfiles || []).length)) {
       main.innerHTML = '<div class="loading">Cargando estructura funcional…</div>';
     }
     const result = await syncV8ContextV800();
@@ -76,7 +77,8 @@
     return `<option value="">Administración / stock central</option>${candidates.map(profile => `<option value="${esc(profile.id)}" ${profile.id===selectedId?'selected':''}>${esc(profile.full_name||profile.email)} · ${esc(roleShortNameV800(profile.commercial_role))}</option>`).join('')}`;
   }
 
-  function openRoleAssignmentV800(userId) {
+  async function openRoleAssignmentV800(userId) {
+    if (window.fetchLinkedStockContextV801) await fetchLinkedStockContextV801().catch(()=>({ok:false}));
     const profile = (AppState.manageableProfiles || []).find(row => row.id === userId);
     if (!profile) return showToast('No se encontró el perfil.', 'error');
     const roles = allowedRolesForCurrentUserV800();
@@ -87,7 +89,12 @@
       <div id="v800RolePreview"></div>
       <div class="field"><label>Región o zona</label><input id="v800Region" value="${esc(profile.region_name||profile.city||'')}" placeholder="Ej.: La Paz Metropolitana"></div>
       <div class="field"><label>Responsable directo</label><select id="v800Manager">${profileOptionsV800(profile.manager_user_id,userId,true)}</select></div>
-      <div class="field"><label>Proveedor habitual</label><select id="v800Supplier">${supplierOptionsV800(profile.supplier_user_id,userId)}</select><small class="v800FieldHelp">En V8.0.0 el abastecimiento oficial continúa en la administración central. La región y el responsable quedan registrados sin arriesgar transferencias de stock todavía.</small></div>
+      <div class="field"><label>Proveedor habitual</label><select id="v800Supplier">${supplierOptionsV800(profile.supplier_user_id,userId)}</select><small class="v800FieldHelp">Para representantes identifica quién los abastece. El vendedor vinculado no compra: usa el propietario de stock definido abajo.</small></div>
+      <div id="v801LinkedSellerFields" class="v801LinkedSellerFields">
+        <div class="field"><label>Propietario del stock de trabajo</label><select id="v801StockOwner">${window.ownerOptionsV801?ownerOptionsV801(profile.stock_owner_user_id||profile.manager_user_id||''):''}</select></div>
+        <div class="field"><label>Punto de venta o custodia</label><select id="v801StockPoint">${window.pointOptionsV801?pointOptionsV801(profile.stock_owner_user_id||profile.manager_user_id||'',profile.stock_point_id||''):'<option value="">Stock general del responsable</option>'}</select><small class="v800FieldHelp">Si se selecciona un punto, las ventas descuentan únicamente lo dejado físicamente allí.</small></div>
+        <div class="field-row"><div class="field"><label>Ciudad de operación</label><input id="v801OperationCity" value="${esc(profile.operation_city||profile.city||'')}"></div><div class="field"><label>Cobranzas</label><select id="v801SellerCollect"><option value="0" ${!profile.seller_can_collect?'selected':''}>No autorizadas</option><option value="1" ${profile.seller_can_collect?'selected':''}>Autorizadas</option></select></div></div>
+      </div>
       <div class="field"><label>Observación de la función</label><textarea id="v800RoleNote" rows="3" placeholder="Alcance especial, etapa de prueba o responsabilidad concreta">${esc(profile.role_note||'')}</textarea></div>
       <div class="v800HistoryNotice"><strong>El cambio no crea otra cuenta.</strong><span>Conserva ventas, clientes, stock, rutas, cobranzas, actividad territorial y auditoría.</span></div>
       <button class="btn block" id="saveRoleV800">Guardar función y alcance</button>
@@ -95,6 +102,8 @@
       const renderPreview = () => {
         const role = roleCatalogItemV800($('#v800RoleSelect',overlay).value);
         $('#v800RolePreview',overlay).innerHTML = `<div class="v800RolePreview"><strong>${esc(role.roleName)}</strong><p>${esc(role.summary)}</p><div class="v800RolePills">${roleCapabilityPillsV800(role.roleCode)}</div>${role.tools?.length ? `<small>Herramientas: ${esc(role.tools.join(' · '))}</small>` : ''}</div>`;
+        const linkedFields=$('#v801LinkedSellerFields',overlay);
+        if(linkedFields)linkedFields.classList.toggle('hidden',role.roleCode!=='field_seller');
         if (!isAdmin()) {
           $('#v800Manager',overlay).value = currentUserId();
           $('#v800Manager',overlay).disabled = true;
@@ -104,18 +113,24 @@
       };
       renderPreview();
       $('#v800RoleSelect',overlay).addEventListener('change',renderPreview);
+      $('#v801StockOwner',overlay)?.addEventListener('change',e=>{if($('#v801StockPoint',overlay)&&window.pointOptionsV801)$('#v801StockPoint',overlay).innerHTML=pointOptionsV801(e.target.value,'');});
       $('#closeSheet',overlay).addEventListener('click',close);
       $('#saveRoleV800',overlay).addEventListener('click',async()=>{
         const btn=$('#saveRoleV800',overlay); btn.disabled=true; btn.textContent='Guardando función…';
         try {
           const sb=await requireClient();
-          const { data,error }=await sb.rpc('nv800_assign_user_role',{
+          const selectedRole=$('#v800RoleSelect',overlay).value;
+          const { data,error }=await sb.rpc('nv801_assign_user_role',{
             p_user_id:userId,
-            p_commercial_role:$('#v800RoleSelect',overlay).value,
+            p_commercial_role:selectedRole,
             p_region_name:$('#v800Region',overlay).value.trim(),
             p_manager_user_id:$('#v800Manager',overlay).value || null,
             p_supplier_user_id:$('#v800Supplier',overlay).value || null,
-            p_role_note:$('#v800RoleNote',overlay).value.trim()
+            p_role_note:$('#v800RoleNote',overlay).value.trim(),
+            p_stock_owner_user_id:selectedRole==='field_seller'?($('#v801StockOwner',overlay)?.value||null):null,
+            p_stock_point_id:selectedRole==='field_seller'?($('#v801StockPoint',overlay)?.value||null):null,
+            p_operation_city:$('#v801OperationCity',overlay)?.value.trim()||$('#v800Region',overlay).value.trim(),
+            p_seller_can_collect:selectedRole==='field_seller'&&$('#v801SellerCollect',overlay)?.value==='1'
           });
           if(error) throw error;
           close(); showToast('Función y alcance actualizados.');
@@ -127,5 +142,6 @@
     });
   }
 
-  Object.assign(window,{ renderRolesStructureV800,openRoleAssignmentV800 });
+  function patchRolesStructureV801(){ if(AppState.currentTab==='roles-estructura'&&!window.V7_FORM_DIRTY) renderRolesStructureV800({quiet:true}); }
+  Object.assign(window,{ renderRolesStructureV800,patchRolesStructureV801,openRoleAssignmentV800 });
 })();

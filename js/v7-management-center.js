@@ -29,7 +29,8 @@
       { id: 'grupos', category: 'comercial', icon: '🎯', title: isAdminUser ? 'Grupos de precios centrales' : 'Mis grupos de precio', subtitle: isAdminUser ? 'Reglas para ventas y abastecimiento' : 'Reglas propias para tus clientes', tab: 'grupos', permission: 'sales:create' },
       { id: 'usuarios', category: 'comercial', icon: '🤝', title: 'Representantes', subtitle: 'Aprobación, condiciones y seguimiento', tab: 'usuarios', adminOnly: true },
 
-      { id: 'inventario', category: 'operaciones', icon: '📦', title: isAdminUser ? 'Inventario central' : 'Mi inventario', subtitle: 'Stock, movimientos y productos', tab: 'inventario', anyPermissions: ['inventory:own','inventory:operate'] },
+      { id: 'inventario', category: 'operaciones', icon: '📦', title: isAdminUser ? 'Inventario central' : (AppState.session?.commercialRole==='field_seller'?'Stock asignado':'Mi inventario'), subtitle: AppState.session?.commercialRole==='field_seller'?'Consulta en solo lectura del stock que puedes vender':'Stock, movimientos y productos', tab: 'inventario', anyPermissions: ['inventory:own','inventory:operate','inventory:delegated_read'] },
+      { id: 'puntos-stock', category: 'operaciones', icon: '📍', title: AppState.session?.commercialRole==='field_seller'?'Mi stock de trabajo':'Puntos de venta y custodia', subtitle: AppState.session?.commercialRole==='field_seller'?'Stock asignado y solicitudes de reposición':'Producto delegado a vendedores sin generar compra ni deuda', tab: 'puntos-stock', customVisible: () => AppState.session?.commercialRole==='field_seller' || isAdminUser || (window.canHoldStockV800&&canHoldStockV800()) || (window.canManageTeamV800&&canManageTeamV800()) },
       { id: 'regional', category: 'operaciones', icon: '🧭', title: isAdminUser ? 'Gestión regional' : 'Mi región comercial', subtitle: isAdminUser ? 'Stock, regiones y reposiciones' : 'Mi stock, equipo y solicitudes', tab: 'regional', permission: 'regional:manage' },
       { id: 'distribucion', category: 'operaciones', icon: '🚚', title: 'Distribución y rutas', subtitle: 'Rutas, entregas, GPS y evidencia', tab: 'distribucion', anyPermissions: ['routes:own','routes:manage','deliveries:manage'] },
       { id: 'produccion', category: 'operaciones', icon: '🌿', title: 'Producción e insumos', subtitle: 'Materia prima, lotes y costo real', tab: 'produccion', anyPermissions: ['production:operate'], adminAlso: true },
@@ -63,7 +64,7 @@
     const team = window.canManageTeamV800 && canManageTeamV800();
     return [
       { id: 'comercial', icon: '💼', title: admin() ? 'Comercial' : 'Mi actividad comercial', subtitle: 'Catálogo, clientes, ventas, precios y cobranzas', tone: 'green' },
-      { id: 'operaciones', icon: '📦', title: admin() ? 'Operaciones' : 'Mi operación', subtitle: 'Inventario, producción, pedidos, regiones y rutas', tone: 'blue' },
+      { id: 'operaciones', icon: '📦', title: admin() ? 'Operaciones' : 'Mi operación', subtitle: 'Inventario, custodia, producción, pedidos, regiones y rutas', tone: 'blue' },
       { id: 'territorio', icon: '🗺️', title: 'Territorio', subtitle: 'Prospectos, visitas, mapas y cobertura comercial', tone: 'lime' },
       { id: 'personal', icon: '👥', title: team ? 'Personal y funciones' : 'Mi trabajo', subtitle: team ? 'Equipo, roles, tareas, asistencia y mano de obra' : 'Tareas, asistencia y perfil operativo', tone: 'violet' },
       { id: 'finanzas', icon: '📒', title: admin() ? 'Finanzas' : 'Cobranzas y finanzas', subtitle: 'Cobros, egresos y control económico autorizado', tone: 'gold' },
@@ -126,7 +127,7 @@
   function renderMainView(actions) {
     const results = filteredActions(actions);
     const categories = categoryRegistryV770().filter(category => actions.some(action => action.category === category.id));
-    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Organización modular V8.0.0 XD</span><h1>Centro de gestión</h1><p>Encuentra cada herramienta por área, sin listas interminables ni funciones mezcladas con Configuración.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
+    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Organización modular V8.0.1 XD</span><h1>Centro de gestión</h1><p>Encuentra cada herramienta por área, sin listas interminables ni funciones mezcladas con Configuración.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
       ${searchTerm ? `<section class="v770SearchResults"><div class="v770SectionTitle"><span>Resultados</span><b>${results.length}</b></div>${results.map(action => actionButton(action, true)).join('') || '<div class="v770Hint"><span>⌕</span><p>No se encontró una función con ese nombre.</p></div>'}</section>` : `
       <section class="v770FavoriteSection"><div class="v770SectionTitle"><span>Favoritos</span><small>Accesos personalizados</small></div>${renderFavorites(actions)}</section>
       <section class="v770CategoryGrid">${categories.map(category => {
@@ -134,7 +135,7 @@
         return `<button class="v770CategoryCard ${esc(category.tone)}" data-category="${esc(category.id)}"><span class="v770CategoryGlow"></span><i>${category.icon}</i><span><strong>${esc(category.title)}</strong><small>${esc(category.subtitle)}</small></span><em>${count}</em><b>›</b></button>`;
       }).join('')}</section>${renderRecents(actions)}`}
       <section class="v770SettingsSeparation"><span>⚙️</span><div><strong>Configuración está separada de la operación</strong><p>Los ajustes del negocio están dentro de Administración; ventas, catálogo, stock y rutas permanecen como herramientas de trabajo.</p></div></section>
-      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '8.0.0')} · Núcleo modular XD · Supabase Realtime</div>`;
+      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '8.0.1')} · Núcleo modular XD · Supabase Realtime</div>`;
   }
 
   function bindCenterEvents(actions) {

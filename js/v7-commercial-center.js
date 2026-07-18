@@ -38,7 +38,7 @@
   }
 
   function repSalesV730(userId) {
-    return (AppState.sales || []).filter(s => s.sellerId === userId && !s.deletedAt);
+    return window.businessSalesV801 ? businessSalesV801(userId) : (AppState.sales || []).filter(s => s.sellerId === userId && !s.deletedAt);
   }
 
   function topProductRowsV730(sales, limit = 5) {

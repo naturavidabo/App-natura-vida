@@ -209,7 +209,7 @@
       });
       reps.forEach(p => {
         const row = map.get(p.id) || { units:0,value:0,last:0 };
-        const sales = window.repSalesV730 ? repSalesV730(p.id) : (AppState.sales || []).filter(s => s.sellerId === p.id);
+        const sales = window.repSalesV730 ? repSalesV730(p.id) : (window.businessSalesV801 ? businessSalesV801(p.id) : (AppState.sales || []).filter(s => s.sellerId === p.id));
         const values = {
           units:`${row.units} u. · ${fmtMoney(row.value)}`,
           sales:`${sales.length} venta(s) · ${fmtMoney(sales.reduce((sum,x)=>sum+Number(x.total||0),0))}`,

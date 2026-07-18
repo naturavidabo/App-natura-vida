@@ -1,4 +1,4 @@
-/* NATURA VIDA V8.0.0 XD — núcleo de roles, jerarquía y contexto modular. */
+/* NATURA VIDA V8.0.1 XD — núcleo de roles, jerarquía y contexto modular. */
 (() => {
   AppState.roleCatalog = AppState.roleCatalog || [];
   AppState.manageableProfiles = AppState.manageableProfiles || [];
@@ -66,6 +66,10 @@
       region_name: row.region_name || row.city || '',
       manager_user_id: row.manager_user_id || null,
       supplier_user_id: row.supplier_user_id || null,
+      stock_owner_user_id: row.stock_owner_user_id || null,
+      stock_point_id: row.stock_point_id || null,
+      operation_city: row.operation_city || row.city || '',
+      seller_can_collect: !!row.seller_can_collect,
       role_assigned_at: row.role_assigned_at || null,
       role_note: row.role_note || ''
     };
@@ -84,7 +88,7 @@
   async function fetchManageableProfilesV800() {
     try {
       const sb = await requireClient();
-      const { data, error } = await sb.rpc('nv800_list_manageable_profiles');
+      const { data, error } = await sb.rpc('nv801_list_manageable_profiles');
       if (error) return { ok: false, message: messageFromError(error) };
       AppState.manageableProfiles = (data || []).map(mapManageableProfileV800);
       return { ok: true, profiles: AppState.manageableProfiles };
@@ -113,6 +117,7 @@
     if (role.canManageTeam) pills.push('Gestiona equipo');
     if (role.canManageRegion) pills.push('Control regional');
     if (role.canSupplyTeam) pills.push('Puede abastecer');
+    if (roleCode === 'field_seller') { pills.push('Stock vinculado'); pills.push('Inventario solo lectura'); }
     return pills.map(text => `<span>${esc(text)}</span>`).join('');
   }
 
@@ -124,11 +129,14 @@
     const region = profile.region_name || profile.regionName || profile.city || 'Sin región asignada';
     const manager = profileNameV800(managerId) || (roleCode === 'central_admin' ? 'No aplica' : 'Administración central');
     const supplier = profileNameV800(supplierId) || (roleCode === 'central_admin' ? 'No aplica' : 'Stock central Natura Vida');
+    const stockOwnerId = profile.stock_owner_user_id || profile.stockOwnerUserId;
+    const stockOwner = profileNameV800(stockOwnerId) || (roleCode === 'field_seller' ? 'Pendiente de asignación' : 'No aplica');
+    const stockPoint = profile.stock_point_id || profile.stockPointId || '';
     const tools = role.tools || [];
     return `<article class="v800RoleSummary ${options.compact ? 'compact' : ''}">
       <div class="v800RoleSummaryTop"><span class="v800RoleSeal">${esc((role.shortName || role.roleName || 'NV').split(/\s+/).map(x=>x[0]).join('').slice(0,3).toUpperCase())}</span><div><small>Función asignada</small><h3>${esc(role.roleName)}</h3><p>${esc(role.summary)}</p></div></div>
       <div class="v800RolePills">${roleCapabilityPillsV800(roleCode)}</div>
-      <dl class="v800RoleMeta"><div><dt>Región</dt><dd>${esc(region)}</dd></div><div><dt>Responsable</dt><dd>${esc(manager)}</dd></div><div><dt>Proveedor asignado</dt><dd>${esc(supplier)}</dd></div></dl>
+      <dl class="v800RoleMeta"><div><dt>Región</dt><dd>${esc(region)}</dd></div><div><dt>Responsable</dt><dd>${esc(manager)}</dd></div><div><dt>Proveedor asignado</dt><dd>${esc(supplier)}</dd></div>${roleCode==='field_seller'?`<div><dt>Stock de trabajo</dt><dd>${esc(stockOwner)}</dd></div><div><dt>Punto de venta</dt><dd>${esc(stockPoint||'Stock general del responsable')}</dd></div>`:''}</dl>
       ${tools.length ? `<div class="v800RoleTools"><strong>Herramientas de este perfil</strong><div>${tools.slice(0, options.compact ? 5 : 12).map(tool=>`<span>${esc(tool)}</span>`).join('')}</div></div>` : ''}
     </article>`;
   }

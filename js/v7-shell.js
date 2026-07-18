@@ -145,7 +145,8 @@
     };
     if (tab === 'distribucion' && hasPermission('deliveries:manage')) return true;
     if (tab === 'personal' && (hasPermission('workforce:manage') || hasPermission('attendance:own'))) return true;
-    if (tab === 'inventario' && hasPermission('inventory:operate')) return true;
+    if (tab === 'inventario' && (hasPermission('inventory:operate') || hasPermission('inventory:delegated_read'))) return true;
+    if (tab === 'puntos-stock' && (AppState.session?.commercialRole==='field_seller' || (window.canHoldStockV800&&canHoldStockV800()) || (window.canManageTeamV800&&canManageTeamV800()))) return true;
     if (tab === 'roles-estructura' && window.canOpenRolesV800 && canOpenRolesV800()) return true;
     const permission = permissionMap[tab];
     return permission ? hasPermission(permission) : false;
@@ -194,7 +195,8 @@
       case 'regional': window.renderRegionalManagementV750 ? renderRegionalManagementV750() : renderInicioV7(); break;
       case 'distribucion': window.renderDistributionV760 ? renderDistributionV760() : renderInicioV7(); break;
       case 'personal': window.renderWorkforceV770 ? renderWorkforceV770() : renderInicioV7(); break;
-      case 'territorio': window.renderTerritoryV800 ? renderTerritoryV800() : renderInicioV7(); break;
+      case 'territorio': window.renderTerritoryV801 ? renderTerritoryV801() : (window.renderTerritoryV800 ? renderTerritoryV800() : renderInicioV7()); break;
+      case 'puntos-stock': window.renderLinkedStockV801 ? renderLinkedStockV801() : renderInicioV7(); break;
       case 'roles-estructura': window.renderRolesStructureV800 ? renderRolesStructureV800() : renderInicioV7(); break;
       case 'cotizaciones': window.renderQuotes ? renderQuotes() : renderInicioV7(); break;
       case 'grupos': renderPriceGroups(); break;
@@ -228,7 +230,7 @@
     const main = $('#mainArea');
     const orders = await getOrdersMemoryV7();
     const sales = AppState.sales || [];
-    const ownSales = isAdmin() ? sales : sales.filter(s => s.sellerId === AppState.session.userId);
+    const ownSales = sales.filter(s => window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (isAdmin() || s.sellerId === AppState.session.userId));
     const todayKey = new Date().toDateString();
     const todaySales = ownSales.filter(s => new Date(s.date).toDateString() === todayKey);
     const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
@@ -304,7 +306,7 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.0')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.1')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
@@ -327,7 +329,7 @@
   }
 
   function renderHistoryV7() {
-    const sales = (AppState.sales || []).filter(s => isAdmin() || s.sellerId === AppState.session.userId).slice().sort((a,b)=>b.date-a.date);
+    const sales = (AppState.sales || []).filter(s => window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (isAdmin() || s.sellerId === AppState.session.userId)).slice().sort((a,b)=>b.date-a.date);
     $('#mainArea').innerHTML = `
       <section class="v7PageHead"><span class="v7Eyebrow">Registro permanente</span><h1>Ventas y recibos</h1><p>Todas las operaciones confirmadas al contado.</p></section>
       <section class="v7HistoryList">
