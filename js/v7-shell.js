@@ -226,6 +226,15 @@
     return rows;
   }
 
+  function activityVisualV802(message = {}) {
+    const type = String(message.type || '').toLowerCase();
+    if (type.includes('sale') || type.includes('payment')) return { cls: 'sale', icon: v7Icon('sell'), label: 'Venta' };
+    if (type.includes('order') || type.includes('purchase')) return { cls: 'order', icon: v7Icon('orders'), label: 'Pedido' };
+    if (type.includes('profile') || type.includes('user')) return { cls: 'profile', icon: v7Icon('profile'), label: 'Perfil' };
+    if (type.includes('alert') || type.includes('error')) return { cls: 'alert', icon: v7Icon('bell'), label: 'Alerta' };
+    return { cls: 'activity', icon: v7Icon('chart'), label: 'Actividad' };
+  }
+
   async function renderInicioV7() {
     const main = $('#mainArea');
     const orders = await getOrdersMemoryV7();
@@ -234,38 +243,44 @@
     const todayKey = new Date().toDateString();
     const todaySales = ownSales.filter(s => new Date(s.date).toDateString() === todayKey);
     const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
-    const unread = (AppState.messages || []).filter(m => messageVisibleForCurrentUser(m) && m.status !== 'read').length;
+    const visibleMessages = (AppState.messages || []).filter(messageVisibleForCurrentUser);
+    const unread = visibleMessages.filter(m => m.status !== 'read').length;
     const ownOrders = isAdmin() ? orders : orders.filter(o => o.representativeId === AppState.session.userId);
+    const openOrders = isAdmin() ? orders.filter(o => !['paid','cancelled','rejected'].includes(o.status)).length : ownOrders.filter(o => !['paid','cancelled','rejected'].includes(o.status)).length;
     const ownStock = AppState.products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
     const name = displayNameV7();
+    const roleName = AppState.session.roleName || (isAdmin() ? 'Administrador central' : 'Representante activo');
+    const activity = visibleMessages.slice().sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0)).slice(0,4);
 
     main.innerHTML = `
-      <section class="v7Hero">
-        <div class="v7HeroGlow"></div>
-        <span class="v7Eyebrow">${isAdmin() ? 'Centro de operaciones' : escapeHtml(AppState.session.roleShortName || 'Mi negocio Natura Vida')}</span>
+      <section class="v7Hero v802ExecutiveHero">
+        <div class="v7HeroGlow"></div><span class="v802HeroRing one"></span><span class="v802HeroRing two"></span>
+        <span class="v7Eyebrow">${isAdmin() ? 'Panel ejecutivo Natura Vida' : escapeHtml(AppState.session.roleShortName || 'Mi negocio Natura Vida')}</span>
         <h1>${escapeHtml(roleGreeting())}</h1>
         <p>${isAdmin()
-          ? 'Controla productos, ventas, pedidos y representantes desde una sola base en tiempo real.'
-          : 'Vende, compra reposición y administra tu inventario con datos oficiales de Supabase.'}</p>
-        <div class="v7Identity"><span>${escapeHtml(AppState.session.roleName || (isAdmin() ? 'Administrador central' : 'Representante activo'))}</span><strong>${escapeHtml(name)}</strong></div>
+          ? 'Ventas, pedidos, catálogo y actividad del equipo en una sola vista actualizada.'
+          : 'Vende, solicita reposición y administra tu operación con datos oficiales y sincronización segura.'}</p>
+        <div class="v7Identity v802Identity"><span class="v802RoleBadge">${escapeHtml(roleName)}</span><strong>${escapeHtml(name)}</strong></div>
       </section>
 
-      <section class="v7MetricGrid">
-        <article class="v7MetricCard primary"><span>Ventas hoy</span><strong>${fmtMoney(todayTotal)}</strong><small>${todaySales.length} operación(es)</small></article>
-        <article class="v7MetricCard"><span>${isAdmin() ? 'Pedidos abiertos' : 'Mis pedidos'}</span><strong>${isAdmin() ? orders.filter(o => !['paid','cancelled','rejected'].includes(o.status)).length : ownOrders.length}</strong><small>actualización automática</small></article>
-        <article class="v7MetricCard"><span>${isAdmin() ? 'Productos activos' : 'Unidades propias'}</span><strong>${isAdmin() ? AppState.products.length : ownStock}</strong><small>${isAdmin() ? 'catálogo central' : 'inventario disponible'}</small></article>
-        <article class="v7MetricCard notification"><span>Notificaciones</span><strong>${unread}</strong><small>pendientes de lectura</small></article>
+      <section class="v7MetricGrid v802MetricGrid">
+        <article class="v7MetricCard primary v802KpiCard sales"><span class="v802KpiIcon">${v7Icon('sell')}</span><div><span>Ventas hoy</span><strong>${fmtMoney(todayTotal)}</strong><small>${todaySales.length} operación(es)</small></div></article>
+        <article class="v7MetricCard v802KpiCard orders"><span class="v802KpiIcon">${v7Icon('orders')}</span><div><span>${isAdmin() ? 'Pedidos abiertos' : 'Mis pedidos abiertos'}</span><strong>${openOrders}</strong><small>actualización automática</small></div></article>
+        <article class="v7MetricCard v802KpiCard products"><span class="v802KpiIcon">${v7Icon('inventory')}</span><div><span>${isAdmin() ? 'Productos activos' : 'Unidades propias'}</span><strong>${isAdmin() ? AppState.products.length : ownStock}</strong><small>${isAdmin() ? 'catálogo central' : 'inventario disponible'}</small></div></article>
+        <article class="v7MetricCard notification v802KpiCard notifications"><span class="v802KpiIcon">${v7Icon('bell')}</span><div><span>Notificaciones</span><strong>${unread}</strong><small>pendientes de lectura</small></div></article>
       </section>
 
-      <section class="v7Panel">
-        <div class="v7PanelHead"><div><span class="v7Eyebrow">Actividad reciente</span><h2>Todo bajo control</h2></div><span class="v7LiveChip">Realtime</span></div>
-        ${(AppState.messages || []).filter(messageVisibleForCurrentUser).slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,4).map(m => `
-          <button class="v7ActivityRow" data-open-inbox="1"><span class="v7ActivityIcon">${m.type === 'purchase_order' ? '🛒' : m.type.includes('profile') ? '👤' : '✓'}</span><span><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.body)} · ${fmtDateTime(m.createdAt)}</small></span><b>›</b></button>
-        `).join('') || `<div class="v7EmptyInline"><span>🌿</span><div><strong>Aún no hay actividad</strong><small>Los movimientos aparecerán automáticamente.</small></div></div>`}
+      <section class="v7Panel v802ActivityPanel">
+        <div class="v7PanelHead v802PanelHead"><div><span class="v7Eyebrow">Actividad reciente</span><h2>Todo bajo control</h2><p>Movimientos, consultas y eventos del sistema.</p></div><span class="v7LiveChip v802LiveChip"><i></i> En tiempo real</span></div>
+        <div class="v802StatusStrip"><span><b>${todaySales.length}</b> operaciones hoy</span><span><b>${openOrders}</b> pedidos abiertos</span><span class="${unread ? 'attention' : ''}"><b>${unread}</b> por revisar</span></div>
+        ${activity.map(m => {
+          const visual = activityVisualV802(m);
+          return `<button class="v7ActivityRow v802ActivityRow ${visual.cls}" data-open-inbox="1"><span class="v7ActivityIcon">${visual.icon}</span><span><em>${visual.label}</em><strong>${escapeHtml(m.title || 'Actividad')}</strong><small>${escapeHtml(m.body || '')}${m.createdAt ? ` · ${fmtDateTime(m.createdAt)}` : ''}</small></span><b>›</b></button>`;
+        }).join('') || `<div class="v7EmptyInline"><span class="v802EmptyLeaf">NV</span><div><strong>Aún no hay actividad</strong><small>Los movimientos aparecerán automáticamente.</small></div></div>`}
       </section>
 
-      <section class="v7Panel v7NaturePanel">
-        <div><span class="v7Eyebrow">Natura Vida V7</span><h2>Simple por fuera. Potente por dentro.</h2><p>Una sola base oficial, actualización automática y operaciones únicamente al contado.</p></div>
+      <section class="v7Panel v7NaturePanel v802NaturePanel">
+        <div><span class="v7Eyebrow">Natura Vida V8.0.2</span><h2>Información clara. Operación segura.</h2><p>Una sola base oficial, actualización silenciosa y controles diseñados para trabajar más rápido.</p></div>
         <div class="v7NatureMark">NV</div>
       </section>
     `;
@@ -306,7 +321,7 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.1')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.2')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));

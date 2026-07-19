@@ -116,16 +116,16 @@ function openSalePriceEditorV7(options = {}) {
   openSheet(`
     <h2>Editar precio <span class="x" id="closeSheet">✕</span></h2>
     <div class="v7ProductMini"><div>${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async">` : 'NV'}</div><span><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category || 'General')}</small></span></div>
-    <div class="manualPriceGrid">
+    <div class="manualPriceGrid v802EditablePriceGrid">
       <div><span>Precio de lista</span><strong>${fmtMoney(current.basePrice)}</strong></div>
       <div><span>Precio por grupo</span><strong>${fmtMoney(current.groupPrice)}</strong></div>
-      <div><span>Precio actual</span><strong>${fmtMoney(current.unitPrice)}</strong></div>
+      <div class="editable"><span>Precio actual</span><strong>${fmtMoney(current.unitPrice)}</strong></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Tipo de ajuste</label><select id="manualMode"><option value="final">Precio final</option><option value="discount_amount">Rebaja Bs</option><option value="discount_percent">Rebaja %</option><option value="surcharge_amount">Recargo Bs</option><option value="surcharge_percent">Recargo %</option></select></div>
-      <div class="field"><label>Valor</label><input id="manualValue" type="number" inputmode="decimal" step="0.01" value=""></div>
+      <div class="field v802EditableField"><label>Tipo de ajuste</label><select id="manualMode"><option value="final">Precio final</option><option value="discount_amount">Rebaja Bs</option><option value="discount_percent">Rebaja %</option><option value="surcharge_amount">Recargo Bs</option><option value="surcharge_percent">Recargo %</option></select></div>
+      <div class="field v802EditableField"><label>Valor</label><input id="manualValue" type="number" inputmode="decimal" step="0.01" value=""></div>
     </div>
-    <div class="field"><label>Precio final manual</label><input id="manualFinal" type="number" inputmode="decimal" step="0.01" value="${existing ? existing.manualPrice : current.unitPrice}"></div>
+    <div class="field v802EditableField v802FinalPriceField"><label>Precio final manual</label><input id="manualFinal" type="number" inputmode="decimal" step="0.01" value="${existing ? existing.manualPrice : current.unitPrice}"><small>El color naranja identifica el valor que se modificará.</small></div>
     <div class="field"><label>Motivo opcional</label><input id="manualReason" value="${escapeHtml(existing ? (existing.reason || '') : '')}" placeholder="Ej.: entrega, cliente antiguo, promoción"></div>
     <div class="v7PricePreview"><span>Diferencia frente al precio de lista</span><strong id="manualDiff"></strong></div>
     <div class="actions two"><button class="btn outline" id="resetManualPrice">Restablecer precio del grupo</button><button class="btn" id="applyManualPrice">Aplicar</button></div>
@@ -278,7 +278,7 @@ function renderCatalogGrid() {
     const qty = _cart[p.id] || 0;
     const low = p.stock <= AppState.settings.lowStockThreshold;
     return `
-    <div class="catalogCard cleanSaleCard ${sellerMode() ? 'resellerCatalogCard' : ''} price-${b.source} adjust-${b.sign}" data-id="${p.id}">
+    <div class="catalogCard cleanSaleCard ${sellerMode() ? 'resellerCatalogCard' : ''} ${qty > 0 ? 'v802PriceEditable' : ''} price-${b.source} adjust-${b.sign}" data-id="${p.id}">
       <div class="catalogPhoto cleanSalePhoto">${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async">` : '<span class="invPhotoFallback nvLeafMark">NV</span>'}${salePriceBadgeV7(b)}</div>
       <div class="catalogBody cleanSaleBody">
         <div class="catalogMetaLine"><span>${escapeHtml(p.category || 'General')}</span><em>${salePriceLabelV7(b)}</em></div>
@@ -398,7 +398,7 @@ function openCheckoutSheet() {
     ${saleItemsPreview.map(i => `<div class="histitem priceLine ${i.priceSource}"><div class="l"><div class="pname">${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource, sign:i.priceAdjustmentType})}</div><div class="meta">${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource, sign:i.priceAdjustmentType, adjustmentAmount:i.priceAdjustmentAmount, groupName:i.groupName})}</div>${i.manualPriceReason ? `<small class="priceReason">${escapeHtml(i.manualPriceReason)}</small>` : ''}</div><div class="r">${fmtMoney(i.subtotal)}</div></div>`).join('')}
     ${(discounts || surcharges) ? `<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>` : ''}
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
-    <div class="field"><label>Nombre del cliente</label><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><small>${(_saleType === 'market' || _saleType === 'representative_transfer') ? 'Se muestran primero mayoristas, mixtos y sin clasificar.' : 'Se muestran primero clientes unitarios, mixtos y sin clasificar.'}</small></div>
+    <div class="field"><label>Nombre del cliente</label><div class="clientAutocompleteV802"><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><div id="ckClientSuggestionsV802" class="clientSuggestionsV802 hidden"></div></div><small>Escribe el nombre: se mostrarán coincidencias para evitar crear clientes duplicados.</small></div>
     <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
     ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
     <section class="nv771DeliveryToggle"><label><input id="ck_requiresDeliveryV771" type="checkbox"><span><strong>Requiere entrega</strong><small>Crear una entrega pendiente para planificarla en una ruta.</small></span></label><div id="ck_deliveryFieldsV771" class="hidden"><div class="field-row"><div class="field"><label>Fecha solicitada</label><input id="ck_deliveryDateV771" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Prioridad</label><select id="ck_deliveryPriorityV771"><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div></div><div class="field"><label>Dirección de entrega</label><input id="ck_deliveryAddressV771" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.address || '') : ''}" placeholder="Dirección, zona o referencia"></div><div class="field"><label>Observación de entrega</label><textarea id="ck_deliveryNotesV771" placeholder="Horario, persona de contacto o indicación especial"></textarea></div></div></section>
@@ -443,6 +443,7 @@ function openCheckoutSheet() {
       }
     };
     $('#pickClientV723', overlay).addEventListener('click', () => openClientSelectorSheet({ saleType: _saleType, onSelect: fillClientV723 }));
+    if (window.bindClientAutocompleteV802) bindClientAutocompleteV802({ input: $('#ck_clientname', overlay), container: $('#ckClientSuggestionsV802', overlay), preferredType: customerTypeForSaleV723(_saleType), onTyping: () => { operation.client = null; }, onSelect: fillClientV723 });
     if ($('#registerWholesaleV725', overlay)) $('#registerWholesaleV725', overlay).addEventListener('click', () => { window._afterClientSaved = fillClientV723; openClientForm(null, { name: $('#ck_clientname', overlay).value.trim(), phone: $('#ck_clientphone', overlay).value.trim(), customerType: 'wholesale' }); });
     $('#ckClientWaV723', overlay).addEventListener('click', () => openWhatsAppV723($('#ck_clientphone', overlay).value, $('#ck_clientname', overlay).value));
     $('#ck_requiresDeliveryV771', overlay)?.addEventListener('change', event => {
@@ -461,6 +462,7 @@ function openCheckoutSheet() {
       const clientName = $('#ck_clientname', overlay).value.trim();
       const clientPhone = $('#ck_clientphone', overlay).value.trim();
       if (!clientName) return showToast('⚠️ Ingresa el nombre del cliente', 'error');
+      if (!operation.client && window.findLikelyDuplicateClientV802) { const match = findLikelyDuplicateClientV802(clientName, clientPhone); if (match && window.confirm(`Encontramos un cliente similar: “${match.client.name}”.\n\n¿Deseas usar ese registro para evitar duplicarlo?`)) operation.client = match.client; }
       if (!navigator.onLine) return showToast('Sin internet. La venta no fue registrada.', 'error');
       operation.submitting = true; btn.disabled = true; btn.textContent = 'Verificando stock y guardando…';
       try {

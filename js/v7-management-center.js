@@ -72,6 +72,19 @@
     ];
   }
 
+  function categoryArtV802(id) {
+    const common = 'viewBox="0 0 180 150" aria-hidden="true" focusable="false"';
+    const art = {
+      comercial: `<svg ${common}><defs><linearGradient id="cg" x1="0" x2="1"><stop stop-color="#0b7149"/><stop offset="1" stop-color="#66cf8c"/></linearGradient></defs><circle cx="52" cy="57" r="39" fill="rgba(255,255,255,.20)"/><path d="M39 53h78l-7 64H46z" fill="url(#cg)" stroke="rgba(255,255,255,.75)" stroke-width="4"/><path d="M62 55c0-20 10-31 24-31s24 11 24 31" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round"/><circle cx="68" cy="85" r="8" fill="#ddf77b"/><circle cx="94" cy="85" r="8" fill="#ddf77b"/><path d="M60 108c18 10 37 10 55-1" fill="none" stroke="rgba(255,255,255,.86)" stroke-width="5" stroke-linecap="round"/></svg>`,
+      operaciones: `<svg ${common}><defs><linearGradient id="og" x1="0" x2="1"><stop stop-color="#286e9b"/><stop offset="1" stop-color="#75bdd8"/></linearGradient></defs><path d="M28 52 86 23l61 30-61 31z" fill="url(#og)" stroke="rgba(255,255,255,.8)" stroke-width="4"/><path d="M28 52v55l58 30V84zM147 53v54l-61 30V84z" fill="rgba(255,255,255,.24)" stroke="rgba(255,255,255,.72)" stroke-width="4"/><path d="m61 36 60 31M86 84v53" stroke="#fff" stroke-width="5" opacity=".8"/><path d="M108 101h26M108 114h19" stroke="#dff57e" stroke-width="6" stroke-linecap="round"/></svg>`,
+      territorio: `<svg ${common}><defs><linearGradient id="tg" x1="0" x2="1"><stop stop-color="#0b7d50"/><stop offset="1" stop-color="#b9df45"/></linearGradient></defs><path d="m20 37 42-14 55 16 43-14v93l-43 14-55-16-42 14z" fill="rgba(255,255,255,.22)" stroke="rgba(255,255,255,.8)" stroke-width="4"/><path d="M62 23v93M117 39v93" stroke="#fff" stroke-width="4" opacity=".65"/><path d="M37 98c27-45 49 20 76-23 12-20 24-18 35-9" fill="none" stroke="url(#tg)" stroke-width="8" stroke-linecap="round"/><path d="M91 33c-15 0-27 12-27 27 0 22 27 49 27 49s27-27 27-49c0-15-12-27-27-27Z" fill="#fff"/><circle cx="91" cy="60" r="10" fill="#15955c"/></svg>`,
+      personal: `<svg ${common}><defs><linearGradient id="pg" x1="0" x2="1"><stop stop-color="#67518d"/><stop offset="1" stop-color="#b28bd1"/></linearGradient></defs><circle cx="65" cy="48" r="25" fill="#fff"/><circle cx="120" cy="56" r="20" fill="rgba(255,255,255,.82)"/><path d="M22 125c3-38 22-57 46-57s43 19 46 57" fill="url(#pg)" stroke="rgba(255,255,255,.75)" stroke-width="4"/><path d="M91 126c3-31 18-47 37-47 17 0 29 12 34 36" fill="rgba(255,255,255,.3)" stroke="rgba(255,255,255,.68)" stroke-width="4"/><path d="M51 95h31M51 108h42" stroke="#efff9c" stroke-width="6" stroke-linecap="round"/></svg>`,
+      finanzas: `<svg ${common}><defs><linearGradient id="fg" x1="0" x2="1"><stop stop-color="#a56d10"/><stop offset="1" stop-color="#edbd55"/></linearGradient></defs><rect x="25" y="35" width="129" height="88" rx="23" fill="url(#fg)" stroke="rgba(255,255,255,.78)" stroke-width="4"/><path d="M25 58h129" stroke="#fff" stroke-width="6" opacity=".72"/><rect x="91" y="72" width="63" height="37" rx="14" fill="rgba(255,255,255,.32)"/><circle cx="115" cy="91" r="9" fill="#fff"/><circle cx="55" cy="99" r="20" fill="#f5e58b"/><path d="M55 87v24M47 94c0-5 4-8 9-8 6 0 10 3 10 7 0 11-20 4-20 14 0 5 4 8 10 8 5 0 9-2 11-6" fill="none" stroke="#8b5c0b" stroke-width="4" stroke-linecap="round"/></svg>`,
+      administracion: `<svg ${common}><defs><linearGradient id="ag" x1="0" x2="1"><stop stop-color="#496b67"/><stop offset="1" stop-color="#8fb6ae"/></linearGradient></defs><rect x="29" y="24" width="122" height="106" rx="24" fill="rgba(255,255,255,.25)" stroke="rgba(255,255,255,.78)" stroke-width="4"/><path d="M53 51h73M53 72h46M53 105h72" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".78"/><circle cx="123" cy="72" r="22" fill="url(#ag)"/><circle cx="123" cy="72" r="8" fill="#fff"/><path d="M123 42v9M123 93v9M93 72h9M144 72h9M102 51l7 7M137 86l7 7M144 51l-7 7M109 86l-7 7" stroke="#e9ff9d" stroke-width="5" stroke-linecap="round"/></svg>`
+    };
+    return art[id] || art.administracion;
+  }
+
   function favoriteIds() { return readArray('favorites'); }
   function recentIds() { return readArray('recents'); }
 
@@ -127,15 +140,15 @@
   function renderMainView(actions) {
     const results = filteredActions(actions);
     const categories = categoryRegistryV770().filter(category => actions.some(action => action.category === category.id));
-    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Organización modular V8.0.1 XD</span><h1>Centro de gestión</h1><p>Encuentra cada herramienta por área, sin listas interminables ni funciones mezcladas con Configuración.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
+    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Centro de gestión V8.0.2</span><h1>Todo organizado por área</h1><p>Accede más rápido a las herramientas comerciales, operativas y administrativas de tu función.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
       ${searchTerm ? `<section class="v770SearchResults"><div class="v770SectionTitle"><span>Resultados</span><b>${results.length}</b></div>${results.map(action => actionButton(action, true)).join('') || '<div class="v770Hint"><span>⌕</span><p>No se encontró una función con ese nombre.</p></div>'}</section>` : `
       <section class="v770FavoriteSection"><div class="v770SectionTitle"><span>Favoritos</span><small>Accesos personalizados</small></div>${renderFavorites(actions)}</section>
       <section class="v770CategoryGrid">${categories.map(category => {
         const count = actions.filter(action => action.category === category.id).length;
-        return `<button class="v770CategoryCard ${esc(category.tone)}" data-category="${esc(category.id)}"><span class="v770CategoryGlow"></span><i>${category.icon}</i><span><strong>${esc(category.title)}</strong><small>${esc(category.subtitle)}</small></span><em>${count}</em><b>›</b></button>`;
+        return `<button class="v770CategoryCard v802CategoryCard ${esc(category.tone)}" data-category="${esc(category.id)}" aria-label="Abrir ${esc(category.title)}"><span class="v770CategoryGlow"></span><span class="v802CategoryArt">${categoryArtV802(category.id)}</span><span class="v802CategoryCopy"><strong>${esc(category.title)}</strong><small>${esc(category.subtitle)}</small><u>Ver funciones <b>›</b></u></span><em>${count}</em></button>`;
       }).join('')}</section>${renderRecents(actions)}`}
       <section class="v770SettingsSeparation"><span>⚙️</span><div><strong>Configuración está separada de la operación</strong><p>Los ajustes del negocio están dentro de Administración; ventas, catálogo, stock y rutas permanecen como herramientas de trabajo.</p></div></section>
-      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '8.0.1')} · Núcleo modular XD · Supabase Realtime</div>`;
+      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '8.0.2')} · Centro modular · Supabase Realtime</div>`;
   }
 
   function bindCenterEvents(actions) {

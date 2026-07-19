@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.0.1 XD — Acceso confiable, vendedores vinculados y mapa estable",
+  "name": "NATURA VIDA V8.0.2 — Experiencia premium, búsqueda inteligente y territorio operativo",
   "short_name": "NaturaVida",
-  "description": "Gestión modular Natura Vida con sesión confiable, confirmación de correo, vendedores vinculados, stock en custodia, ventas delegadas, territorio, mapas operables y Supabase Realtime estable.",
-  "start_url": "./index.html",
+  "description": "Gestión modular Natura Vida con sesión confiable, vendedores vinculados, búsqueda inteligente de clientes, mapa territorial operativo, interfaz premium y actualizaciones silenciosas.",
+  "start_url": "./index.html?v=8.0.2",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

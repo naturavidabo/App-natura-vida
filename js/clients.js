@@ -358,13 +358,112 @@ function renderClients() {
   $all('.benefitClientBtnV725').forEach(b => b.addEventListener('click', () => openClientBenefitV725(b.dataset.id)));
 }
 
+function clientEditDistanceV802(a, b) {
+  a = String(a || ''); b = String(b || '');
+  if (!a.length) return b.length; if (!b.length) return a.length;
+  const previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = previous[0]; previous[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const old = previous[j];
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = old;
+    }
+  }
+  return previous[b.length];
+}
+
+function normalizeClientMatchV802(value) {
+  return normalizeSearch(value || '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function clientSimilarityScoreV802(query, client) {
+  const q = normalizeClientMatchV802(query || '');
+  const names = [client?.name, client?.businessName, ...(client?.aliases || [])].filter(Boolean).map(normalizeClientMatchV802);
+  if (!q || !names.length) return 0;
+  let best = 0;
+  for (const name of names) {
+    if (!name) continue;
+    if (q === name) best = Math.max(best, 100);
+    else if (name.startsWith(q) || q.startsWith(name)) best = Math.max(best, 94);
+    else if (name.includes(q) || q.includes(name)) best = Math.max(best, 86);
+    const qTokens = q.split(' ').filter(Boolean); const nTokens = name.split(' ').filter(Boolean);
+    const overlap = qTokens.filter(token => nTokens.some(n => n.startsWith(token) || token.startsWith(n))).length;
+    if (overlap > 0 && qTokens.length) best = Math.max(best, 58 + Math.round(30 * overlap / qTokens.length));
+    const distance = clientEditDistanceV802(q, name);
+    const ratio = 1 - distance / Math.max(q.length, name.length, 1);
+    best = Math.max(best, Math.round(ratio * 82));
+  }
+  return Math.max(0, Math.min(100, best));
+}
+
+function clientSuggestionsV802(query, options = {}) {
+  const q = String(query || '').trim();
+  const phone = normalizePhoneV723(q);
+  if (normalizeSearch(q).length < 2 && phone.length < 3) return [];
+  const preferred = options.preferredType || '';
+  return (AppState.clients || [])
+    .filter(c => !options.excludeId || c.id !== options.excludeId)
+    .map(client => {
+      let score = clientSimilarityScoreV802(q, client);
+      const clientPhone = normalizePhoneV723(client.phone || '');
+      if (phone && clientPhone === phone) score = 110;
+      else if (phone.length >= 3 && clientPhone && clientPhone.includes(phone)) score = Math.max(score, 98);
+      const extra = normalizeSearch([client.city, client.address, client.locationLabel].join(' '));
+      if (extra.includes(normalizeSearch(q))) score = Math.max(score, 70);
+      if (preferred && clientTypeMatchesV723(client, preferred, false)) score += 4;
+      return { client, score };
+    })
+    .filter(row => row.score >= 48)
+    .sort((a, b) => b.score - a.score || String(a.client.name || '').localeCompare(String(b.client.name || '')))
+    .slice(0, Number(options.limit || 6));
+}
+
+function findLikelyDuplicateClientV802(name, phone, excludeId = '') {
+  const normalizedPhone = normalizePhoneV723(phone || '');
+  const candidates = (AppState.clients || []).filter(c => c.id !== excludeId);
+  if (normalizedPhone) {
+    const exactPhone = candidates.find(c => normalizePhoneV723(c.phone || '') === normalizedPhone);
+    if (exactPhone) return { client: exactPhone, score: 110, reason: 'mismo teléfono' };
+  }
+  const rows = candidates.map(client => ({ client, score: clientSimilarityScoreV802(name, client) })).sort((a, b) => b.score - a.score);
+  if (rows[0] && rows[0].score >= 90) return { ...rows[0], reason: 'nombre muy parecido' };
+  return null;
+}
+
+function bindClientAutocompleteV802(options = {}) {
+  const input = options.input; const container = options.container;
+  if (!input || !container) return () => {};
+  let hideTimer = null;
+  const hide = () => { container.classList.add('hidden'); container.innerHTML = ''; };
+  const render = () => {
+    if (typeof options.onTyping === 'function') options.onTyping(input.value);
+    const rows = clientSuggestionsV802(input.value, options);
+    if (!rows.length) return hide();
+    container.innerHTML = `<div class="clientSuggestionHeadV802"><span>Clientes parecidos</span><small>Selecciona para no duplicar</small></div>${rows.map(({client,score}) => `<button type="button" class="clientSuggestionItemV802" data-id="${client.id}"><span class="clientSuggestionAvatarV802">${escapeHtml(String(client.name || 'C').trim().charAt(0).toUpperCase())}</span><span><strong>${escapeHtml(client.businessName || client.name || 'Cliente')}</strong><small>${escapeHtml([client.phone || 'sin teléfono', client.city || client.address || customerTypeLabelV723(client.customerType)].filter(Boolean).join(' · '))}</small></span><em>${score >= 100 ? 'Exacto' : score >= 90 ? 'Muy similar' : 'Coincidencia'}</em></button>`).join('')}<button type="button" class="clientCreateNewV802">+ Crear un cliente nuevo con este nombre</button>`;
+    container.classList.remove('hidden');
+    $all('.clientSuggestionItemV802', container).forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
+    $all('.clientSuggestionItemV802', container).forEach(button => button.addEventListener('click', () => {
+      const client = (AppState.clients || []).find(c => c.id === button.dataset.id);
+      hide(); if (client && typeof options.onSelect === 'function') options.onSelect(client);
+    }));
+    $('.clientCreateNewV802', container)?.addEventListener('mousedown', e => e.preventDefault());
+    $('.clientCreateNewV802', container)?.addEventListener('click', hide);
+  };
+  input.addEventListener('input', render);
+  input.addEventListener('focus', render);
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+  input.addEventListener('blur', () => { clearTimeout(hideTimer); hideTimer = setTimeout(hide, 180); });
+  return hide;
+}
+
 function openClientForm(id, prefill = {}) {
   const c = id ? AppState.clients.find(x => x.id === id) : null;
   const current = buildClientRecordV723(c || {}, prefill || {});
   let photoData = current.storePhoto || '';
   const html = `
     <h2>${c ? 'Editar cliente' : 'Nuevo cliente'} <span class="x" id="closeSheet">✕</span></h2>
-    <div class="field"><label>${current.customerType === 'wholesale' ? 'Nombre de tienda / negocio' : 'Nombre del cliente'}</label><input type="text" id="f_cname" autocomplete="off" placeholder="Ej: Comercial María" value="${escapeHtml(current.name || '')}"></div>
+    <div class="field"><label>${current.customerType === 'wholesale' ? 'Nombre de tienda / negocio' : 'Nombre del cliente'}</label><div class="clientAutocompleteV802"><input type="text" id="f_cname" autocomplete="off" placeholder="Ej: Comercial María" value="${escapeHtml(current.name || '')}"><div id="clientFormSuggestionsV802" class="clientSuggestionsV802 hidden"></div></div><small class="clientAssistV802">Escribe al menos 2 letras: se mostrarán clientes parecidos para evitar duplicados.</small></div>
     <div class="field-row"><div class="field"><label>Celular / WhatsApp</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="f_cphone" autocomplete="off" placeholder="Ej: 71234567" value="${escapeHtml(current.phone || '')}"><button type="button" class="waIconBtnV723" id="f_cwa"><span class="waLogoV725">☎</span></button></div></div><div class="field"><label>Tipo</label><select id="f_ctype"><option value="unit" ${current.customerType==='unit'?'selected':''}>Unitario</option><option value="wholesale" ${current.customerType==='wholesale'?'selected':''}>Mayorista</option><option value="mixed" ${current.customerType==='mixed'?'selected':''}>Mixto</option><option value="unclassified" ${current.customerType==='unclassified'?'selected':''}>Sin clasificar</option></select></div></div>
     <div id="wholesaleFieldsV723" class="wholesaleFieldsV723">
       <div class="field"><label>Ciudad</label><input id="f_ccity" autocomplete="off" value="${escapeHtml(current.city || '')}" placeholder="Ej: Santa Cruz"></div>
@@ -385,6 +484,19 @@ function openClientForm(id, prefill = {}) {
     typeSel.addEventListener('change', toggleWholesale);
     $('#closeSheet', overlay).addEventListener('click', close);
     $('#cancelForm', overlay).addEventListener('click', close);
+    bindClientAutocompleteV802({
+      input: $('#f_cname', overlay),
+      container: $('#clientFormSuggestionsV802', overlay),
+      phoneInput: $('#f_cphone', overlay),
+      excludeId: c?.id || '',
+      preferredType: current.customerType,
+      onSelect: existingClient => {
+        close();
+        if (window._afterClientSaved) { const callback = window._afterClientSaved; window._afterClientSaved = null; callback(existingClient); }
+        else { AppState.lastClient = existingClient; setTimeout(() => openClientForm(existingClient.id), 80); }
+        showToast('Cliente existente seleccionado.');
+      }
+    });
     $('#f_cwa', overlay).addEventListener('click', () => openWhatsAppV723($('#f_cphone', overlay).value, $('#f_cname', overlay).value));
     $('#captureClientGpsV723', overlay)?.addEventListener('click', () => {
       if (!navigator.geolocation) return showToast('Este dispositivo no permite ubicación.', 'error');
@@ -405,6 +517,18 @@ function openClientForm(id, prefill = {}) {
       const name = $('#f_cname', overlay).value.trim();
       if (!name) return showToast('Ponle un nombre al cliente o tienda.', 'error');
       const type = $('#f_ctype', overlay).value || 'unclassified';
+      if (!c) {
+        const duplicate = findLikelyDuplicateClientV802(name, $('#f_cphone', overlay).value);
+        if (duplicate && window.confirm(`Ya existe “${duplicate.client.name}” (${duplicate.reason}).
+
+Aceptar: usar el cliente existente.
+Cancelar: continuar creando uno nuevo.`)) {
+          AppState.lastClient = duplicate.client; close();
+          if (window._afterClientSaved) { const callback = window._afterClientSaved; window._afterClientSaved = null; callback(duplicate.client); }
+          else if (AppState.currentTab === 'clientes') renderClients();
+          showToast('Se utilizó el cliente existente.'); return;
+        }
+      }
       const record = buildClientRecordV723(c || {}, {
         name,
         phone: $('#f_cphone', overlay).value,
@@ -516,4 +640,8 @@ window.buildClientRecordV723 = buildClientRecordV723;
 window.saveClientV723 = saveClientV723;
 window.normalizePhoneV723 = normalizePhoneV723;
 window.clientSalesV723 = clientSalesV723;
+window.clientSimilarityScoreV802 = clientSimilarityScoreV802;
+window.clientSuggestionsV802 = clientSuggestionsV802;
+window.findLikelyDuplicateClientV802 = findLikelyDuplicateClientV802;
+window.bindClientAutocompleteV802 = bindClientAutocompleteV802;
 // openClientBenefitV725 se incorpora en v7-commercial-center.js

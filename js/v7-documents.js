@@ -92,10 +92,10 @@
     const qr = await loadImageV7(qrSource);
     const logo = await loadImageV7(AppState.settings.logo || 'img/brand/natura-vida-logo.jpeg');
     const width = 720;
-    const itemHeight = 38;
-    const qrBlock = qr ? 280 : 90;
-    const messageBlock = ownerProfile.receiptMessage ? 70 : 20;
-    const height = 410 + items.length * itemHeight + qrBlock + messageBlock;
+    const itemHeight = 42;
+    const qrBlock = qr ? 330 : 105;
+    const messageBlock = 72;
+    const height = 420 + items.length * itemHeight + qrBlock + messageBlock;
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -136,12 +136,12 @@
 
     let y = 208;
     ctx.fillStyle = '#153c2b';
-    ctx.font = '700 17px Inter, Arial';
+    ctx.font = '700 18px Inter, Arial';
     ctx.fillText(kind === 'order' ? 'Representante' : 'Cliente', 58, y);
-    ctx.font = '600 18px Inter, Arial';
+    ctx.font = '700 20px Inter, Arial';
     ctx.fillStyle = '#102a20';
     ctx.fillText(documentData.clientName || documentData.representativeName || 'Sin nombre', 58, y + 30);
-    ctx.font = '400 14px Inter, Arial';
+    ctx.font = '400 15px Inter, Arial';
     ctx.fillStyle = '#60766b';
     const contact = [documentData.clientPhone || documentData.representativePhone, documentData.clientCity || ''].filter(Boolean).join(' · ');
     if (contact) ctx.fillText(contact, 58, y + 54);
@@ -167,7 +167,7 @@
     ctx.textAlign = 'left';
     y += 26;
 
-    ctx.font = '500 15px Inter, Arial';
+    ctx.font = '500 16px Inter, Arial';
     items.forEach(item => {
       ctx.fillStyle = '#173a29';
       const product = String(item.productName || item.name || 'Producto');
@@ -187,11 +187,11 @@
     ctx.beginPath(); ctx.moveTo(58, y); ctx.lineTo(width - 58, y); ctx.stroke();
     y += 42;
     ctx.fillStyle = '#60766b';
-    ctx.font = '600 16px Inter, Arial';
+    ctx.font = '700 17px Inter, Arial';
     ctx.fillText(isPendingOrder ? 'TOTAL A DEPOSITAR' : (isPartialSale ? 'TOTAL VENTA' : 'TOTAL PAGADO'), 58, y);
     ctx.textAlign = 'right';
     ctx.fillStyle = '#075b35';
-    ctx.font = '800 30px Inter, Arial';
+    ctx.font = '800 32px Inter, Arial';
     ctx.fillText(fmtMoney(documentData.total || 0), width - 58, y + 4);
     ctx.textAlign = 'left';
     if (isPartialSale) {
@@ -206,36 +206,44 @@
     y += 52;
 
     if (qr) {
-      const qrSize = 160;
+      const qrSize = 210;
       const qrX = width - 58 - qrSize;
       const boxY = y;
-      ctx.fillStyle = '#f5faf7';
-      ctx.beginPath(); ctx.roundRect(qrX - 16, boxY - 14, qrSize + 32, qrSize + 52, 20); ctx.fill();
-      ctx.drawImage(qr, qrX, boxY, qrSize, qrSize);
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#e4eee8';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(qrX - 20, boxY - 18, qrSize + 40, qrSize + 58, 22); ctx.fill(); ctx.stroke();
+      ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(qr, qrX, boxY, qrSize, qrSize); ctx.restore();
       ctx.fillStyle = '#315c47';
-      ctx.font = '700 13px Inter, Arial';
+      ctx.font = '700 14px Inter, Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(isPendingOrder ? 'QR de pago' : 'QR de cobro', qrX + qrSize / 2, boxY + qrSize + 24);
+      ctx.fillText('QR de pago', qrX + qrSize / 2, boxY + qrSize + 28);
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#60766b';
-      ctx.font = '600 15px Inter, Arial';
-      wrapText(ctx, isPendingOrder ? 'Escanea el QR para realizar el pago.' : 'Gracias por su compra. Escanea el QR para próximos pagos o consultas.', 58, boxY + 16, qrX - 92, 21, 4);
-      y += qrSize + 55;
+      ctx.fillStyle = '#4f6b5e';
+      ctx.font = '600 16px Inter, Arial';
+      wrapText(ctx, 'Gracias por su compra. Escanee el código QR para realizar el pago.', 58, boxY + 22, qrX - 94, 23, 4);
+      y += qrSize + 66;
+    } else {
+      ctx.fillStyle = '#4f6b5e';
+      ctx.font = '600 16px Inter, Arial';
+      wrapText(ctx, 'Gracias por su compra.', 58, y + 8, width - 116, 23, 2);
+      y += 50;
     }
 
-    if (ownerProfile.receiptMessage) {
-      ctx.fillStyle = '#60766b';
-      ctx.font = '400 14px Inter, Arial';
-      ctx.textAlign = 'center';
-      wrapText(ctx, ownerProfile.receiptMessage, width / 2, y, width - 130, 19, 3);
-      ctx.textAlign = 'left';
-      y += 48;
-    }
-
-    ctx.fillStyle = '#8ba096';
-    ctx.font = '400 12px Inter, Arial';
+    const customReceiptMessage = String(ownerProfile.receiptMessage || '').trim();
+    const closingMessage = customReceiptMessage && !/(gracias|preferencia|confiar|consulta|escanea|pago)/i.test(customReceiptMessage)
+      ? customReceiptMessage
+      : 'Gracias por confiar en Natura Vida Bolivia.';
+    ctx.fillStyle = '#60766b';
+    ctx.font = '500 15px Inter, Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('Natura Vida Bolivia · Gracias por su preferencia', width / 2, height - 36);
+    wrapText(ctx, closingMessage, width / 2, y, width - 130, 21, 3);
+    ctx.textAlign = 'left';
+
+    ctx.fillStyle = '#9aaba2';
+    ctx.font = '500 12px Inter, Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Natura Vida Bolivia', width / 2, height - 36);
     ctx.textAlign = 'left';
     return canvas;
   }

@@ -1,4 +1,4 @@
-/* NATURA VIDA V8.0.1 — territorio estable, mapa operativo y carga silenciosa. */
+/* NATURA VIDA V8.0.2 — territorio operativo, búsqueda inteligente, densidad visible y mapa estable. */
 (() => {
   const territory = {
     prospects: [], visits: [], events: [], loaded: false,
@@ -6,8 +6,8 @@
     map: null, baseLayer: null, fallbackLayer: null, markerLayer: null,
     densityLayer: null, locationLayer: null, temporaryLayer: null,
     markerSignature: '', realtimeTimer: null, tileErrors: 0, tilesLoaded: false,
-    provider: 'osm', densityVisible: false, placingPoint: false, fullscreen: false,
-    savedView: null, lastFetchAt: 0
+    provider: 'osm', densityVisible: false, densitySource: 'all', placingPoint: false, fullscreen: false,
+    savedView: null, lastFetchAt: 0, markerIndex: new Map(), searchAbort: null, searchTimer: null, searchSerial: 0, layersOpen: false
   };
   const esc = value => escapeHtml(String(value ?? ''));
   const currentUid = () => AppState.session?.onlineUserId || AppState.session?.userId || '';
@@ -85,13 +85,20 @@
   function eventCard(e) { return `<article class="v800EventRow"><span>${e.eventType==='visit_registered'?'📍':e.eventType==='prospect_created'?'✦':'↻'}</span><div><strong>${esc(e.title)}</strong><p>${esc(e.summary)}</p><small>${esc(ownerName(e.ownerUserId))} · ${fmtDateTime(e.createdAt)}</small></div></article>`; }
 
   function mapPanelHtml(){
-    return `<section class="v800MapPanel" id="territoryMapPanelV801">
-      <div class="v800MapToolbar"><div><strong>Mapa territorial</strong><span>Calles, clientes, prospectos, visitas y cobertura</span></div><button class="v801MapIconBtn" id="fullscreenMapV801" title="Ampliar mapa">⛶</button></div>
-      <div class="v801MapSearch"><input id="mapAddressSearchV801" placeholder="Buscar calle, mercado, tienda o ciudad"><button id="runMapSearchV801">Buscar</button></div>
-      <div class="v801MapActions"><button id="myLocationV801">⌖ Mi ubicación</button><button id="placePointV801">＋ Marcar punto</button><label><input type="checkbox" id="densityToggleV801" ${territory.densityVisible?'checked':''}> Densidad</label><button id="retryTilesV801">↻ Mapa</button></div>
+    return `<section class="v800MapPanel v802MapPanel" id="territoryMapPanelV801">
+      <div class="v800MapToolbar v802MapToolbar"><div><strong>Mapa territorial</strong><span>Clientes, visitas y cobertura</span></div><button class="v801MapIconBtn" id="fullscreenMapV801" title="Ampliar mapa" aria-label="Ampliar mapa">⛶</button></div>
+      <div class="v802MapSearchShell" id="mapSearchShellV802">
+        <div class="v801MapSearch"><span class="v802SearchIcon">⌕</span><input id="mapAddressSearchV801" autocomplete="off" inputmode="search" placeholder="Buscar cliente, tienda, calle o mercado"><button id="runMapSearchV801" aria-label="Buscar">Buscar</button></div>
+        <div id="mapSearchResultsV801" class="v801MapSearchResults hidden" role="listbox"></div>
+      </div>
+      <div class="v801MapActions v802MapActions"><button id="myLocationV801"><span>⌖</span> Mi ubicación</button><button id="placePointV801"><span>＋</span> Marcar punto</button><button id="mapLayersV802" class="v802LayersButton" aria-expanded="${territory.layersOpen?'true':'false'}"><span>◫</span> Capas</button></div>
+      <div class="v802MapLayerMenu ${territory.layersOpen?'':'hidden'}" id="mapLayerMenuV802">
+        <div class="v802LayerRow"><span><b>Vista cartográfica</b><small>Calles y referencias del mapa</small></span><button id="retryTilesV801">↻ Recargar</button></div>
+        <label class="v802DensityControl"><span><b>Densidad territorial</b><small id="densitySummaryV802">${territory.densityVisible?'Capa activa':'Capa desactivada'}</small></span><input type="checkbox" id="densityToggleV801" ${territory.densityVisible?'checked':''}></label>
+        <label class="v802DensitySource"><span>Analizar</span><select id="densitySourceV802"><option value="all" ${territory.densitySource==='all'?'selected':''}>Toda la actividad</option><option value="clients" ${territory.densitySource==='clients'?'selected':''}>Clientes</option><option value="prospects" ${territory.densitySource==='prospects'?'selected':''}>Prospectos</option><option value="visits" ${territory.densitySource==='visits'?'selected':''}>Visitas</option></select></label>
+      </div>
       <div class="v801MapWrap"><div class="v801MapStatus" id="mapStatusV801"><span class="spinner"></span><b>Cargando calles…</b><small>Conectando con la cartografía</small></div><div id="territoryMapV801" class="v800TerritoryMap"></div></div>
-      <div id="mapSearchResultsV801" class="v801MapSearchResults hidden"></div>
-      <div class="v800MapLegend"><span><i></i>Clientes</span><span><i class="prospect"></i>Prospectos</span><span><i class="qualified"></i>Calificados</span><span><i class="inactive"></i>Inactivos</span></div>
+      <div class="v800MapLegend"><span><i></i>Clientes</span><span><i class="prospect"></i>Prospectos</span><span><i class="qualified"></i>Calificados</span><span><i class="inactive"></i>Inactivos</span><span class="v802DensityLegend ${territory.densityVisible?'':'hidden'}" id="densityLegendV802"><i></i>Densidad baja–alta</span></div>
     </section>`;
   }
 
@@ -108,7 +115,7 @@
     if(!territory.loaded) main.innerHTML='<div class="loading">Preparando territorio…</div>';
     const result=await fetchTerritoryV801();
     if(!result.ok){main.innerHTML=`<div class="v7Empty"><span>⚠️</span><h3>No se pudo cargar Territorio</h3><p>${esc(result.message)}</p><button class="btn" id="retryTerritoryV801">Reintentar</button></div>`;$('#retryTerritoryV801')?.addEventListener('click',renderTerritoryV801);return;}
-    main.innerHTML=`<section class="v800ModuleHero territory"><span class="v800Orb one"></span><span class="v800Orb two"></span><span class="v7Eyebrow">Territorio Natura Vida</span><h1>Clientes, prospectos y cobertura</h1><p>El mapa se construye con el trabajo real. Puedes usar el GPS del teléfono, buscar una dirección o marcar un punto manualmente.</p></section><section class="v7MetricGrid" id="territoryMetricGrid">${metricHtml()}</section><section class="v800TerritoryControls"><div class="v800ViewTabs">${[['map','Mapa'],['prospects','Prospectos'],['visits','Visitas'],['activity','Actividad']].map(([id,label])=>`<button data-view="${id}" class="${territory.view===id?'active':''}">${label}</button>`).join('')}</div><div class="v800TerritoryFilters">${canViewTeam()?`<select id="territoryOwnerFilter">${ownerOptions(territory.ownerFilter,true)}</select>`:''}<select id="territoryStatusFilter"><option value="all">Todos los estados</option>${['prospect','contacted','qualified','converted','inactive','lost'].map(s=>`<option value="${s}" ${territory.statusFilter===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select><input id="territorySearch" placeholder="Buscar tienda, cliente o zona" value="${esc(territory.search)}"></div></section><div id="territoryDynamicContent">${contentHtml()}</div>`;
+    main.innerHTML=`<section class="v800ModuleHero territory v802TerritoryHero"><span class="v800Orb one"></span><span class="v800Orb two"></span><span class="v7Eyebrow">Territorio Natura Vida</span><h1>Clientes, prospectos y cobertura</h1><p>Busca, ubica y registra el trabajo comercial desde un mapa estable.</p></section><section class="v7MetricGrid v802TerritoryMetrics" id="territoryMetricGrid">${metricHtml()}</section><section class="v800TerritoryControls v802TerritoryControls"><div class="v800ViewTabs">${[['map','Mapa'],['prospects','Prospectos'],['visits','Visitas'],['activity','Actividad']].map(([id,label])=>`<button data-view="${id}" class="${territory.view===id?'active':''}">${label}</button>`).join('')}</div><div class="v800TerritoryFilters ${territory.view==='map'?'mapMode':''}">${canViewTeam()?`<select id="territoryOwnerFilter">${ownerOptions(territory.ownerFilter,true)}</select>`:''}<select id="territoryStatusFilter"><option value="all">Todos los estados</option>${['prospect','contacted','qualified','converted','inactive','lost'].map(s=>`<option value="${s}" ${territory.statusFilter===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select>${territory.view==='map'?'':`<input id="territorySearch" placeholder="Filtrar cartera por nombre o zona" value="${esc(territory.search)}">`}</div></section><div id="territoryDynamicContent">${contentHtml()}</div>`;
     bindTerritoryControlsV801(); if(territory.view==='map') setTimeout(initTerritoryMapV801,60);
   }
   const renderTerritoryV800=renderTerritoryV801;
@@ -162,7 +169,7 @@
     layer.on('tileerror',()=>{territory.tileErrors+=1;if(territory.tileErrors>=4&&!territory.tilesLoaded&&provider==='osm'){addMapProviderV801('carto');}else if(territory.tileErrors>=8&&!territory.tilesLoaded){mapStatusV801('error','No se pudieron cargar las calles','Revisa internet y pulsa ↻ Mapa.');}});
     setTimeout(()=>{if(!territory.tilesLoaded&&territory.provider===provider){if(provider==='osm')addMapProviderV801('carto');else mapStatusV801('error','Cartografía no disponible','Tu ubicación y puntos siguen guardados. Reintenta cuando haya conexión.');}},8000);
   }
-  function destroyTerritoryMapV801(){if(territory.map){saveMapViewV801();territory.map.remove();}territory.map=null;territory.baseLayer=null;territory.markerLayer=null;territory.densityLayer=null;territory.locationLayer=null;territory.temporaryLayer=null;territory.markerSignature='';}
+  function destroyTerritoryMapV801(){if(territory.map){saveMapViewV801();territory.map.remove();}territory.map=null;territory.baseLayer=null;territory.markerLayer=null;territory.densityLayer=null;territory.locationLayer=null;territory.temporaryLayer=null;territory.markerSignature='';territory.markerIndex=new Map();}
 
   function initTerritoryMapV801(options={}){
     const container=$('#territoryMapV801');if(!container)return;
@@ -179,21 +186,38 @@
     bindMapControlsV801();updateTerritoryMarkersV801({fit:options.fit||!readSavedMapViewV801()});setTimeout(()=>territory.map?.invalidateSize({pan:false}),120);
   }
 
-  function clientPointV801(c){return {kind:'client',id:c.id,name:c.businessName||c.name||'Cliente',status:'converted',ownerUserId:c.ownerUserId,latitude:Number(c.latitude),longitude:Number(c.longitude),phone:c.phone||'',city:c.city||'',address:c.address||''};}
-  function mapPointsV801(){return [...filteredProspects().filter(pointValid).map(p=>Object.assign({kind:'prospect'},p)),...visibleClients().filter(pointValid).map(clientPointV801)];}
+  function clientPointV801(c){return {kind:'client',id:c.id,name:c.businessName||c.name||'Cliente',businessName:c.businessName||'',status:'converted',ownerUserId:c.ownerUserId,latitude:Number(c.latitude),longitude:Number(c.longitude),phone:c.phone||'',city:c.city||'',address:c.address||'',locationLabel:c.locationLabel||c.location||''};}
+  function mapProspectsV802(){return (territory.prospects||[]).filter(p=>visibleOwner(p)&&(territory.statusFilter==='all'||p.status===territory.statusFilter));}
+  function mapClientsV802(){return (AppState.clients||[]).filter(c=>territory.ownerFilter==='all'||c.ownerUserId===territory.ownerFilter||c.sellerId===territory.ownerFilter);}
+  function mapPointsV801(){return [...mapProspectsV802().filter(pointValid).map(p=>Object.assign({kind:'prospect'},p)),...mapClientsV802().filter(pointValid).map(clientPointV801)];}
+  function densityPointsV802(){
+    const clients=mapClientsV802().filter(pointValid).map(c=>Object.assign({kind:'client'},clientPointV801(c)));
+    const prospects=mapProspectsV802().filter(pointValid).map(p=>Object.assign({kind:'prospect'},p));
+    const visits=(territory.visits||[]).filter(visibleOwner).filter(pointValid).map(v=>Object.assign({kind:'visit'},v));
+    if(territory.densitySource==='clients')return clients;
+    if(territory.densitySource==='prospects')return prospects;
+    if(territory.densitySource==='visits')return visits;
+    return [...clients,...prospects,...visits];
+  }
   function markerColorV801(p){if(p.kind==='client'||p.status==='converted')return'#078c55';if(p.status==='qualified')return'#8fc91f';if(['inactive','lost'].includes(p.status))return'#74877d';if(p.status==='contacted')return'#42a96b';return'#f0a83b';}
   function markerIconV801(p){return L.divIcon({className:'v800LeafletMarkerWrap',html:`<span class="v800LeafletMarker" style="--marker:${markerColorV801(p)}">${p.kind==='client'?'C':'P'}</span>`,iconSize:[34,34],iconAnchor:[17,31]});}
+  function updateDensitySummaryV802(count=0){
+    const text=$('#densitySummaryV802');if(text)text.textContent=territory.densityVisible?(count?`${count} punto(s) representados`:'Sin puntos GPS para esta capa'):'Capa desactivada';
+    $('#densityLegendV802')?.classList.toggle('hidden',!territory.densityVisible||!count);
+  }
   function updateTerritoryMarkersV801(options={}){
     if(!territory.map||!territory.markerLayer)return;
-    const points=mapPointsV801();const signature=points.map(p=>`${p.kind}:${p.id}:${p.latitude}:${p.longitude}:${p.status}`).sort().join('|')+`|d:${territory.densityVisible}`;
+    const points=mapPointsV801();const densityPoints=densityPointsV802();const densitySignature=densityPoints.map(p=>`${p.kind}:${p.id||''}:${p.latitude}:${p.longitude}`).sort().join('|');const signature=points.map(p=>`${p.kind}:${p.id}:${p.latitude}:${p.longitude}:${p.status}`).sort().join('|')+`|d:${territory.densityVisible}:${territory.densitySource}:${densitySignature}`;
     if(signature===territory.markerSignature&&!options.fit)return;
-    territory.markerSignature=signature;territory.markerLayer.clearLayers();territory.densityLayer?.clearLayers();
+    territory.markerSignature=signature;territory.markerLayer.clearLayers();territory.densityLayer?.clearLayers();territory.markerIndex=new Map();
     const bounds=[];
-    points.forEach(p=>{const latlng=[Number(p.latitude),Number(p.longitude)];bounds.push(latlng);const marker=L.marker(latlng,{icon:markerIconV801(p)}).bindPopup(`<div class="v801MapPopup"><strong>${esc(p.businessName||p.name)}</strong><span>${esc(statusLabel(p.status))} · ${esc(ownerName(p.ownerUserId))}</span><small>${esc(p.address||p.city||'Sin dirección')}</small>${p.phone?`<a href="https://wa.me/${String(p.phone).replace(/\D/g,'')}" target="_blank" rel="noopener">WhatsApp</a>`:''}<button onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}','_blank')">Navegar</button></div>`);territory.markerLayer.addLayer(marker);});
+    points.forEach(p=>{const latlng=[Number(p.latitude),Number(p.longitude)];bounds.push(latlng);const marker=L.marker(latlng,{icon:markerIconV801(p)}).bindPopup(`<div class="v801MapPopup"><strong>${esc(p.businessName||p.name)}</strong><span>${esc(statusLabel(p.status))} · ${esc(ownerName(p.ownerUserId))}</span><small>${esc(p.address||p.locationLabel||p.city||'Sin dirección')}</small>${p.phone?`<a href="https://wa.me/${String(p.phone).replace(/\D/g,'')}" target="_blank" rel="noopener">WhatsApp</a>`:''}<button onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}','_blank')">Navegar</button></div>`);territory.markerLayer.addLayer(marker);territory.markerIndex.set(`${p.kind}:${p.id}`,marker);});
     if(territory.densityVisible){
-      const grouped=new Map();points.forEach(p=>{const key=`${Number(p.latitude).toFixed(3)},${Number(p.longitude).toFixed(3)}`;const row=grouped.get(key)||{lat:Number(p.latitude),lng:Number(p.longitude),count:0};row.count+=1;grouped.set(key,row);});
-      grouped.forEach(g=>territory.densityLayer.addLayer(L.circleMarker([g.lat,g.lng],{radius:Math.min(30,8+g.count*3),color:'#7bb82a',weight:2,fillColor:'#a6d855',fillOpacity:.20,interactive:false})));
-    }
+      const grouped=new Map();densityPoints.forEach(p=>{const lat=Number(p.latitude),lng=Number(p.longitude);const key=`${lat.toFixed(2)},${lng.toFixed(2)}`;const row=grouped.get(key)||{lat,lng,count:0};row.count+=1;grouped.set(key,row);});
+      const max=Math.max(1,...[...grouped.values()].map(g=>g.count));
+      grouped.forEach(g=>{const level=g.count/max;const color=level>.66?'#df7b27':level>.33?'#d9b72d':'#75b83c';const radius=Math.min(1700,Math.max(320,320+g.count*190));territory.densityLayer.addLayer(L.circle([g.lat,g.lng],{radius,color,weight:2,fillColor:color,fillOpacity:.18,interactive:false}));territory.densityLayer.addLayer(L.circleMarker([g.lat,g.lng],{radius:Math.min(25,8+g.count*2.5),color:'#fff',weight:2,fillColor:color,fillOpacity:.68,interactive:false}));});
+      updateDensitySummaryV802(densityPoints.length);
+    }else updateDensitySummaryV802(0);
     if(options.fit&&bounds.length){territory.map.fitBounds(bounds,{padding:[36,36],maxZoom:15});}
     else if(options.fit&&!bounds.length)territory.map.setView(BOLIVIA_CENTER,BOLIVIA_ZOOM);
   }
@@ -202,16 +226,57 @@
     $('#fullscreenMapV801')?.addEventListener('click',toggleMapFullscreenV801);
     $('#myLocationV801')?.addEventListener('click',centerMyLocationV801);
     $('#placePointV801')?.addEventListener('click',e=>{territory.placingPoint=!territory.placingPoint;e.currentTarget.classList.toggle('active',territory.placingPoint);showToast(territory.placingPoint?'Toca el lugar exacto en el mapa.':'Marcación cancelada.');});
-    $('#densityToggleV801')?.addEventListener('change',e=>{territory.densityVisible=e.target.checked;territory.markerSignature='';updateTerritoryMarkersV801();});
+    $('#mapLayersV802')?.addEventListener('click',e=>{territory.layersOpen=!territory.layersOpen;$('#mapLayerMenuV802')?.classList.toggle('hidden',!territory.layersOpen);e.currentTarget.setAttribute('aria-expanded',territory.layersOpen?'true':'false');});
+    $('#densityToggleV801')?.addEventListener('change',e=>{territory.densityVisible=e.target.checked;territory.markerSignature='';updateTerritoryMarkersV801();const count=densityPointsV802().length;showToast(territory.densityVisible?(count?`Densidad activada con ${count} punto(s).`:'No hay puntos GPS para mostrar densidad.'):'Densidad desactivada.',territory.densityVisible&&!count?'error':undefined);});
+    $('#densitySourceV802')?.addEventListener('change',e=>{territory.densitySource=e.target.value;territory.markerSignature='';updateTerritoryMarkersV801();});
     $('#retryTilesV801')?.addEventListener('click',()=>addMapProviderV801(territory.provider==='osm'?'carto':'osm'));
-    $('#runMapSearchV801')?.addEventListener('click',searchMapAddressV801);
-    $('#mapAddressSearchV801')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchMapAddressV801();}});
+    $('#runMapSearchV801')?.addEventListener('click',()=>searchMapAddressV801({forceExternal:true}));
+    const input=$('#mapAddressSearchV801');
+    input?.addEventListener('focus',()=>{$('#territoryMapPanelV801')?.classList.add('v802MapSearchActive');setTimeout(()=>input.scrollIntoView({block:'start',behavior:'smooth'}),60);if(input.value.trim().length>=2)searchMapAddressV801();});
+    input?.addEventListener('input',()=>{clearTimeout(territory.searchTimer);territory.searchTimer=setTimeout(()=>searchMapAddressV801(),320);});
+    input?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchMapAddressV801({forceExternal:true});}if(e.key==='Escape')closeMapSearchV802();});
+    if(!document.body.dataset.nv802MapSearchBound){document.body.dataset.nv802MapSearchBound='1';document.addEventListener('click',event=>{if(!event.target.closest('#mapSearchShellV802'))closeMapSearchV802();});}
   }
   function toggleMapFullscreenV801(){const panel=$('#territoryMapPanelV801');if(!panel)return;territory.fullscreen=!territory.fullscreen;panel.classList.toggle('v801MapFullscreen',territory.fullscreen);document.body.classList.toggle('nv801MapOpen',territory.fullscreen);$('#fullscreenMapV801').textContent=territory.fullscreen?'✕':'⛶';setTimeout(()=>territory.map?.invalidateSize({pan:false}),180);}
-  function centerMyLocationV801(){const btn=$('#myLocationV801');if(!navigator.geolocation)return showToast('Este dispositivo no permite geolocalización.','error');btn.disabled=true;btn.textContent='Ubicando…';navigator.geolocation.getCurrentPosition(pos=>{btn.disabled=false;btn.textContent='⌖ Mi ubicación';const lat=Number(pos.coords.latitude),lng=Number(pos.coords.longitude),accuracy=Number(pos.coords.accuracy||0);territory.locationLayer.clearLayers();const marker=L.marker([lat,lng]).bindPopup(`<strong>Mi ubicación</strong><br>Precisión aproximada: ${Math.round(accuracy)} m`).addTo(territory.locationLayer);L.circle([lat,lng],{radius:Math.min(Math.max(accuracy,8),150),color:'#0b9360',weight:2,fillColor:'#6fd69b',fillOpacity:.12,interactive:false}).addTo(territory.locationLayer);territory.map.setView([lat,lng],Math.max(16,territory.map.getZoom()));marker.openPopup();},err=>{btn.disabled=false;btn.textContent='⌖ Mi ubicación';showToast(err.code===1?'Autoriza la ubicación en el navegador para centrar el mapa.':'No se pudo obtener la ubicación.','error');},{enableHighAccuracy:true,timeout:18000,maximumAge:30000});}
+  function centerMyLocationV801(){const btn=$('#myLocationV801');if(!navigator.geolocation)return showToast('Este dispositivo no permite geolocalización.','error');btn.disabled=true;btn.innerHTML='<span>⌖</span> Ubicando…';navigator.geolocation.getCurrentPosition(pos=>{btn.disabled=false;btn.innerHTML='<span>⌖</span> Mi ubicación';const lat=Number(pos.coords.latitude),lng=Number(pos.coords.longitude),accuracy=Number(pos.coords.accuracy||0);territory.locationLayer.clearLayers();const marker=L.marker([lat,lng]).bindPopup(`<strong>Mi ubicación</strong><br>Precisión aproximada: ${Math.round(accuracy)} m`).addTo(territory.locationLayer);L.circle([lat,lng],{radius:Math.min(Math.max(accuracy,8),150),color:'#0b9360',weight:2,fillColor:'#6fd69b',fillOpacity:.12,interactive:false}).addTo(territory.locationLayer);territory.map.setView([lat,lng],Math.max(16,territory.map.getZoom()));marker.openPopup();},err=>{btn.disabled=false;btn.innerHTML='<span>⌖</span> Mi ubicación';const message=err.code===1?'Permiso de ubicación denegado. Autorízalo en el navegador.':err.code===2?'El GPS no pudo determinar la ubicación. Actívalo y reintenta.':err.code===3?'La ubicación tardó demasiado. Reintenta en un lugar con mejor señal.':'No se pudo obtener la ubicación.';showToast(message,'error');},{enableHighAccuracy:true,timeout:18000,maximumAge:30000});}
   function showTemporaryPointV801(lat,lng,openForm=false,label='Punto seleccionado'){territory.temporaryLayer?.clearLayers();const marker=L.marker([lat,lng],{draggable:true}).addTo(territory.temporaryLayer).bindPopup(`<strong>${esc(label)}</strong><br><button id="createHereV801">Registrar prospecto aquí</button>`).openPopup();marker.on('dragend',()=>{const p=marker.getLatLng();lat=p.lat;lng=p.lng;});setTimeout(()=>$('#createHereV801')?.addEventListener('click',()=>openProspectFormV801('',{latitude:lat,longitude:lng,locationLabel:label})),60);if(openForm)showToast('Punto marcado. Ajusta el pin o registra el prospecto.');}
-  async function searchMapAddressV801(){const input=$('#mapAddressSearchV801'),box=$('#mapSearchResultsV801');const q=input?.value.trim();if(!q)return showToast('Escribe una calle, mercado, tienda o ciudad.','error');box.classList.remove('hidden');box.innerHTML='<div class="v801MapResultLoading">Buscando ubicación…</div>';try{const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=bo&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`;const response=await fetch(url,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error('Servicio de búsqueda no disponible');const rows=await response.json();box.innerHTML=(rows||[]).map((r,i)=>`<button data-index="${i}"><strong>${esc((r.display_name||'').split(',')[0])}</strong><small>${esc(r.display_name||'')}</small></button>`).join('')||'<p>No se encontraron resultados en Bolivia.</p>';[...box.querySelectorAll('button')].forEach(btn=>btn.onclick=()=>{const r=rows[Number(btn.dataset.index)];const lat=Number(r.lat),lng=Number(r.lon);territory.map.setView([lat,lng],17);showTemporaryPointV801(lat,lng,false,r.display_name||q);box.classList.add('hidden');});}catch(error){box.innerHTML=`<p>No se pudo buscar la dirección. Revisa la conexión y vuelve a intentar.</p>`;}}
-  function locateItemV801(kind,id){territory.view='map';patchTerritoryV801({rebuildContent:true});setTimeout(()=>{const item=kind==='prospect'?territory.prospects.find(p=>p.id===id):territory.visits.find(v=>v.id===id);if(item&&pointValid(item)&&territory.map)territory.map.setView([Number(item.latitude),Number(item.longitude)],17);},140);}
+  function closeMapSearchV802(){
+    $('#mapSearchResultsV801')?.classList.add('hidden');
+    $('#territoryMapPanelV801')?.classList.remove('v802MapSearchActive');
+  }
+  function mapResultTypeV802(kind){return ({client:'Cliente',prospect:'Prospecto',visit:'Visita',address:'Ubicación'})[kind]||'Resultado';}
+  function localMapResultsV802(query){
+    const term=normalizeSearch(query);if(term.length<2)return[];
+    const rows=[];
+    const clients=(AppState.clients||[]).filter(c=>territory.ownerFilter==='all'||c.ownerUserId===territory.ownerFilter||c.sellerId===territory.ownerFilter);
+    const prospects=(territory.prospects||[]).filter(p=>visibleOwner(p)&&(territory.statusFilter==='all'||p.status===territory.statusFilter));
+    clients.forEach(c=>{const text=normalizeSearch([c.name,c.businessName,c.phone,c.city,c.address,c.locationLabel].join(' '));if(text.includes(term))rows.push({kind:'client',id:c.id,title:c.businessName||c.name||'Cliente',detail:[c.phone,c.city||c.address,pointValid(c)?'GPS registrado':'Sin GPS'].filter(Boolean).join(' · '),latitude:c.latitude,longitude:c.longitude,item:c});});
+    prospects.forEach(p=>{const text=normalizeSearch([p.name,p.businessName,p.phone,p.city,p.address,p.locationLabel].join(' '));if(text.includes(term))rows.push({kind:'prospect',id:p.id,title:p.businessName||p.name||'Prospecto',detail:[p.phone,p.city||p.address,pointValid(p)?'GPS registrado':'Sin GPS'].filter(Boolean).join(' · '),latitude:p.latitude,longitude:p.longitude,item:p});});
+    return rows.sort((a,b)=>{const an=normalizeSearch(a.title),bn=normalizeSearch(b.title);const ap=an.startsWith(term)?0:1,bp=bn.startsWith(term)?0:1;return ap-bp||an.localeCompare(bn);}).slice(0,7);
+  }
+  function renderMapSearchResultsV802(localRows=[],externalRows=[],loading=false,message=''){
+    const box=$('#mapSearchResultsV801');if(!box)return;
+    const rows=[...localRows,...externalRows];box.classList.remove('hidden');
+    if(!rows.length&&!loading){box.innerHTML=`<p>${esc(message||'No se encontraron coincidencias.')}</p>`;return;}
+    box.innerHTML=`${localRows.length?'<div class="v802ResultGroup">Registros Natura Vida</div>':''}${localRows.map((r,i)=>`<button class="v802MapResult internal" data-result-kind="${esc(r.kind)}" data-result-index="${i}"><span class="v802ResultBadge ${esc(r.kind)}">${esc(mapResultTypeV802(r.kind))}</span><strong>${esc(r.title)}</strong><small>${esc(r.detail)}</small></button>`).join('')}${externalRows.length?'<div class="v802ResultGroup">Calles y lugares</div>':''}${externalRows.map((r,i)=>`<button class="v802MapResult address" data-address-index="${i}"><span class="v802ResultBadge address">Ubicación</span><strong>${esc((r.display_name||'').split(',')[0])}</strong><small>${esc(r.display_name||'')}</small></button>`).join('')}${loading?'<div class="v801MapResultLoading"><span class="spinner"></span> Buscando calles y lugares…</div>':''}`;
+    $all('[data-result-index]',box).forEach(btn=>btn.onclick=()=>selectLocalMapResultV802(localRows[Number(btn.dataset.resultIndex)]));
+    $all('[data-address-index]',box).forEach(btn=>btn.onclick=()=>selectExternalMapResultV802(externalRows[Number(btn.dataset.addressIndex)]));
+  }
+  function selectLocalMapResultV802(result){
+    if(!result)return;
+    if(pointValid(result)){const lat=Number(result.latitude),lng=Number(result.longitude);territory.map?.setView([lat,lng],17);const marker=territory.markerIndex.get(`${result.kind}:${result.id}`);if(marker)setTimeout(()=>marker.openPopup(),120);closeMapSearchV802();document.activeElement?.blur();return;}
+    showToast(`${mapResultTypeV802(result.kind)} encontrado, pero todavía no tiene ubicación GPS.`, 'error');
+  }
+  function selectExternalMapResultV802(result){if(!result)return;const lat=Number(result.lat),lng=Number(result.lon);territory.map?.setView([lat,lng],17);showTemporaryPointV801(lat,lng,false,result.display_name||'Ubicación encontrada');closeMapSearchV802();document.activeElement?.blur();}
+  async function searchMapAddressV801(options={}){
+    const input=$('#mapAddressSearchV801');const q=input?.value.trim();if(!q){closeMapSearchV802();if(options.forceExternal)showToast('Escribe un cliente, calle, mercado, tienda o ciudad.','error');return;}
+    const localRows=localMapResultsV802(q);const doExternal=options.forceExternal||q.length>=3;
+    renderMapSearchResultsV802(localRows,[],doExternal,'No se encontraron registros internos.');
+    if(!doExternal)return;
+    if(territory.searchAbort)territory.searchAbort.abort();territory.searchAbort=new AbortController();const serial=++territory.searchSerial;
+    try{const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=bo&limit=6&addressdetails=1&accept-language=es&q=${encodeURIComponent(q)}`;const response=await fetch(url,{headers:{Accept:'application/json'},signal:territory.searchAbort.signal,cache:'no-store'});if(!response.ok)throw new Error('Servicio de búsqueda no disponible');const rows=await response.json();if(serial!==territory.searchSerial)return;renderMapSearchResultsV802(localRows,rows||[],false,localRows.length?'':'No se encontraron resultados en Bolivia.');}catch(error){if(error.name==='AbortError')return;renderMapSearchResultsV802(localRows,[],false,localRows.length?'':'No se pudo buscar la ubicación. Revisa la conexión y reintenta.');}
+  }
+  function locateItemV801(kind,id){territory.view='map';patchTerritoryV801({rebuildContent:true});setTimeout(()=>{const item=kind==='prospect'?territory.prospects.find(p=>p.id===id):kind==='client'?(AppState.clients||[]).find(c=>c.id===id):territory.visits.find(v=>v.id===id);if(item&&pointValid(item)&&territory.map){territory.map.setView([Number(item.latitude),Number(item.longitude)],17);territory.markerIndex.get(`${kind}:${id}`)?.openPopup();}},160);}
 
   function getGps(button){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Este dispositivo no permite geolocalización.'));button.disabled=true;button.textContent='Capturando GPS…';navigator.geolocation.getCurrentPosition(pos=>{button.disabled=false;button.textContent='GPS capturado';resolve({latitude:Number(pos.coords.latitude.toFixed(6)),longitude:Number(pos.coords.longitude.toFixed(6)),accuracy:Number(pos.coords.accuracy||0)});},err=>{button.disabled=false;button.textContent='Capturar ubicación actual';reject(new Error(err.code===1?'Debes autorizar la ubicación en el navegador.':err.message||'No se pudo obtener la ubicación.'));},{enableHighAccuracy:true,timeout:18000,maximumAge:10000});});}
 
