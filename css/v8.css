@@ -1,4 +1,4 @@
-/* NATURA VIDA V8.0.2 — experiencia premium, búsqueda inteligente y territorio operativo */
+/* NATURA VIDA V8.0.3 — experiencia premium, búsqueda inteligente y territorio operativo */
 :root{
   --nv8-forest:#064b2e;--nv8-deep:#075f3a;--nv8-leaf:#0c8e52;--nv8-fresh:#29b868;
   --nv8-lime:#a6d93a;--nv8-lime-soft:#eaf8bf;--nv8-mint:#dff7e9;--nv8-cream:#f7fbf5;
@@ -54,7 +54,7 @@
 }
 
 /* ======================================================================
-   NATURA VIDA V8.0.2 — EXPERIENCIA PREMIUM, BÚSQUEDA INTELIGENTE
+   NATURA VIDA V8.0.3 — EXPERIENCIA PREMIUM, BÚSQUEDA INTELIGENTE
    Y TERRITORIO OPERATIVO
    ====================================================================== */
 :root{
@@ -109,3 +109,24 @@
 @media(max-width:365px){
   .v802MetricGrid{grid-template-columns:1fr 1fr}.v802KpiCard{grid-template-columns:1fr;align-content:start}.v802KpiIcon{width:37px;height:37px}.v802StatusStrip{grid-template-columns:1fr 1fr}.v802StatusStrip span:last-child{grid-column:1/-1}.v802CategoryCard{grid-template-columns:96px minmax(0,1fr) 30px!important;min-height:150px!important}.v802CategoryCopy small{font-size:.65rem!important}.v802MapActions button{font-size:.56rem!important}.v802MapActions button span{display:none}.v802DensitySource{align-items:flex-start;flex-direction:column;gap:5px}.v802DensitySource select{width:100%}
 }
+
+
+/* ===== V8.0.3 — panel de capas y registro territorial vinculado ===== */
+.overlay{z-index:7000!important}
+.sheet{position:relative;z-index:1}
+.v802MapSearchShell{z-index:60}
+.v802MapLayerMenu{z-index:50}
+.v803LayerFooter{display:flex;justify-content:flex-end;padding-top:3px}
+.v803LayerFooter button{min-height:34px;border:0;border-radius:11px;padding:0 16px;background:linear-gradient(135deg,#087a49,#11a663);color:#fff;font-size:.7rem;font-weight:900;box-shadow:0 8px 18px rgba(5,116,67,.18)}
+.v803TerritoryFormNotice{display:grid;gap:3px;margin:-3px 0 12px;padding:11px 12px;border:1px solid #d9eee1;border-radius:15px;background:linear-gradient(135deg,#eefaf3,#fffaf0)}
+.v803TerritoryFormNotice strong{color:#15543a;font-size:.78rem}
+.v803TerritoryFormNotice span{color:#647b70;font-size:.67rem;line-height:1.45}
+.v803LinkedClient{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:9px;align-items:center;margin:8px 0 12px;padding:10px 11px;border:1px solid #bfe4cd;border-radius:15px;background:#ebf8f0;color:#174b35}
+.v803LinkedClient>span{width:32px;height:32px;border-radius:11px;display:grid;place-items:center;background:#0b9257;color:#fff;font-weight:900}
+.v803LinkedClient strong,.v803LinkedClient small{display:block}
+.v803LinkedClient strong{font-size:.74rem}
+.v803LinkedClient small{margin-top:2px;color:#60776c;font-size:.62rem;line-height:1.35}
+.v803LinkedClient button{border:0;border-radius:10px;padding:7px 9px;background:#fff;color:#0b7447;font-size:.64rem;font-weight:850}
+.v803TerritoryActions{display:grid!important;grid-template-columns:.8fr 1.4fr;gap:9px}
+.v803TerritoryActions .btn{margin:0;min-height:46px}
+@media(max-width:520px){.v803TerritoryActions{grid-template-columns:1fr 1.35fr}.v803LinkedClient{grid-template-columns:32px minmax(0,1fr)}.v803LinkedClient button{grid-column:1/-1;width:100%}}

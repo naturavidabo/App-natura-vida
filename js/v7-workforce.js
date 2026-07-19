@@ -165,7 +165,7 @@
       $('#retryWorkforceV770')?.addEventListener('click', () => renderWorkforceV770());
       return;
     }
-    main.innerHTML = `<section class="v770WorkHero nv771LimeHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V8.0.2</span><h1>${managerMode()?'Personal, funciones y mano de obra':'Mi trabajo'}</h1><p>${managerMode() ? 'Diferencia usuarios con acceso, personal gestionado y ayudantes ocasionales; asigna tareas según tu alcance.' : 'Consulta tus tareas y registros de asistencia sin acceder a información de otras personas.'}</p></section>${metricsHtml()}${workforceTabs()}<div id="workforceTabContentV771">${tabContent()}</div>`;
+    main.innerHTML = `<section class="v770WorkHero nv771LimeHero"><div class="v770OrganicGlow one"></div><div class="v770OrganicGlow two"></div><span class="v7Eyebrow">Natura Vida V8.0.3</span><h1>${managerMode()?'Personal, funciones y mano de obra':'Mi trabajo'}</h1><p>${managerMode() ? 'Diferencia usuarios con acceso, personal gestionado y ayudantes ocasionales; asigna tareas según tu alcance.' : 'Consulta tus tareas y registros de asistencia sin acceder a información de otras personas.'}</p></section>${metricsHtml()}${workforceTabs()}<div id="workforceTabContentV771">${tabContent()}</div>`;
     bindWorkforceEvents();
     if (options.quiet) requestAnimationFrame(() => window.scrollTo({ top: scroll, behavior: 'auto' }));
   }
