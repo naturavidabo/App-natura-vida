@@ -58,9 +58,16 @@ function renderSettings() {
       <button class="btn outline block" id="testOnlineBtn">Comprobar conexión ahora</button>
     </div>
 
+    <div class="sectiontitle">Saneamiento y seguridad</div>
+    <div class="card settingsCard">
+      <div class="name">Estado del sistema y calidad de datos</div>
+      <div class="costline">Revisa conexión, sesión, posibles clientes duplicados, inconsistencias básicas de inventario, usuarios demo y perfiles incompletos. No modifica datos automáticamente.</div>
+      <button class="btn block" id="openGovernanceBtn">Abrir centro de diagnóstico</button>
+    </div>
+
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V7 · Supabase + Realtime</div>
+      <div class="costline">NATURA VIDA — V8.0.4 · Supabase + Realtime</div>
       <div class="costline">Sin IndexedDB, sin cola offline, sin sincronización manual y sin bases separadas por celular.</div>
     </div>
   `;
@@ -114,6 +121,12 @@ function renderSettings() {
       e.target.checked = old;
       showToast(err.message || 'No se pudo guardar.', 'error');
     }
+  });
+
+  $('#openGovernanceBtn').addEventListener('click', async () => {
+    const btn = $('#openGovernanceBtn'); btn.disabled = true; btn.textContent = 'Preparando diagnóstico…';
+    if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
+    if (window.renderGovernanceCenter) renderGovernanceCenter();
   });
 
   $('#testOnlineBtn').addEventListener('click', async () => {

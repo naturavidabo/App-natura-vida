@@ -24,14 +24,14 @@ version=json.loads(read('app-version.json')); manifest=json.loads(read('manifest
 
 # Paquete y despliegue
 require(index.lstrip().startswith('<!DOCTYPE html>'),'index.html no inicia como HTML')
-require(version.get('version')=='8.0.3','app-version no indica 8.0.3')
-require("CURRENT_VERSION = '8.0.3'" in update,'app-update no indica 8.0.3')
-require('service-worker.js?v=8.0.3' in update,'registro del service worker no usa 8.0.3')
-require('natura-vida-v8-0-3' in sw.lower(),'service worker no corresponde a V8.0.3')
-require('V8.0.3' in manifest.get('name',''),'manifest no identifica V8.0.3')
-require('css/v8.css?v=8.0.3' in index,'index no carga CSS V8.0.3')
+require(version.get('version')=='8.0.4','app-version no indica 8.0.4')
+require("CURRENT_VERSION = '8.0.4'" in update,'app-update no indica 8.0.4')
+require('service-worker.js?v=8.0.4' in update,'registro del service worker no usa 8.0.4')
+require('natura-vida-v8-0-4' in sw.lower(),'service worker no corresponde a V8.0.4')
+require('V8.0.4' in manifest.get('name',''),'manifest no identifica V8.0.4')
+require('css/v8.css?v=8.0.4' in index,'index no carga CSS V8.0.4')
 for script in ['clients.js','sales.js','v7-documents.js','v7-management-center.js','v8-territory.js','v7-shell.js']:
-    require(f'js/{script}?v=8.0.3' in index,f'index no carga {script} con versión correcta')
+    require(f'js/{script}?v=8.0.4' in index,f'index no carga {script} con versión correcta')
 require(index.index('clients.js') < index.index('sales.js'),'clientes debe cargarse antes de ventas')
 require(index.index('v8-stability.js') < index.index('v7-commercial-center.js'),'estabilidad se carga después de módulos comerciales')
 
@@ -70,7 +70,7 @@ require('L.circle(' in territory and 'Densidad baja–alta' in territory,'densid
 require('Mi ubicación' in territory and 'Marcar punto' in territory,'faltan acciones territoriales principales')
 require('Permiso de ubicación denegado' in territory and 'El GPS no pudo determinar' in territory,'geolocalización no diferencia errores')
 require('saveMapViewV801' in territory and 'markerSignature' in territory,'mapa no conserva contexto')
-require('.v802MapActions' in css and '.v802MapLayerMenu' in css and '.v802MapResult' in css,'faltan estilos territoriales V8.0.3')
+require('.v802MapActions' in css and '.v802MapLayerMenu' in css and '.v802MapResult' in css,'faltan estilos territoriales V8.0.4')
 require('.v802MapSearchActive .v800TerritoryMap' in css,'teclado/búsqueda no adapta el mapa')
 require('MAP_HOSTS' in sw and "cache: 'no-store'" in sw,'service worker puede conservar cartografía defectuosa')
 
@@ -96,10 +96,10 @@ require('Escanee el código QR para realizar el pago.' in docs,'mensaje de pago 
 require('Gracias por confiar en Natura Vida Bolivia.' in docs,'falta cierre único de marca')
 require('próximos pagos o consultas' not in docs and 'QR de cobro' not in docs,'quedan mensajes redundantes o incorrectos en el recibo')
 
-# Corrección V8.0.3: capas y registro territorial vinculado
-require('closeLayersV803' in territory and 'Continuar' in territory,'panel de capas no tiene cierre explícito')
-require('prepareTerritorySheetV803' in territory,'formularios territoriales no limpian controles del mapa')
-require('tpClientSuggestionsV803' in territory and 'bindClientAutocompleteV802' in territory,'registro territorial no conecta autocompletado de clientes')
+# Corrección V8.0.4: capas y registro territorial vinculado
+require('closeLayersV804' in territory and 'Continuar' in territory,'panel de capas no tiene cierre explícito')
+require('prepareTerritorySheetV804' in territory,'formularios territoriales no limpian controles del mapa')
+require('tpClientSuggestionsV804' in territory and 'bindClientAutocompleteV802' in territory,'registro territorial no conecta autocompletado de clientes')
 require('Cliente existente vinculado' in territory and 'Actualizar cliente y ubicación' in territory,'falta modo de cliente vinculado')
 require('await saveClientV723(updated)' in territory,'cliente seleccionado no se actualiza en su ficha')
 require("if(result.kind==='client')" in territory and 'clientId:result.id' in territory,'cliente sin GPS no abre formulario de ubicación')
@@ -117,7 +117,7 @@ for match in re.findall(r'(?:src|href)="((?:css|js|icons|img)/[^"?]+)', index):
     require((ROOT/match).exists(),f'recurso local inexistente: {match}')
 
 if errors:
-    print(f'Auditoría Natura Vida V8.0.3: {checks-len(errors)}/{checks} controles OK')
+    print(f'Auditoría Natura Vida V8.0.4: {checks-len(errors)}/{checks} controles OK')
     for e in errors: print('ERROR:',e)
     sys.exit(1)
-print(f'Auditoría Natura Vida V8.0.3: {checks}/{checks} controles OK')
+print(f'Auditoría Natura Vida V8.0.4: {checks}/{checks} controles OK')

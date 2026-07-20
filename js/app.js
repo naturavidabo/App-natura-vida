@@ -585,6 +585,7 @@ async function renderUsersFoundation() {
   if (isAdmin() && window.fetchAllProfilesForAdmin) {
     const res = await fetchAllProfilesForAdmin().catch(() => ({ ok: false }));
     if (res && res.ok) profiles = res.profiles || [];
+    window.NV804Profiles = profiles;
   }
 
   const statusIcon = (s) => s === 'activo' ? '🟢' : s === 'pendiente' ? '🟡' : '🔴';
@@ -608,6 +609,7 @@ async function renderUsersFoundation() {
         <div class="l">
           <div class="pname">${statusIcon(p.status)} ${escapeHtml(p.full_name || p.email || p.id)}</div>
           <div class="meta">${escapeHtml(p.email || '')} · ${escapeHtml(p.role || '')} · ${statusLabel(p.status)}${p.phone ? ' · ' + escapeHtml(p.phone) : ''}</div>
+          ${window.NV804Governance ? (() => { const q = NV804Governance.classifyProfile(p); return `<div class="nv804UserFlags">${q.demo ? '<span class="nv804UserFlag demo">Posible demo</span>' : ''}${q.missing.length ? `<span class="nv804UserFlag issue">Falta: ${escapeHtml(q.missing.join(', '))}</span>` : ''}<span class="nv804UserFlag">${q.activity.total} registros vinculados</span></div>`; })() : ''}
         </div>
         <div class="r userActions">
           ${p.status === 'pendiente' ? `<button class="btn sm" data-action="approve" data-id="${p.id}">Aprobar</button>` : ''}

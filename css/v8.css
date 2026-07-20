@@ -1,4 +1,4 @@
-/* NATURA VIDA V8.0.3 — experiencia premium, búsqueda inteligente y territorio operativo */
+/* NATURA VIDA V8.0.4 — experiencia premium, búsqueda inteligente y territorio operativo */
 :root{
   --nv8-forest:#064b2e;--nv8-deep:#075f3a;--nv8-leaf:#0c8e52;--nv8-fresh:#29b868;
   --nv8-lime:#a6d93a;--nv8-lime-soft:#eaf8bf;--nv8-mint:#dff7e9;--nv8-cream:#f7fbf5;
@@ -54,7 +54,7 @@
 }
 
 /* ======================================================================
-   NATURA VIDA V8.0.3 — EXPERIENCIA PREMIUM, BÚSQUEDA INTELIGENTE
+   NATURA VIDA V8.0.4 — EXPERIENCIA PREMIUM, BÚSQUEDA INTELIGENTE
    Y TERRITORIO OPERATIVO
    ====================================================================== */
 :root{
@@ -111,7 +111,7 @@
 }
 
 
-/* ===== V8.0.3 — panel de capas y registro territorial vinculado ===== */
+/* ===== V8.0.4 — panel de capas y registro territorial vinculado ===== */
 .overlay{z-index:7000!important}
 .sheet{position:relative;z-index:1}
 .v802MapSearchShell{z-index:60}
@@ -130,3 +130,6 @@
 .v803TerritoryActions{display:grid!important;grid-template-columns:.8fr 1.4fr;gap:9px}
 .v803TerritoryActions .btn{margin:0;min-height:46px}
 @media(max-width:520px){.v803TerritoryActions{grid-template-columns:1fr 1.35fr}.v803LinkedClient{grid-template-columns:32px minmax(0,1fr)}.v803LinkedClient button{grid-column:1/-1;width:100%}}
+
+/* V8.0.4 — saneamiento y estado del sistema */
+.nv804Head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px;border-radius:22px;background:linear-gradient(135deg,#0a6845,#16875c);color:#fff;margin:0 0 14px}.nv804Head h1{margin:3px 0 5px;font-size:1.55rem}.nv804Head p{margin:0;opacity:.9;font-size:.9rem}.nv804Score{display:grid;place-items:center;min-width:58px;height:58px;border-radius:18px;background:rgba(255,255,255,.16);font-size:1.15rem;font-weight:800}.nv804Grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:14px}.nv804Check{display:flex;gap:10px;align-items:center;padding:12px;border:1px solid var(--border);border-radius:16px;background:var(--surface,#fff)}.nv804Check .dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}.nv804Check.ok .dot{background:#16a36a}.nv804Check.warn .dot{background:#dc922c}.nv804Check.bad .dot{background:#c85045}.nv804Check strong,.nv804Check small{display:block}.nv804Check small{margin-top:3px;color:var(--text-muted);font-size:.78rem}.nv804Panel{margin-bottom:13px}.nv804ReviewRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 2px;border-top:1px solid var(--border)}.nv804ReviewRow strong,.nv804ReviewRow small{display:block}.nv804ReviewRow small{color:var(--text-muted);margin-top:3px}.nv804Tag{padding:5px 9px;border-radius:999px;background:#e2f4ea;color:#126944;font-size:.72rem;font-weight:800}.nv804Tag.warn{background:#fff0db;color:#945410}.nv804Note{color:var(--text-muted);font-size:.9rem;line-height:1.45}.nv804UserFlags{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}.nv804UserFlag{font-size:.68rem;padding:3px 7px;border-radius:999px;background:#eef2ef;color:#456057}.nv804UserFlag.demo{background:#fff0db;color:#945410}.nv804UserFlag.issue{background:#fde8e5;color:#9b4037}@media(max-width:420px){.nv804Grid{grid-template-columns:1fr}.nv804Head{padding:15px}.nv804Head h1{font-size:1.3rem}}

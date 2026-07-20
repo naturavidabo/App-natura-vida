@@ -1,4 +1,4 @@
-NATURA VIDA V8.0.3
+NATURA VIDA V8.0.4
 
 Registro territorial vinculado y formularios móviles estables.
 
@@ -13,7 +13,7 @@ CAMBIOS PRINCIPALES
 
 SUBIDA
 1. Sustituir todo el contenido del sitio por este paquete.
-2. Confirmar que app-version.json indique 8.0.3.
+2. Confirmar que app-version.json indique 8.0.4.
 3. Esperar el despliegue de GitHub Pages.
 4. Abrir la app y usar Actualizar ahora cuando aparezca el aviso.
 5. Probar búsqueda de un cliente existente, captura GPS y guardado.

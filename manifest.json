@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.0.3 — Registro territorial vinculado, formularios estables y territorio operativo",
-  "short_name": "NaturaVida",
+  "name": "NATURA VIDA V8.0.4 — Saneamiento, seguridad y estabilidad general",
+  "short_name": "Natura Vida V8.0.4",
   "description": "Gestión modular Natura Vida con sesión confiable, vendedores vinculados, búsqueda inteligente de clientes, mapa territorial operativo, interfaz premium y actualizaciones silenciosas.",
-  "start_url": "./index.html?v=8.0.3",
+  "start_url": "./index.html?v=8.0.4",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

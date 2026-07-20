@@ -1,5 +1,5 @@
-// NATURA VIDA V8.0.3 — actualización controlada, sesión estable y mapas sin caché defectuosa.
-const VERSION = 'natura-vida-v8-0-3-territory-linked-registration';
+// NATURA VIDA V8.0.4 — actualización controlada, sesión estable y mapas sin caché defectuosa.
+const VERSION = 'natura-vida-v8-0-4-saneamiento-seguridad-estabilidad';
 const IMAGE_CACHE = 'nv-images-v2';
 const IMAGE_CACHE_LIMIT = 120;
 const MAP_HOSTS = new Set(['tile.openstreetmap.org','a.basemaps.cartocdn.com','b.basemaps.cartocdn.com','c.basemaps.cartocdn.com','d.basemaps.cartocdn.com','nominatim.openstreetmap.org']);
@@ -44,7 +44,7 @@ async function imageResponse(request) {
 }
 
 function offlinePage() {
-  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.0.3</h1><p>Se necesita conexión a internet. La aplicación conserva tu sesión y volverá a conectarse cuando haya señal, pero no registra ventas sin confirmación del servidor.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, {
+  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.0.4</h1><p>Se necesita conexión a internet. La aplicación conserva tu sesión y volverá a conectarse cuando haya señal, pero no registra ventas sin confirmación del servidor.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, {
     status: 503,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
   });

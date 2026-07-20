@@ -1,8 +1,8 @@
 {
-  "version": "8.0.3",
-  "build": "2026-07-19-v803-territory-linked-registration",
-  "releasedAt": "2026-07-19T02:45:00-04:00",
+  "version": "8.0.4",
+  "build": "2026-07-19-v804-saneamiento-seguridad-estabilidad",
+  "releasedAt": "2026-07-19T16:30:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.0.3 - Registro territorial vinculado y formularios móviles estables",
-  "createdAt": "2026-07-19T02:45:00-04:00"
+  "label": "Natura Vida V8.0.4 - Saneamiento, seguridad y estabilidad general",
+  "createdAt": "2026-07-19T16:30:00-04:00"
 }
