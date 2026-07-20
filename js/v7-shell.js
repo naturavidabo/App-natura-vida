@@ -280,7 +280,7 @@
       </section>
 
       <section class="v7Panel v7NaturePanel v802NaturePanel">
-        <div><span class="v7Eyebrow">Natura Vida V8.0.4</span><h2>Información clara. Operación segura.</h2><p>Una sola base oficial, actualización silenciosa y controles diseñados para trabajar más rápido.</p></div>
+        <div><span class="v7Eyebrow">Natura Vida V8.0.5</span><h2>Información clara. Operación segura.</h2><p>Una sola base oficial, actualización silenciosa y controles diseñados para trabajar más rápido.</p></div>
         <div class="v7NatureMark">NV</div>
       </section>
     `;
@@ -321,7 +321,7 @@
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.4')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.5')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));

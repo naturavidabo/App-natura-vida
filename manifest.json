@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.0.4 — Saneamiento, seguridad y estabilidad general",
-  "short_name": "Natura Vida V8.0.4",
+  "name": "NATURA VIDA V8.0.5 — Continuidad de sesión y modo sin conexión seguro",
+  "short_name": "Natura Vida V8.0.5",
   "description": "Gestión modular Natura Vida con sesión confiable, vendedores vinculados, búsqueda inteligente de clientes, mapa territorial operativo, interfaz premium y actualizaciones silenciosas.",
-  "start_url": "./index.html?v=8.0.4",
+  "start_url": "./index.html?v=8.0.5",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

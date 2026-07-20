@@ -58,6 +58,13 @@ function renderSettings() {
       <button class="btn outline block" id="testOnlineBtn">Comprobar conexión ahora</button>
     </div>
 
+    <div class="sectiontitle">Continuidad sin conexión</div>
+    <div class="card settingsCard">
+      <div class="name">Modo seguro de continuidad</div>
+      <div class="costline">Conserva la pantalla y formularios como borradores cuando falta internet. No envía operaciones automáticamente ni reemplaza a Supabase.</div>
+      <button class="btn outline block" id="openOfflineContinuityBtn">Ver estado y borradores</button>
+    </div>
+
     <div class="sectiontitle">Saneamiento y seguridad</div>
     <div class="card settingsCard">
       <div class="name">Estado del sistema y calidad de datos</div>
@@ -67,8 +74,8 @@ function renderSettings() {
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V8.0.4 · Supabase + Realtime</div>
-      <div class="costline">Sin IndexedDB, sin cola offline, sin sincronización manual y sin bases separadas por celular.</div>
+      <div class="costline">NATURA VIDA — V8.0.5 · Supabase + Realtime</div>
+      <div class="costline">Sin cola offline automática. Incluye continuidad segura, lectura temporal y borradores locales con confirmación humana.</div>
     </div>
   `;
 
@@ -121,6 +128,10 @@ function renderSettings() {
       e.target.checked = old;
       showToast(err.message || 'No se pudo guardar.', 'error');
     }
+  });
+
+  $('#openOfflineContinuityBtn').addEventListener('click', () => {
+    if (window.openOfflineContinuityCenterV805) openOfflineContinuityCenterV805();
   });
 
   $('#openGovernanceBtn').addEventListener('click', async () => {
