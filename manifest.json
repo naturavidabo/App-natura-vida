@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.0.6 — Respaldo, auditoría y calidad de datos",
-  "short_name": "Natura Vida V8.0.6",
-  "description": "Gestión Natura Vida con continuidad segura, respaldo verificable, auditoría de operaciones, control preventivo de datos, mapa territorial y actualización Realtime estable.",
-  "start_url": "./index.html?v=8.0.6",
+  "name": "NATURA VIDA V8.0.7 — Reglas comerciales, márgenes y descuentos",
+  "short_name": "Natura Vida V8.0.7",
+  "description": "Gestión Natura Vida con reglas de margen, precio mínimo, descuentos por rol, promociones controladas, simulador de utilidad, continuidad segura y calidad de datos.",
+  "start_url": "./index.html?v=8.0.7",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

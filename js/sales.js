@@ -126,8 +126,10 @@ function openSalePriceEditorV7(options = {}) {
       <div class="field v802EditableField"><label>Valor</label><input id="manualValue" type="number" inputmode="decimal" step="0.01" value=""></div>
     </div>
     <div class="field v802EditableField v802FinalPriceField"><label>Precio final manual</label><input id="manualFinal" type="number" inputmode="decimal" step="0.01" value="${existing ? existing.manualPrice : current.unitPrice}"><small>El color naranja identifica el valor que se modificará.</small></div>
-    <div class="field"><label>Motivo opcional</label><input id="manualReason" value="${escapeHtml(existing ? (existing.reason || '') : '')}" placeholder="Ej.: entrega, cliente antiguo, promoción"></div>
+    <div class="field"><label>Motivo del ajuste</label><input id="manualReason" value="${escapeHtml(existing ? (existing.reason || '') : '')}" placeholder="Ej.: entrega, cliente antiguo, promoción"></div>
+    ${window.promotionOptionsHtmlV807 ? promotionOptionsHtmlV807(p, current.referencePrice) : ''}
     <div class="v7PricePreview"><span>Diferencia frente al precio de lista</span><strong id="manualDiff"></strong></div>
+    <div id="nv807PriceRulePreview" class="nv807ComplianceBox"></div>
     <div class="actions two"><button class="btn outline" id="resetManualPrice">Restablecer precio del grupo</button><button class="btn" id="applyManualPrice">Aplicar</button></div>
   `, (overlay, close) => {
     const mode = $('#manualMode', overlay);
@@ -152,19 +154,63 @@ function openSalePriceEditorV7(options = {}) {
       const price = roundBs(Number(final.value || 0));
       const diff = roundBs(price - current.basePrice);
       const el = $('#manualDiff', overlay);
-      if (!el) return;
-      if (diff > 0) el.textContent = `Recargo ${fmtMoney(diff)}`;
-      else if (diff < 0) el.textContent = `Rebaja ${fmtMoney(Math.abs(diff))}`;
-      else el.textContent = 'Sin diferencia';
+      if (el) {
+        if (diff > 0) el.textContent = `Recargo ${fmtMoney(diff)}`;
+        else if (diff < 0) el.textContent = `Rebaja ${fmtMoney(Math.abs(diff))}`;
+        else el.textContent = 'Sin diferencia';
+      }
+      if (window.evaluateCommercialPriceV807 && window.commercialRulePreviewHtmlV807) {
+        const evaluation = evaluateCommercialPriceV807(p, price, current.referencePrice, {
+          roleCode: window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole,
+          seller: sellerMode(),
+          reason: reason.value.trim(),
+          override: existing?.commercialOverride === true
+        });
+        const preview = $('#nv807PriceRulePreview', overlay);
+        if (preview) preview.innerHTML = commercialRulePreviewHtmlV807(evaluation);
+      }
     }
     $('#closeSheet', overlay).addEventListener('click', close);
     mode.addEventListener('change', () => { if (mode.value === 'final') value.value = ''; computeFinalFromAdjustment(); });
     value.addEventListener('input', computeFinalFromAdjustment);
     final.addEventListener('input', () => { mode.value = 'final'; value.value = ''; updateDiff(); });
+    reason.addEventListener('input', updateDiff);
+    $all('.nv807PromoApply', overlay).forEach(button => button.addEventListener('click', () => {
+      const promotion = window.getPromotionsV807 ? getPromotionsV807().find(row => row.id === button.dataset.promoId) : null;
+      if (!promotion) return;
+      const nextPrice = window.promotionPriceV807 ? promotionPriceV807(promotion, current.referencePrice) : roundBs(current.referencePrice * (1 - Number(promotion.discountPercent || 0) / 100));
+      mode.value = 'discount_percent';
+      value.value = Number(promotion.discountPercent || 0);
+      final.value = nextPrice;
+      reason.value = promotion.note || `Promoción: ${promotion.name}`;
+      updateDiff();
+    }));
     $('#resetManualPrice', overlay).addEventListener('click', () => { if (typeof options.onReset === 'function') options.onReset(); close(); });
     $('#applyManualPrice', overlay).addEventListener('click', () => {
       const manualPrice = roundBs(Number(final.value || 0));
       if (!Number.isFinite(manualPrice) || manualPrice <= 0) return showToast('Ingresa un precio final válido.', 'error');
+      let commercialEvaluation = window.evaluateCommercialPriceV807 ? evaluateCommercialPriceV807(p, manualPrice, current.referencePrice, {
+        roleCode: window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole,
+        seller: sellerMode(),
+        reason: reason.value.trim()
+      }) : { allowed: true, issues: [], status: 'allowed' };
+      let commercialOverride = false;
+      if (!commercialEvaluation.allowed) {
+        if (!commercialEvaluation.canOverride) {
+          return showToast(commercialEvaluation.issues?.[0]?.message || 'Este precio no está autorizado por las reglas comerciales.', 'error');
+        }
+        if (!reason.value.trim()) return showToast('Escribe el motivo para autorizar una excepción.', 'error');
+        const approved = window.confirm(`El precio incumple una regla comercial.
+
+${commercialEvaluation.issues.map(issue => '• ' + issue.message).join('\n')}
+
+¿Autorizar esta excepción como administrador central?`);
+        if (!approved) return;
+        commercialOverride = true;
+        commercialEvaluation = evaluateCommercialPriceV807(p, manualPrice, current.referencePrice, {
+          roleCode: 'central_admin', seller: sellerMode(), reason: reason.value.trim(), override: true
+        });
+      }
       const entry = {
         manualPrice,
         mode: mode.value,
@@ -174,6 +220,12 @@ function openSalePriceEditorV7(options = {}) {
         groupPrice: current.groupPrice,
         groupId: current.groupId || null,
         groupName: current.groupName || '',
+        commercialOverride,
+        commercialRuleStatus: commercialEvaluation.status,
+        commercialMarginPercent: commercialEvaluation.marginPercent,
+        commercialMinimumPrice: commercialEvaluation.minimumPrice,
+        commercialDiscountPercent: commercialEvaluation.discountPercent,
+        commercialRoleCode: commercialEvaluation.roleCode,
         createdAt: Date.now()
       };
       if (typeof options.onApply === 'function') options.onApply(entry);
@@ -370,6 +422,12 @@ function buildSaleItemsFromCartV7(items) {
       manualPriceReason: b.manualReason || '',
       groupId: b.groupId,
       groupName: b.groupName,
+      commercialOverride: !!b.manual?.commercialOverride,
+      commercialRuleStatus: b.manual?.commercialRuleStatus || '',
+      commercialMarginPercent: b.manual?.commercialMarginPercent ?? null,
+      commercialMinimumPrice: b.manual?.commercialMinimumPrice ?? null,
+      commercialDiscountPercent: b.manual?.commercialDiscountPercent ?? b.adjustmentPercent,
+      commercialRoleCode: b.manual?.commercialRoleCode || (window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole || ''),
       subtotal: roundBs(b.unitPrice * it.qty),
       originalSubtotal: roundBs(b.basePrice * it.qty),
       groupSubtotal: roundBs(b.groupPrice * it.qty),
@@ -387,6 +445,12 @@ function openCheckoutSheet() {
   const rawItems = Object.entries(_cart).map(([id, qty]) => ({ product: AppState.products.find(x => x.id === id), qty: Number(qty || 0) })).filter(i => i.product && i.qty > 0);
   if (!rawItems.length) return showToast('Selecciona al menos un producto.', 'error');
   const saleItemsPreview = buildSaleItemsFromCartV7(rawItems);
+  const commercialValidationV807 = window.validateSaleItemsV807 ? validateSaleItemsV807(saleItemsPreview, { roleCode: window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole, seller: sellerMode() }) : { allowed: true, evaluations: [], warnings: [] };
+  if (!commercialValidationV807.allowed) {
+    const first = commercialValidationV807.blocked[0];
+    showToast(`${first.productName}: ${first.issues?.[0]?.message || 'precio no autorizado'}`, 'error');
+    return;
+  }
   const total = saleItemsPreview.reduce((sum, item) => sum + item.subtotal, 0);
   const sellerProfit = sellerMode() ? saleItemsPreview.reduce((sum, item) => sum + Number(item.sellerProfit || 0), 0) : 0;
   const discounts = saleItemsPreview.reduce((s, i) => s + Number(i.discountAmount || 0), 0);
@@ -397,6 +461,7 @@ function openCheckoutSheet() {
     <div class="sectiontitle2"><span>Productos (${saleItemsPreview.length})</span></div>
     ${saleItemsPreview.map(i => `<div class="histitem priceLine ${i.priceSource}"><div class="l"><div class="pname">${escapeHtml(i.productName)} ${salePriceBadgeV7({source:i.priceSource, sign:i.priceAdjustmentType})}</div><div class="meta">${i.qty} × ${fmtMoney(i.unitPrice)} · ${salePriceLabelV7({source:i.priceSource, sign:i.priceAdjustmentType, adjustmentAmount:i.priceAdjustmentAmount, groupName:i.groupName})}</div>${i.manualPriceReason ? `<small class="priceReason">${escapeHtml(i.manualPriceReason)}</small>` : ''}</div><div class="r">${fmtMoney(i.subtotal)}</div></div>`).join('')}
     ${(discounts || surcharges) ? `<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>` : ''}
+    ${window.getCommercialRulesV807 && getCommercialRulesV807().enabled ? `<div class="nv807PricePolicyHint"><strong>Reglas comerciales verificadas</strong>Los precios respetan el margen mínimo y el descuento autorizado para el rol actual.</div>` : ''}
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
     <div class="field"><label>Nombre del cliente</label><div class="clientAutocompleteV802"><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><div id="ckClientSuggestionsV802" class="clientSuggestionsV802 hidden"></div></div><small>Escribe el nombre: se mostrarán coincidencias para evitar crear clientes duplicados.</small></div>
     <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
@@ -428,13 +493,19 @@ function openCheckoutSheet() {
       const personalPct = Number(c.customDiscountPercent || 0);
       const benefitActive = !c.benefitUntil || new Date(`${c.benefitUntil}T23:59:59`).getTime() >= Date.now();
       if (personalPct > 0 && benefitActive && window.confirm(`Este cliente tiene ${personalPct}% de descuento personal adicional. ¿Aplicarlo a los productos de esta venta?`)) {
+        let blockedBenefits = 0;
         Object.keys(_cart).forEach(productId => {
           const product = AppState.products.find(p => p.id === productId);
           if (!product) return;
           const reference = groupPriceForModeV7(product, _saleType, _saleSelectedGroup, sellerMode());
-          _cartPrices[productId] = { manualPrice: roundBs(Math.max(0, reference * (1 - personalPct / 100))), mode: 'client_benefit', value: personalPct, reason: c.benefitNote || `Beneficio personal ${personalPct}%` };
+          const candidate = roundBs(Math.max(0, reference * (1 - personalPct / 100)));
+          const benefitReason = c.benefitNote || `Beneficio personal ${personalPct}%`;
+          const validation = window.evaluateCommercialPriceV807 ? evaluateCommercialPriceV807(product, candidate, reference, { roleCode: window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole, seller: sellerMode(), reason: benefitReason }) : { allowed: true };
+          if (!validation.allowed) { blockedBenefits += 1; return; }
+          _cartPrices[productId] = { manualPrice: candidate, mode: 'client_benefit', value: personalPct, reason: benefitReason, commercialRuleStatus: validation.status, commercialMarginPercent: validation.marginPercent, commercialMinimumPrice: validation.minimumPrice, commercialDiscountPercent: validation.discountPercent, commercialRoleCode: validation.roleCode };
         });
-        rebuildForBenefit = true;
+        if (blockedBenefits) showToast(`${blockedBenefits} beneficio(s) no se aplicaron porque exceden las reglas comerciales.`, 'error');
+        rebuildForBenefit = blockedBenefits < Object.keys(_cart).length;
       }
       if (rebuildForBenefit) {
         AppState.lastClient = c;
@@ -483,6 +554,11 @@ function openCheckoutSheet() {
           const paidNow = roundBs(Math.min(total, Math.max(0, Number($('#ck_amountPaid', overlay).value || 0))));
           const pendingNow = roundBs(Math.max(0, total - paidNow));
           const saleItems = buildSaleItemsFromCartV7(rawItems);
+          const finalCommercialValidationV807 = window.validateSaleItemsV807 ? validateSaleItemsV807(saleItems, { roleCode: window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole, seller: sellerMode() }) : { allowed: true, evaluations: [] };
+          if (!finalCommercialValidationV807.allowed) {
+            const first = finalCommercialValidationV807.blocked[0];
+            throw new Error(`${first.productName}: ${first.issues?.[0]?.message || 'precio no autorizado por las reglas comerciales'}`);
+          }
           operation.sale = {
             id: operation.id,
             documentNumber: operation.documentNumber,
@@ -506,6 +582,14 @@ function openCheckoutSheet() {
             originalTotal: saleItems.reduce((sum, item) => sum + item.originalSubtotal, 0),
             discountTotal: saleItems.reduce((sum, item) => sum + Number(item.discountAmount || 0), 0),
             surchargeTotal: saleItems.reduce((sum, item) => sum + Number(item.surchargeAmount || 0), 0),
+            commercialRulesVersion: '8.0.7',
+            commercialCompliance: {
+              checked: true,
+              roleCode: window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole || '',
+              minimumMarginPercent: window.getCommercialRulesV807 ? getCommercialRulesV807().minimumMarginPercent : null,
+              globalMaximumDiscountPercent: window.getCommercialRulesV807 ? getCommercialRulesV807().globalMaximumDiscountPercent : null,
+              overrides: saleItems.filter(item => item.commercialOverride).length
+            },
             sellerProfit,
             clientId: operation.client ? operation.client.id : null,
             clientName: operation.client ? operation.client.name : clientName,

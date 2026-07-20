@@ -1,9 +1,9 @@
-/* NATURA VIDA V8.0.6 — continuidad segura sin conexión.
+/* NATURA VIDA V8.0.7 — continuidad segura sin conexión.
    No existe cola offline ni envío automático. Se conserva la pantalla, se
    muestran datos ya cargados y los formularios se guardan únicamente como
    borradores locales para revisión humana al recuperar internet. */
 (() => {
-  const VERSION = '8.0.6';
+  const VERSION = '8.0.7';
   const LAST_SYNC_KEY = 'nv805:last-successful-sync';
   const DRAFT_KEY = 'nv805:safe-draft';
   const SNAPSHOT_KEY = 'nv805:readonly-snapshot';
@@ -12,6 +12,7 @@
   let lastOnlineState = navigator.onLine;
   let inputTimer = null;
   let reconnectTimer = null;
+  let capsuleBound = false;
 
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const nowIso = () => new Date().toISOString();
@@ -52,21 +53,23 @@
   }
 
   function ensureBanner() {
-    if (banner && document.body.contains(banner)) return banner;
-    banner = document.createElement('div');
-    banner.id = 'nv805ConnectivityBanner';
-    banner.className = 'nv805ConnectivityBanner hidden';
-    banner.setAttribute('role', 'status');
-    banner.setAttribute('aria-live', 'polite');
-    banner.innerHTML = `
-      <div class="nv805ConnectivityInner">
-        <span class="nv805ConnectivityDot" aria-hidden="true"></span>
-        <div class="nv805ConnectivityCopy"><strong id="nv805ConnectivityTitle"></strong><small id="nv805ConnectivityDetail"></small></div>
-        <button type="button" class="nv805DraftReviewBtn hidden" id="nv805DraftReviewBtn">Revisar borrador</button>
-      </div>`;
-    document.body.prepend(banner);
-    banner.querySelector('#nv805DraftReviewBtn').addEventListener('click', openDraftReview);
-    return banner;
+    const badge = document.getElementById('cloudStatusBadge');
+    if (!badge) return null;
+    banner = badge;
+    badge.classList.add('v7Cloud', 'nv807ConnectionCapsule');
+    badge.setAttribute('role', 'status');
+    badge.setAttribute('aria-live', 'polite');
+    if (!capsuleBound) {
+      capsuleBound = true;
+      badge.setAttribute('tabindex', '0');
+      badge.setAttribute('aria-label', 'Estado de conexión. Abrir detalles');
+      const open = () => openContinuityCenter();
+      badge.addEventListener('click', open);
+      badge.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+      });
+    }
+    return badge;
   }
 
   function readDraft() {
@@ -81,32 +84,18 @@
 
   function updateBanner(customState = '') {
     const el = ensureBanner();
-    const title = el.querySelector('#nv805ConnectivityTitle');
-    const detail = el.querySelector('#nv805ConnectivityDetail');
-    const review = el.querySelector('#nv805DraftReviewBtn');
-    const draft = readDraft();
-    review.classList.toggle('hidden', !draft);
-
-    const state = customState || (navigator.onLine ? 'online' : 'offline');
-    el.classList.remove('offline', 'reconnecting', 'online', 'hidden');
+    if (!el) return;
+    const rawState = customState || (navigator.onLine ? 'online' : 'offline');
+    const state = rawState === 'error' ? 'reconnecting' : rawState;
+    const labels = { online: 'En línea', reconnecting: 'Reconectando', connecting: 'Conectando', offline: 'Sin internet' };
+    el.classList.remove('offline', 'reconnecting', 'connecting', 'online', 'hidden');
     el.classList.add(state);
-
-    if (state === 'offline') {
-      title.textContent = 'Sin conexión';
-      detail.textContent = `Puedes revisar lo ya cargado. Última actualización: ${formatDate(getLastSync() || readSnapshot()?.savedAt)}.`;
-      return;
-    }
-    if (state === 'reconnecting') {
-      title.textContent = 'Conexión restablecida';
-      detail.textContent = 'Reconectando con Supabase y Realtime sin cerrar tu pantalla…';
-      return;
-    }
-    title.textContent = draft ? 'En línea · borrador pendiente' : 'Conexión restablecida';
-    detail.textContent = draft ? 'Revisa y confirma manualmente el borrador. No se enviará solo.' : 'La información vuelve a actualizarse en tiempo real.';
-    clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => {
-      if (navigator.onLine && !readDraft()) el.classList.add('hidden');
-    }, 3600);
+    el.innerHTML = `<span aria-hidden="true"></span><b>${labels[state] || 'Conectando'}</b>`;
+    const draft = readDraft();
+    const last = formatDate(getLastSync() || readSnapshot()?.savedAt);
+    el.title = draft
+      ? `${labels[state] || 'Conexión'} · existe un borrador local pendiente. Toca para revisar.`
+      : `${labels[state] || 'Conexión'} · última actualización: ${last}. Toca para ver detalles.`;
   }
 
   function fieldIdentity(el, index) {
@@ -198,7 +187,7 @@
   function looksLikeSensitiveAction(target) {
     const el = target.closest('button, [role="button"], input[type="submit"]');
     if (!el) return false;
-    if (el.closest('#nv805ConnectivityBanner')) return false;
+    if (el.closest('#cloudStatusBadge')) return false;
     const text = `${el.textContent || ''} ${el.value || ''} ${el.id || ''} ${el.className || ''}`.toLowerCase();
     const harmless = /cancelar|cerrar|volver|revisar|buscar|filtrar|ver |detalle|descargar|compartir|ubicación|mapa|capas|continuar/.test(text);
     if (harmless) return false;
@@ -261,7 +250,7 @@
     const draft = readDraft();
     const snapshot = readSnapshot();
     const html = `
-      <h2>Continuidad sin conexión <span class="x" id="closeSheet">✕</span></h2>
+      <h2>Conexión y continuidad <span class="x" id="closeSheet">✕</span></h2>
       <div class="nv805ContinuityStatus ${navigator.onLine ? 'online' : 'offline'}"><strong>${navigator.onLine ? 'Con conexión' : 'Sin conexión'}</strong><span>${navigator.onLine ? 'Supabase y Realtime pueden operar.' : 'Solo lectura y conservación local temporal.'}</span></div>
       <div class="cloudRule"><span>Última actualización confirmada</span><strong>${esc(formatDate(getLastSync() || snapshot?.savedAt))}</strong></div>
       <div class="cloudRule"><span>Borrador pendiente</span><strong>${draft ? 'Sí · requiere revisión' : 'No'}</strong></div>

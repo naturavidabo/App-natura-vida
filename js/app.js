@@ -10,7 +10,7 @@ function updateCloudStatusBadge(status) {
     offline: 'Sin internet',
     error: 'Reconectando'
   };
-  badge.className = 'cloudBadge ' + state;
+  badge.className = 'cloudBadge v7Cloud nv807ConnectionCapsule ' + (state === 'error' ? 'reconnecting' : state);
   const text = badge.querySelector('b');
   if (text) text.textContent = labels[state] || 'Conectando';
   badge.title = (status && status.detail) || labels[state] || '';
@@ -291,6 +291,7 @@ function canAccessTab(tab) {
     inventario: hasPermission('products:read'),
     resumen: hasPermission('own_reports:read') || hasPermission('team_reports:read'),
     ajustes: true,
+    'reglas-comerciales': !!(window.isAdmin && isAdmin()),
     pedido: true,
     inbox: true,
     usuarios: false,
@@ -332,6 +333,7 @@ function render() {
     case 'clientes': renderClients(); break;
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
+    case 'reglas-comerciales': window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderSettings(); break;
     case 'usuarios': renderUsersFoundation(); break;
     case 'reportes-pro': renderReportsFoundation(); break;
     case 'mas': renderMas(); break;
@@ -471,6 +473,7 @@ function renderMas() {
     <div class="moreList proMore">
       <div class="moreItem" id="moreClients"><span class="ic svgic">${icon('clients')}</span><span>Directorio de clientes</span><span class="arrow">›</span></div>
       <div class="moreItem" id="moreGroups"><span class="ic svgic">${icon('tag')}</span><span>Grupos de precio</span><span class="arrow">›</span></div>
+      ${isAdmin() ? `<div class="moreItem" id="moreCommercialRulesV807"><span class="ic svgic">${icon('reports')}</span><span>Reglas, márgenes y descuentos</span><span class="tagSoon">V8.0.7</span><span class="arrow">›</span></div>` : ''}
       <div class="moreItem" id="moreCatalogPdf"><span class="ic svgic">${icon('quote')}</span><span>Catálogo PDF para compartir</span><span class="tagSoon">PDF</span><span class="arrow">›</span></div>
       ${isReseller && isReseller() ? `<div class="moreItem" id="moreOrder"><span class="ic svgic">${icon('box')}</span><span>Pedido online al administrador</span><span class="tagSoon">Nuevo</span><span class="arrow">›</span></div>` : ''}
       <div class="moreItem" id="moreUsers"><span class="ic svgic">${icon('users')}</span><span>Usuarios, roles y permisos</span><span class="tagSoon">Activo</span><span class="arrow">›</span></div>
@@ -484,6 +487,7 @@ function renderMas() {
   if (moreInbox) moreInbox.addEventListener('click', () => openInboxPanel(true));
   $('#moreClients').addEventListener('click', () => navigateTo('clientes'));
   $('#moreGroups').addEventListener('click', () => navigateTo('grupos'));
+  $('#moreCommercialRulesV807')?.addEventListener('click', () => navigateTo('reglas-comerciales'));
   $('#moreCatalogPdf').addEventListener('click', () => openCatalogPdfOptions());
   const moreOrder = $('#moreOrder');
   if (moreOrder) moreOrder.addEventListener('click', () => navigateTo('pedido'));

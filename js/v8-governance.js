@@ -1,4 +1,4 @@
-/* Natura Vida V8.0.6 — saneamiento, diagnóstico y calidad de datos.
+/* Natura Vida V8.0.7 — saneamiento, diagnóstico y calidad de datos.
    Funciona con la información autorizada ya cargada desde Supabase.
    No elimina ni corrige datos automáticamente. */
 (function(){
@@ -87,7 +87,7 @@
       { label:'Sesión', ok:!!(AppState.session && AppState.session.isAuthenticated), detail:AppState.session?.email || AppState.session?.username || 'No identificada' },
       { label:'Clientes duplicados', ok:duplicateGroups.length === 0, warn:duplicateGroups.length > 0, detail:duplicateGroups.length ? `${duplicateGroups.length} grupo(s) para revisar` : 'Sin coincidencias evidentes' },
       { label:'Inventario', ok:inv.length === 0, warn:inv.length > 0, detail:inv.length ? `${inv.length} producto(s) con observaciones` : 'Sin inconsistencias básicas' },
-      { label:'Versión', ok:true, detail:'8.0.6' }
+      { label:'Versión', ok:true, detail:'8.0.7' }
     ];
     return { checks, duplicateGroups, inventory:inv };
   }
@@ -95,7 +95,7 @@
   function downloadBackup(){
     if (window.NV806QualityAssurance?.createVerifiedBackup) return NV806QualityAssurance.createVerifiedBackup();
     const payload = {
-      schema:'natura-vida-safe-export', version:'8.0.6', exportedAt:new Date().toISOString(),
+      schema:'natura-vida-safe-export', version:'8.0.7', exportedAt:new Date().toISOString(),
       warning:'Copia de consulta de datos cargados en la sesión. No sustituye el respaldo administrado de Supabase.',
       data:{
         products:AppState.products||[], clients:AppState.clients||[], sales:AppState.sales||[],
@@ -109,7 +109,7 @@
     a.download = `natura-vida-respaldo-consulta-${new Date().toISOString().slice(0,10)}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-    if (window.writeAudit) writeAudit('backup:export_readonly','system','session',null,{version:'8.0.6'}).catch(()=>{});
+    if (window.writeAudit) writeAudit('backup:export_readonly','system','session',null,{version:'8.0.7'}).catch(()=>{});
   }
 
   function renderGovernanceCenter(){

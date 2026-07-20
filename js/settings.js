@@ -45,6 +45,13 @@ function renderSettings() {
       <label class="switch"><input type="checkbox" id="f_groupsEnabled" ${AppState.settings.priceGroupsEnabled ? 'checked' : ''}><span class="slider"></span></label>
     </div>
 
+    ${window.isAdmin && isAdmin() ? `<div class="sectiontitle">Reglas comerciales</div>
+    <div class="card settingsCard nv807SettingsCard">
+      <div class="name">Márgenes, descuentos y promociones</div>
+      <div class="costline">Configura costo real, margen mínimo, precio mínimo, descuento máximo, promociones y autorizaciones por rol. Incluye simulador de utilidad.</div>
+      <button class="btn block" id="openCommercialRulesV807Btn">Abrir reglas comerciales</button>
+    </div>` : ''}
+
     <div class="sectiontitle">Conexión del sistema</div>
     <div class="card cloudOfficialCard">
       <div class="cloudStatus ${escapeHtml(conn.state || 'connecting')}">
@@ -74,15 +81,15 @@ function renderSettings() {
 
     ${window.isAdmin && isAdmin() ? `<div class="sectiontitle">Respaldo y auditoría</div>
     <div class="card settingsCard nv806SettingsCard">
-      <div class="name">Control administrativo V8.0.6</div>
+      <div class="name">Control administrativo V8.0.7</div>
       <div class="costline">Crea respaldos verificables, valida archivos sin restaurarlos, revisa auditoría, detecta movimientos repetidos y controla la calidad de clientes, productos, ventas, inventario y usuarios demo.</div>
       <button class="btn block" id="openQualityControlV806Btn">Abrir respaldo, auditoría y calidad</button>
     </div>` : ''}
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V8.0.6 · Supabase + Realtime</div>
-      <div class="costline">Sin cola offline automática. Incluye continuidad segura, respaldo verificable, auditoría y control preventivo de calidad de datos.</div>
+      <div class="costline">NATURA VIDA — V8.0.7 · Supabase + Realtime</div>
+      <div class="costline">Sin cola offline automática. Incluye continuidad segura, respaldo verificable, auditoría, control de calidad y reglas comerciales protegidas.</div>
     </div>
   `;
 
@@ -137,6 +144,11 @@ function renderSettings() {
     }
   });
 
+  $('#openCommercialRulesV807Btn')?.addEventListener('click', () => {
+    if (window.navigateTo) navigateTo('reglas-comerciales');
+    else if (window.renderCommercialRulesV807) renderCommercialRulesV807();
+  });
+
   $('#openOfflineContinuityBtn').addEventListener('click', () => {
     if (window.openOfflineContinuityCenterV805) openOfflineContinuityCenterV805();
   });
@@ -152,7 +164,7 @@ function renderSettings() {
     btn.disabled = true; btn.textContent = 'Preparando control administrativo…';
     if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
     if (window.renderDataControlCenterV806) await renderDataControlCenterV806();
-    else { btn.disabled = false; btn.textContent = 'Abrir respaldo, auditoría y calidad'; showToast('El módulo V8.0.6 no está disponible.', 'error'); }
+    else { btn.disabled = false; btn.textContent = 'Abrir respaldo, auditoría y calidad'; showToast('El módulo V8.0.7 no está disponible.', 'error'); }
   });
 
   $('#testOnlineBtn').addEventListener('click', async () => {

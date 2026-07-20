@@ -1,10 +1,10 @@
-/* NATURA VIDA V8.0.6 — respaldo verificable, auditoría y calidad de datos.
+/* NATURA VIDA V8.0.7 — respaldo verificable, auditoría y calidad de datos.
    Todas las correcciones sensibles requieren revisión humana. La validación de
    respaldos funciona como simulación: nunca restaura ni reemplaza Supabase. */
 (() => {
   'use strict';
 
-  const VERSION = '8.0.6';
+  const VERSION = '8.0.7';
   const BACKUP_SCHEMA = 'natura-vida-verified-backup';
   const BACKUP_HISTORY_KEY = 'nv806:backup-history';
   const DRAFT_KEY = 'nv805:safe-draft';
@@ -624,7 +624,7 @@
 
     main.innerHTML = `
       <section class="nv806Hero">
-        <div><span class="eyebrow">Control administrativo V8.0.6</span><h1>Respaldo, auditoría y calidad</h1><p>Detecta riesgos, valida copias y conserva trazabilidad sin corregir ni eliminar datos automáticamente.</p></div>
+        <div><span class="eyebrow">Control administrativo V8.0.7</span><h1>Respaldo, auditoría y calidad</h1><p>Detecta riesgos, valida copias y conserva trazabilidad sin corregir ni eliminar datos automáticamente.</p></div>
         <span class="nv806Shield">QA</span>
       </section>
       <div class="nv806Metrics">
@@ -656,7 +656,7 @@
         <div class="nv806IssueList">${renderIssueRows(report.issues)}</div>
       </section>
 
-      ${demoIssues.length ? `<section class="dashboardPanel nv806Panel"><div class="panelHeader"><div><span class="eyebrow">Acceso seguro</span><h2>Posibles usuarios demo</h2></div><button class="btn sm outline" id="nv806OpenUsers">Ver todos</button></div><p class="nv806Intro">La V8.0.6 permite bloquear el acceso, no eliminar cuentas. Así se conserva la auditoría y cualquier operación relacionada.</p>${demoIssues.map(row=>{const p=row.meta?.profile||{};return `<div class="nv806UserRow"><div><strong>${esc(p.full_name||p.email||row.entityId)}</strong><small>${esc(p.email||'')} · ${row.meta?.activity||0} registros vinculados</small></div>${String(p.status||'').toLowerCase()==='bloqueado'?'<span class="nv806Blocked">Bloqueado</span>':`<button class="btn sm outline nv806BlockDemo" data-id="${esc(row.entityId)}">Bloquear acceso</button>`}</div>`;}).join('')}</section>` : ''}
+      ${demoIssues.length ? `<section class="dashboardPanel nv806Panel"><div class="panelHeader"><div><span class="eyebrow">Acceso seguro</span><h2>Posibles usuarios demo</h2></div><button class="btn sm outline" id="nv806OpenUsers">Ver todos</button></div><p class="nv806Intro">La V8.0.7 permite bloquear el acceso, no eliminar cuentas. Así se conserva la auditoría y cualquier operación relacionada.</p>${demoIssues.map(row=>{const p=row.meta?.profile||{};return `<div class="nv806UserRow"><div><strong>${esc(p.full_name||p.email||row.entityId)}</strong><small>${esc(p.email||'')} · ${row.meta?.activity||0} registros vinculados</small></div>${String(p.status||'').toLowerCase()==='bloqueado'?'<span class="nv806Blocked">Bloqueado</span>':`<button class="btn sm outline nv806BlockDemo" data-id="${esc(row.entityId)}">Bloquear acceso</button>`}</div>`;}).join('')}</section>` : ''}
 
       <section class="dashboardPanel nv806Panel">
         <div class="panelHeader"><div><span class="eyebrow">Trazabilidad</span><h2>Auditoría de operaciones</h2></div><button class="btn sm outline" id="nv806ExportAudit">Exportar CSV</button></div>

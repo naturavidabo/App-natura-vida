@@ -45,9 +45,9 @@ if (!qa) throw new Error('No se expuso NV806QualityAssurance.');
 
   const data={clients:[{id:'c1',name:'Gloria'}],products:[{id:'p1',name:'Aceite'}]};
   const hash=await qa.sha256(qa.stableStringify(data));
-  const valid=await qa.validateBackupObject({schema:'natura-vida-verified-backup',version:'8.0.6',data,integrity:{payloadHash:hash}});
+  const valid=await qa.validateBackupObject({schema:'natura-vida-verified-backup',version:'8.0.7',data,integrity:{payloadHash:hash}});
   if (!valid.ok) throw new Error('Un respaldo íntegro fue rechazado.');
-  const tampered=await qa.validateBackupObject({schema:'natura-vida-verified-backup',version:'8.0.6',data:{...data,clients:[{id:'c1',name:'Otro'}]},integrity:{payloadHash:hash}});
+  const tampered=await qa.validateBackupObject({schema:'natura-vida-verified-backup',version:'8.0.7',data:{...data,clients:[{id:'c1',name:'Otro'}]},integrity:{payloadHash:hash}});
   if (tampered.ok || !tampered.errors.some(x=>x.includes('huella digital'))) throw new Error('No detectó alteración del respaldo.');
-  console.log('Núcleo de calidad V8.0.6: 5/5 grupos de prueba OK');
+  console.log('Núcleo de calidad V8.0.7: 5/5 grupos de prueba OK');
 })().catch(error => { console.error(error); process.exit(1); });

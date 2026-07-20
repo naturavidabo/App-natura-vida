@@ -91,6 +91,8 @@ function normalizeProductInput(raw, previousProduct) {
     resellerPrice: reseller,
     representativePrice: reseller,
     publicPrice: publico,
+    minimumPrice: roundBs(safeNumber(raw.minimumPrice ?? (previousProduct && previousProduct.minimumPrice), 0)),
+    minimumAuthorizedPrice: roundBs(safeNumber(raw.minimumPrice ?? (previousProduct && previousProduct.minimumPrice), 0)),
     wholesalePriceFixed: reseller,
     unitPriceFixed: publico,
     stock,
@@ -330,6 +332,11 @@ function openProductForm(id) {
         <input type="number" inputmode="decimal" step="0.01" id="f_publicprice" placeholder="Ej: 150" value="${p ? publicPrice(p) || '' : ''}">
       </div>
     </div>
+    <div class="field v802EditableField">
+      <label>Precio mínimo autorizado (Bs) · opcional</label>
+      <input class="nv807MinimumField" type="number" inputmode="decimal" step="0.01" id="f_minprice" placeholder="Si se deja vacío, se calcula por margen" value="${p && Number(p.minimumPrice || 0) > 0 ? p.minimumPrice : ''}">
+      <small>El mayor valor entre este precio y el mínimo calculado por margen será el piso comercial.</small>
+    </div>
 
     <div class="profitPreview profitPreview3">
       <div><span>Utilidad mayorista</span><strong id="marketProfitVal">Bs 0</strong><small id="marketPctVal">0%</small></div>
@@ -499,6 +506,7 @@ function openProductForm(id) {
       const mPrice = roundBs(parseFloat($('#f_marketprice', overlay).value) || 0);
       const rPrice = roundBs(parseFloat($('#f_resellerprice', overlay).value) || 0);
       const pPrice = roundBs(parseFloat($('#f_publicprice', overlay).value) || 0);
+      const minimumPrice = roundBs(parseFloat($('#f_minprice', overlay).value) || 0);
       const stock = parseInt($('#f_stock', overlay).value, 10);
 
       if (!name) { showToast('⚠️ Ponle un nombre al producto', 'error'); return; }
@@ -506,6 +514,7 @@ function openProductForm(id) {
       if (cost <= 0) { showToast('⚠️ Ingresa el costo del producto', 'error'); return; }
       if (mPrice <= 0 || rPrice <= 0 || pPrice <= 0) { showToast('⚠️ Ingresa precio mayorista, representantes y público', 'error'); return; }
       if (pPrice < rPrice || pPrice < mPrice) { showToast('⚠️ El precio público no debería ser menor a mayorista o representantes', 'error'); return; }
+      if (minimumPrice > 0 && minimumPrice < cost) { showToast('⚠️ El precio mínimo autorizado no puede quedar por debajo del costo real.', 'error'); return; }
       if (!Number.isFinite(stock) || stock < 0) { showToast('⚠️ El stock no puede ser negativo', 'error'); return; }
 
       const cleanInsumos = insumos
@@ -527,6 +536,7 @@ function openProductForm(id) {
         marketPrice: mPrice,
         resellerPrice: rPrice,
         publicPrice: pPrice,
+        minimumPrice,
         stock,
         photo: photoData,
         insumos: cleanInsumos,

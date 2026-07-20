@@ -1,8 +1,8 @@
 {
-  "version": "8.0.6",
-  "build": "2026-07-20-v806-respaldo-auditoria-calidad-datos",
-  "releasedAt": "2026-07-20T18:10:00-04:00",
+  "version": "8.0.7",
+  "build": "2026-07-20-v807-reglas-comerciales-margenes-descuentos",
+  "releasedAt": "2026-07-20T18:45:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.0.6 - Respaldo, auditoría y calidad de datos",
-  "createdAt": "2026-07-20T18:10:00-04:00"
+  "label": "Natura Vida V8.0.7 - Reglas comerciales, márgenes y descuentos",
+  "createdAt": "2026-07-20T18:45:00-04:00"
 }

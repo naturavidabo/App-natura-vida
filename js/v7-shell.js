@@ -47,7 +47,7 @@
     const state = !navigator.onLine ? 'offline' : ((status && status.state) || 'connecting');
     const normalized = state === 'error' ? 'reconnecting' : state;
     const labels = { online: 'En línea', connecting: 'Conectando', reconnecting: 'Reconectando', offline: 'Sin internet' };
-    badge.className = `cloudBadge v7Cloud ${normalized}`;
+    badge.className = `cloudBadge v7Cloud nv807ConnectionCapsule ${normalized}`;
     const text = badge.querySelector('b');
     if (text) text.textContent = labels[normalized] || 'Conectando';
     badge.title = (status && status.detail) || labels[normalized] || '';
@@ -204,6 +204,7 @@
       case 'resumen': oldRenderResumen ? oldRenderResumen() : renderInicioV7(); break;
       case 'reportes-pro': oldRenderReports ? oldRenderReports() : renderInicioV7(); break;
       case 'ajustes': isAdmin() ? renderSettings() : renderProfileV7(); break;
+      case 'reglas-comerciales': isAdmin() && window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderProfileV7(); break;
       case 'mas': renderMasV7(); break;
       default: renderInicioV7();
     }
@@ -280,7 +281,7 @@
       </section>
 
       <section class="v7Panel v7NaturePanel v802NaturePanel">
-        <div><span class="v7Eyebrow">Natura Vida V8.0.6</span><h2>Información clara. Operación segura.</h2><p>Una sola base oficial, actualización silenciosa y controles diseñados para trabajar más rápido.</p></div>
+        <div><span class="v7Eyebrow">Natura Vida V8.0.7</span><h2>Información clara. Operación segura.</h2><p>Una sola base oficial, actualización silenciosa y controles diseñados para trabajar más rápido.</p></div>
         <div class="v7NatureMark">NV</div>
       </section>
     `;
@@ -317,11 +318,12 @@
         ${moreItem('v7MoreProfile', 'profile', 'Perfil comercial y QR', 'Datos para recibos y cobros')}
         ${isAdmin() ? moreItem('v7MoreUsers', 'users', 'Representantes', 'Aprobar, bloquear y personalizar descuento') : ''}
         ${moreItem('v7MoreGroups', 'tag', isAdmin() ? 'Grupos de precios' : 'Mis grupos de precio', isAdmin() ? 'Reglas centrales de precios' : 'Reglas propias para tus clientes')}
+        ${isAdmin() ? moreItem('v7MoreCommercialRulesV807', 'chart', 'Reglas, márgenes y descuentos', 'Costo real, precios mínimos, promociones y simulador') : ''}
         ${isAdmin() ? moreItem('v7MoreSettings', 'settings', 'Configuración del negocio', 'Marca, contacto y parámetros') : ''}
         ${moreItem('v7MoreUpdates', 'settings', 'Actualizaciones', 'Versión instalada, revisión y recarga segura')}
       </section>
       <button class="v7Logout" id="v7LogoutBtn">Cerrar sesión</button>
-      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.6')} · Supabase · Realtime</div>
+      <div class="v7Version">Natura Vida V${escapeHtml(window.NATURA_APP_VERSION || '8.0.7')} · Supabase · Realtime</div>
     `;
     $('#v7MoreInbox').addEventListener('click', () => openInboxPanel());
     $('#v7MoreClients').addEventListener('click', () => navigateToV7('clientes'));
@@ -338,6 +340,7 @@
     $('#v7MoreProfile').addEventListener('click', () => navigateToV7('perfil'));
     if ($('#v7MoreUsers')) $('#v7MoreUsers').addEventListener('click', () => navigateToV7('usuarios'));
     if ($('#v7MoreGroups')) $('#v7MoreGroups').addEventListener('click', () => navigateToV7('grupos'));
+    if ($('#v7MoreCommercialRulesV807')) $('#v7MoreCommercialRulesV807').addEventListener('click', () => navigateToV7('reglas-comerciales'));
     if ($('#v7MoreSettings')) $('#v7MoreSettings').addEventListener('click', () => navigateToV7('ajustes'));
     if ($('#v7MoreUpdates')) $('#v7MoreUpdates').addEventListener('click', () => window.openUpdateCenter ? openUpdateCenter() : showToast('El módulo de actualización no está disponible.', 'error'));
     $('#v7LogoutBtn').addEventListener('click', logoutSession);

@@ -92,6 +92,7 @@ function openPriceGroupForm(id) {
       <label>Porcentaje</label>
       <input type="number" inputmode="decimal" step="0.1" id="f_gpercent" placeholder="Ej: 30" value="${g ? g.percent : ''}">
     </div>
+    ${window.roleDiscountLimitV807 ? `<div class="nv807PricePolicyHint"><strong>Límite del rol: ${roleDiscountLimitV807().toFixed(1)}%</strong>Los grupos con descuento también deben respetar el precio mínimo y las reglas comerciales vigentes.</div>` : ''}
 
     <div class="actions">
       <button class="btn outline block" id="cancelForm">Cancelar</button>
@@ -122,6 +123,11 @@ function openPriceGroupForm(id) {
       const name = $('#f_gname', overlay).value.trim();
       const percent = parseFloat($('#f_gpercent', overlay).value) || 0;
       if (!name) { showToast('⚠️ Ponle un nombre al grupo', 'error'); return; }
+      if (percent < 0 || percent > 100) { showToast('⚠️ Ingresa un porcentaje entre 0 y 100.', 'error'); return; }
+      if (chosenMode === 'discount' && window.getCommercialRulesV807 && getCommercialRulesV807().enabled && window.roleDiscountLimitV807 && percent > roleDiscountLimitV807() + 0.001) {
+        showToast(`El descuento supera el máximo autorizado de ${roleDiscountLimitV807().toFixed(1)}% para tu rol.`, 'error');
+        return;
+      }
 
       const data = {
         id: g ? g.id : uid('grp'),
