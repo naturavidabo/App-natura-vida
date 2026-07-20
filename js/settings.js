@@ -69,13 +69,20 @@ function renderSettings() {
     <div class="card settingsCard">
       <div class="name">Estado del sistema y calidad de datos</div>
       <div class="costline">Revisa conexión, sesión, posibles clientes duplicados, inconsistencias básicas de inventario, usuarios demo y perfiles incompletos. No modifica datos automáticamente.</div>
-      <button class="btn block" id="openGovernanceBtn">Abrir centro de diagnóstico</button>
+      <button class="btn outline block" id="openGovernanceBtn">Abrir diagnóstico rápido</button>
     </div>
+
+    ${window.isAdmin && isAdmin() ? `<div class="sectiontitle">Respaldo y auditoría</div>
+    <div class="card settingsCard nv806SettingsCard">
+      <div class="name">Control administrativo V8.0.6</div>
+      <div class="costline">Crea respaldos verificables, valida archivos sin restaurarlos, revisa auditoría, detecta movimientos repetidos y controla la calidad de clientes, productos, ventas, inventario y usuarios demo.</div>
+      <button class="btn block" id="openQualityControlV806Btn">Abrir respaldo, auditoría y calidad</button>
+    </div>` : ''}
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V8.0.5 · Supabase + Realtime</div>
-      <div class="costline">Sin cola offline automática. Incluye continuidad segura, lectura temporal y borradores locales con confirmación humana.</div>
+      <div class="costline">NATURA VIDA — V8.0.6 · Supabase + Realtime</div>
+      <div class="costline">Sin cola offline automática. Incluye continuidad segura, respaldo verificable, auditoría y control preventivo de calidad de datos.</div>
     </div>
   `;
 
@@ -138,6 +145,14 @@ function renderSettings() {
     const btn = $('#openGovernanceBtn'); btn.disabled = true; btn.textContent = 'Preparando diagnóstico…';
     if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
     if (window.renderGovernanceCenter) renderGovernanceCenter();
+  });
+
+  $('#openQualityControlV806Btn')?.addEventListener('click', async () => {
+    const btn = $('#openQualityControlV806Btn');
+    btn.disabled = true; btn.textContent = 'Preparando control administrativo…';
+    if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
+    if (window.renderDataControlCenterV806) await renderDataControlCenterV806();
+    else { btn.disabled = false; btn.textContent = 'Abrir respaldo, auditoría y calidad'; showToast('El módulo V8.0.6 no está disponible.', 'error'); }
   });
 
   $('#testOnlineBtn').addEventListener('click', async () => {

@@ -24,14 +24,14 @@ version=json.loads(read('app-version.json')); manifest=json.loads(read('manifest
 
 # Paquete y despliegue
 require(index.lstrip().startswith('<!DOCTYPE html>'),'index.html no inicia como HTML')
-require(version.get('version')=='8.0.4','app-version no indica 8.0.4')
-require("CURRENT_VERSION = '8.0.4'" in update,'app-update no indica 8.0.4')
-require('service-worker.js?v=8.0.4' in update,'registro del service worker no usa 8.0.4')
-require('natura-vida-v8-0-4' in sw.lower(),'service worker no corresponde a V8.0.4')
-require('V8.0.4' in manifest.get('name',''),'manifest no identifica V8.0.4')
-require('css/v8.css?v=8.0.4' in index,'index no carga CSS V8.0.4')
+require(version.get('version')=='8.0.6','app-version no indica 8.0.4')
+require("CURRENT_VERSION = '8.0.6'" in update,'app-update no indica 8.0.4')
+require('service-worker.js?v=8.0.6' in update,'registro del service worker no usa 8.0.4')
+require('natura-vida-v8-0-6' in sw.lower(),'service worker no corresponde a V8.0.4')
+require('V8.0.6' in manifest.get('name',''),'manifest no identifica V8.0.4')
+require('css/v8.css?v=8.0.6' in index,'index no carga CSS V8.0.4')
 for script in ['clients.js','sales.js','v7-documents.js','v7-management-center.js','v8-territory.js','v7-shell.js']:
-    require(f'js/{script}?v=8.0.4' in index,f'index no carga {script} con versión correcta')
+    require(f'js/{script}?v=8.0.6' in index,f'index no carga {script} con versión correcta')
 require(index.index('clients.js') < index.index('sales.js'),'clientes debe cargarse antes de ventas')
 require(index.index('v8-stability.js') < index.index('v7-commercial-center.js'),'estabilidad se carga después de módulos comerciales')
 
@@ -96,7 +96,7 @@ require('Escanee el código QR para realizar el pago.' in docs,'mensaje de pago 
 require('Gracias por confiar en Natura Vida Bolivia.' in docs,'falta cierre único de marca')
 require('próximos pagos o consultas' not in docs and 'QR de cobro' not in docs,'quedan mensajes redundantes o incorrectos en el recibo')
 
-# Corrección V8.0.4: capas y registro territorial vinculado
+# Corrección V8.0.6: capas y registro territorial vinculado
 require('closeLayersV804' in territory and 'Continuar' in territory,'panel de capas no tiene cierre explícito')
 require('prepareTerritorySheetV804' in territory,'formularios territoriales no limpian controles del mapa')
 require('tpClientSuggestionsV804' in territory and 'bindClientAutocompleteV802' in territory,'registro territorial no conecta autocompletado de clientes')
@@ -117,7 +117,7 @@ for match in re.findall(r'(?:src|href)="((?:css|js|icons|img)/[^"?]+)', index):
     require((ROOT/match).exists(),f'recurso local inexistente: {match}')
 
 if errors:
-    print(f'Auditoría Natura Vida V8.0.4: {checks-len(errors)}/{checks} controles OK')
+    print(f'Auditoría Natura Vida V8.0.6: {checks-len(errors)}/{checks} controles OK')
     for e in errors: print('ERROR:',e)
     sys.exit(1)
-print(f'Auditoría Natura Vida V8.0.4: {checks}/{checks} controles OK')
+print(f'Auditoría Natura Vida V8.0.6: {checks}/{checks} controles OK')

@@ -17,7 +17,7 @@ checks={
 }
 failed=[name for name,ok in checks.items() if not ok]
 if failed:
- print(f'Regresión territorial V8.0.4: {len(checks)-len(failed)}/{len(checks)} controles OK')
+ print(f'Regresión territorial V8.0.6: {len(checks)-len(failed)}/{len(checks)} controles OK')
  for name in failed: print('ERROR:',name)
  sys.exit(1)
-print(f'Regresión territorial V8.0.4: {len(checks)}/{len(checks)} controles OK')
+print(f'Regresión territorial V8.0.6: {len(checks)}/{len(checks)} controles OK')

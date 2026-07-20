@@ -1,9 +1,9 @@
-/* NATURA VIDA V8.0.5 — continuidad segura sin conexión.
+/* NATURA VIDA V8.0.6 — continuidad segura sin conexión.
    No existe cola offline ni envío automático. Se conserva la pantalla, se
    muestran datos ya cargados y los formularios se guardan únicamente como
    borradores locales para revisión humana al recuperar internet. */
 (() => {
-  const VERSION = '8.0.5';
+  const VERSION = '8.0.6';
   const LAST_SYNC_KEY = 'nv805:last-successful-sync';
   const DRAFT_KEY = 'nv805:safe-draft';
   const SNAPSHOT_KEY = 'nv805:readonly-snapshot';

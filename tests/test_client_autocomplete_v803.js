@@ -41,4 +41,4 @@ if (unrelated.length) throw new Error(`Una consulta no relacionada devolvió: ${
 if (!punctuationVariant || punctuationVariant.client.id !== '1') throw new Error('No detectó variación de puntuación en el nombre.');
 if (!phoneMatch || phoneMatch.client.id !== '2' || phoneMatch.reason !== 'mismo teléfono') throw new Error('No detectó teléfono duplicado.');
 
-console.log('Autocompletado de clientes V8.0.4: 4/4 controles OK');
+console.log('Autocompletado de clientes V8.0.6: 4/4 controles OK');
