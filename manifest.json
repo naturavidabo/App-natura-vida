@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.0.7 — Reglas comerciales, márgenes y descuentos",
-  "short_name": "Natura Vida V8.0.7",
+  "name": "NATURA VIDA V8.1.0 — Reglas comerciales, márgenes y descuentos",
+  "short_name": "Natura Vida V8.1.0",
   "description": "Gestión Natura Vida con reglas de margen, precio mínimo, descuentos por rol, promociones controladas, simulador de utilidad, continuidad segura y calidad de datos.",
-  "start_url": "./index.html?v=8.0.7",
+  "start_url": "./index.html?v=8.1.0",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

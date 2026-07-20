@@ -1,8 +1,8 @@
 {
-  "version": "8.0.7",
-  "build": "2026-07-20-v807-reglas-comerciales-margenes-descuentos",
+  "version": "8.1.0",
+  "build": "2026-07-20-v810-reglas-comerciales-margenes-descuentos",
   "releasedAt": "2026-07-20T18:45:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.0.7 - Reglas comerciales, márgenes y descuentos",
+  "label": "Natura Vida V8.1.0 - Reglas comerciales, márgenes y descuentos",
   "createdAt": "2026-07-20T18:45:00-04:00"
 }

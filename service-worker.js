@@ -1,8 +1,8 @@
-// NATURA VIDA V8.0.7 — continuidad segura, sin cola offline automática.
+// NATURA VIDA V8.1.0 — continuidad segura, sin cola offline automática.
 const VERSION = 'natura-vida-v8-0-7-reglas-comerciales-margenes-descuentos';
-const APP_CACHE = 'nv-app-shell-v807';
+const APP_CACHE = 'nv-app-shell-v810';
 const IMAGE_CACHE = 'nv-images-v3';
-const RUNTIME_CACHE = 'nv-runtime-v807';
+const RUNTIME_CACHE = 'nv-runtime-v810';
 const IMAGE_CACHE_LIMIT = 120;
 const APP_SHELL = [
   './app-version.json',
@@ -125,7 +125,7 @@ async function runtimeResponse(request) {
 }
 
 function offlinePage() {
-  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.0.7</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.1.0</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 self.addEventListener('fetch', event => {
