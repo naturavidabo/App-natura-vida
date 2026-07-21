@@ -139,7 +139,7 @@
     if (isAdmin()) return !['compra','perfil-cambio'].includes(tab);
     const permissionMap = {
       vender:'sales:create', clientes:'clients:manage', historial:'own_reports:read', estadisticas:'own_reports:read',
-      'centro-comercial':'own_reports:read', 'por-cobrar':'receivables:manage', cotizaciones:'quotes:manage',
+      'centro-comercial':'own_reports:read', 'por-cobrar':'receivables:manage', 'estado-cuenta':'receivables:manage', cotizaciones:'quotes:manage',
       compra:'orders:create', inventario:'inventory:own', regional:'regional:manage', grupos:'sales:create',
       distribucion:'routes:own', personal:'tasks:own', produccion:'production:operate', egresos:'finance:operate',
       territorio:'territory:manage', 'roles-estructura':'workforce:manage', usuarios:'workforce:manage', pedidos:'orders:team_read'
@@ -190,7 +190,8 @@
       case 'historial': renderHistoryV7(); break;
       case 'estadisticas': window.renderCommercialStatsV7 ? renderCommercialStatsV7() : renderInicioV7(); break;
       case 'centro-comercial': window.renderCommercialCenterV730 ? renderCommercialCenterV730() : renderInicioV7(); break;
-      case 'por-cobrar': window.renderReceivablesV725 ? renderReceivablesV725() : renderInicioV7(); break;
+      case 'por-cobrar': window.renderReceivablesV820 ? renderReceivablesV820() : (window.renderReceivablesV725 ? renderReceivablesV725() : renderInicioV7()); break;
+      case 'estado-cuenta': window.renderClientAccountV820 ? renderClientAccountV820() : renderInicioV7(); break;
       case 'egresos': isAdmin() && window.renderFinanceV725 ? renderFinanceV725() : renderInicioV7(); break;
       case 'produccion': isAdmin() && window.renderProductionV740 ? renderProductionV740() : renderInicioV7(); break;
       case 'regional': window.renderRegionalManagementV750 ? renderRegionalManagementV750() : renderInicioV7(); break;

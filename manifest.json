@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.1.2 — Asistente Comercial Analítico",
-  "short_name": "Natura Vida V8.1.2",
-  "description": "Gestión Natura Vida con asistente IA local estable, conversación persistente, acceso propio en Administración, reglas comerciales, continuidad segura y calidad de datos.",
-  "start_url": "./index.html?v=8.1.2",
+  "name": "NATURA VIDA V8.2.0 — Estados de cuenta y cobranzas",
+  "short_name": "Natura Vida V8.2.0",
+  "description": "Gestión Natura Vida con estados de cuenta, deudas activas, pagos parciales, documentos de cobro, asistente comercial y continuidad segura.",
+  "start_url": "./index.html?v=8.2.0",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

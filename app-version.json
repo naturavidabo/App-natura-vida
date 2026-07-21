@@ -1,8 +1,8 @@
 {
-  "version": "8.1.2",
-  "build": "2026-07-20-v812-asistente-comercial-analitico-recomendaciones",
-  "releasedAt": "2026-07-20T21:30:00-04:00",
+  "version": "8.2.0",
+  "build": "2026-07-21-v820-estados-cuenta-deudas-documentos-cobro",
+  "releasedAt": "2026-07-21T03:00:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.1.2 - Asistente Comercial Analítico y Recomendaciones Inteligentes",
-  "createdAt": "2026-07-20T21:30:00-04:00"
+  "label": "Natura Vida V8.2.0 - Estados de cuenta, deudas activas y documentos de cobro",
+  "createdAt": "2026-07-21T03:00:00-04:00"
 }

@@ -1,0 +1,6 @@
+Archivo base conservado externamente:
+Natura-Vida-V8.1.2-ASISTENTE-COMERCIAL-ANALITICO-RECOMENDACIONES-INTELIGENTES-GITHUB.zip
+SHA-256:
+99e0f09e2d37d7aefa45d90bf5b9db60f19d276c4ee2e92ca65376a2add77c41
+
+Este archivo comprueba la versión de código usada como punto de partida. NO sustituye un respaldo de la base Supabase.

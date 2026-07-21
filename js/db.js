@@ -9,7 +9,7 @@ const STORES = [
   'products','priceGroups','sales','clients','quotes','settings','users','roles',
   'permissions','inventoryMovements','commissionRules','commissions','reportsCache',
   'auditLog','representatives','dispatches','representativeReports',
-  'importedPackages','purchaseOrders','messages','expenses','receivablePayments',
+  'importedPackages','purchaseOrders','messages','expenses','receivablePayments','historicalReceivables','financialDocuments','paymentPlans',
   'rawMaterials','rawMaterialMovements','productionOrders','productionBatches','syncMeta'
 ];
 
@@ -33,6 +33,9 @@ const INDEX_FIELDS = {
   messages: { byCreatedAt: 'createdAt', byStatus: 'status', byRecipientRole: 'recipientRole', byRecipientUser: 'recipientUserId', bySenderUser: 'senderUserId', byType: 'type' },
   expenses: { byDate: 'date', byCategory: 'category', byCreatedAt: 'createdAt' },
   receivablePayments: { bySale: 'saleId', byClient: 'clientId', byDate: 'date' },
+  historicalReceivables: { byClient: 'clientId', byDate: 'date', byImportKey: 'historicalImportKey' },
+  financialDocuments: { byClient: 'clientId', byType: 'documentType', byDate: 'createdAt' },
+  paymentPlans: { byClient: 'clientId', byStatus: 'status', byDate: 'createdAt' },
   rawMaterials: { byName: 'name', byCategory: 'category', byStock: 'stock', byUpdatedAt: 'updatedAt' },
   rawMaterialMovements: { byMaterial: 'materialId', byType: 'movementType', byCreatedAt: 'createdAt' },
   productionOrders: { byProduct: 'productId', byStatus: 'status', byCreatedAt: 'createdAt' },
@@ -43,7 +46,7 @@ const INDEX_FIELDS = {
 const PERSISTED_CLOUD_STORES = new Set([
   'products','priceGroups','sales','clients','quotes','settings','inventoryMovements',
   'commissionRules','commissions','representatives','dispatches','representativeReports',
-  'importedPackages','purchaseOrders','messages','expenses','receivablePayments'
+  'importedPackages','purchaseOrders','messages','expenses','receivablePayments','historicalReceivables','financialDocuments','paymentPlans'
 ]);
 
 const _memory = new Map(STORES.map(name => [name, new Map()]));

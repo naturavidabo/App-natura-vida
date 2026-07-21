@@ -1,11 +1,11 @@
-/* Natura Vida V8.1.2 — Asistente comercial analítico.
+/* Natura Vida V8.2.0 — Asistente comercial analítico.
    Acceso exclusivo para administrador central, conversación persistente,
    panel rápido y pantalla propia dentro de la aplicación.
    El motor externo continúa desactivado: los análisis son locales y verificables. */
 (function(){
   'use strict';
 
-  const VERSION='8.1.2';
+  const VERSION='8.2.0';
   const MAX_ENTRIES=60;
   let oldNavigate=null;
   let oldRender=null;
@@ -49,7 +49,7 @@
   }
   function dataset(){
     const s=window.AppState||{};
-    return {sales:s.sales||[],clients:s.clients||[],products:s.products||[],expenses:s.expenses||[],payments:s.receivablePayments||[],settings:s.settings||{}};
+    return {sales:s.sales||[],historicalReceivables:s.historicalReceivables||[],clients:s.clients||[],products:s.products||[],expenses:s.expenses||[],payments:s.receivablePayments||[],settings:s.settings||{}};
   }
   function salesStats(periodDays=30){
     const {sales,products}=dataset();
@@ -97,12 +97,16 @@
   function dateMs(v){ const n=Number(new Date(v||0)); return Number.isFinite(n)?n:0; }
   function daysSince(v){ const n=dateMs(v); return n?Math.max(0,Math.floor((Date.now()-n)/86400000)):9999; }
   function receivableStats(){
-    const {sales,payments}=dataset();
-    const paidBySale=new Map();
-    (payments||[]).forEach(x=>paidBySale.set(String(x.saleId||x.receivableId||''),(paidBySale.get(String(x.saleId||x.receivableId||''))||0)+(Number(x.amount)||0)));
+    const {sales,historicalReceivables,payments}=dataset();
+    const operations=[...(sales||[]),...(historicalReceivables||[])];
     const open=[];
-    (sales||[]).forEach(x=>{ const total=Number(x.total)||0; const direct=Number(x.paidAmount||x.amountPaid)||0; const paid=Math.max(direct,paidBySale.get(String(x.id||''))||0); const balance=Math.max(0,total-paid); if(balance>.009 && (x.paymentType==='credit'||x.status==='pending'||paid>0)) open.push({...x,balance}); });
-    return {open,total:open.reduce((a,x)=>a+x.balance,0),overdue:open.filter(x=>x.dueDate&&dateMs(x.dueDate)<Date.now())};
+    operations.forEach(x=>{
+      let balance=0, paid=0;
+      if(window.NVFinancialCoreV820){ paid=NVFinancialCoreV820.paidTotal(x,payments||[]); balance=NVFinancialCoreV820.balance(x,payments||[]); }
+      else { const direct=Number(x.paidAmount||x.amountPaid)||0; const extra=(payments||[]).filter(p=>p.status!=='voided').reduce((sum,p)=>sum+(String(p.saleId||'')===String(x.id||'')?Number(p.amount||0):0),0); paid=Math.min(Number(x.total||0),direct+extra); balance=Math.max(0,Number(x.total||0)-paid); }
+      if(balance>.009) open.push({...x,paid,balance,historical:!!(x.historicalActive||x.sourceSystem==='Mi Negocio')});
+    });
+    return {open,total:open.reduce((a,x)=>a+x.balance,0),overdue:open.filter(x=>dateMs(x.dueDate||x.originalDate||x.date)<Date.now()),historical:open.filter(x=>x.historical)};
   }
   function productByQuestion(q){
     const products=dataset().products||[]; const nq=normalizedName(q);

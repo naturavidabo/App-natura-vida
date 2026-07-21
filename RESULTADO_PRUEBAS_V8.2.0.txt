@@ -1,0 +1,35 @@
+NATURA VIDA V8.2.0 — RESULTADO DE PRUEBAS
+Fecha: 21/07/2026
+
+Pruebas ejecutadas sobre el código incluido:
+- Auditoría general del sitio: 133/133 controles aprobados.
+- Auditoría de despliegue GitHub Pages: 23/23 controles aprobados.
+- Interfaz financiera V8.2.0: 21/21 controles aprobados.
+- Autocompletado de clientes: 4/4.
+- Regresión territorial: 9/9.
+- Saneamiento y gobierno: 12/12.
+- Continuidad segura: 12/12.
+- Control administrativo y calidad: 16/16.
+- Integración comercial: 19/19.
+- Asistente analítico: 8/8.
+- Sintaxis: 45 archivos JavaScript aprobados por node --check.
+- Integridad del ZIP: sin errores.
+
+Caso financiero automatizado de Gabriela Espinoza:
+- Operaciones: 7.
+- Total comprado: Bs 7.521,20.
+- Total pagado inicial: Bs 2.095,00.
+- Saldo inicial: Bs 5.426,20.
+- Pago parcial de prueba: Bs 500,00.
+- Saldo posterior: Bs 4.926,20.
+- Anulación del pago: saldo restaurado a Bs 5.426,20.
+- Todas las operaciones históricas: inventoryImpact=false.
+
+Pruebas que requieren el entorno real y deben completarse después del despliegue:
+- RLS y sincronización contra el proyecto Supabase productivo.
+- Creación de respaldo real de base de datos y restauración en un proyecto de ensayo.
+- Lectura del QR desde un segundo teléfono.
+- Compartir archivo por WhatsApp en Android.
+- Verificación visual final en los dispositivos del usuario.
+
+No se efectuó ninguna escritura sobre la base productiva desde este entorno.

@@ -1,0 +1,34 @@
+NATURA VIDA V8.2.0 — NOTAS DE VERSIÓN
+
+NUEVO
+- Ficha financiera integral por cliente.
+- Estado de cuenta con Resumen, Deudas activas, Pagos, Pedidos, Ventas y Documentos.
+- Cuentas por cobrar agrupadas por cliente, con búsqueda, filtros y ordenamiento.
+- Deudas históricas activas importadas desde Mi Negocio sin nuevo impacto de inventario.
+- Registro de pagos a deuda antigua, específica, múltiple, general o cancelación total.
+- Pago parcial, comprobante, imagen y auditoría.
+- Anulación de pago con motivo y restauración automática del saldo.
+- Estado de cuenta, recibo consolidado, informe de deuda, historial financiero, plan de pagos y constancia de cancelación.
+- Formato resumido o detallado para documentos principales.
+- PDF paginado, imagen, impresión y compartir/WhatsApp.
+- Código QR de pago en documentos cuando está configurado en el perfil comercial.
+- Exportación CSV general y por cliente.
+- Numeración correlativa segura mediante RPC, con respaldo local cuando no está disponible.
+- Importador idempotente JSON/CSV y caso confirmado de Gabriela Espinoza.
+- Asistente analítico actualizado para incluir cuentas históricas.
+
+PROTECCIONES
+- No se modifica ni elimina una venta original.
+- No se fusionan físicamente las deudas.
+- No se descuenta inventario por registros históricos.
+- No se marca pagada una operación con saldo.
+- Los duplicados históricos se omiten mediante historicalImportKey.
+- La restauración real de base no se ofrece desde el navegador.
+- Toda acción sensible genera auditoría cuando el servicio está disponible.
+
+CASO DE CONTROL
+Gabriela Espinoza:
+- 7 operaciones históricas activas.
+- Total vendido: Bs 7.521,20.
+- Pagado: Bs 2.095,00.
+- Pendiente: Bs 5.426,20.

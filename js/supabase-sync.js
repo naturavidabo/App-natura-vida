@@ -738,7 +738,7 @@ async function insertCloudSale(sale) {
 const CLOUD_GENERIC_STORES = [
   'priceGroups', 'quotes', 'settings', 'inventoryMovements',
   'commissions', 'commissionRules', 'representatives', 'dispatches',
-  'representativeReports', 'expenses', 'receivablePayments'
+  'representativeReports', 'expenses', 'receivablePayments', 'historicalReceivables', 'financialDocuments', 'paymentPlans'
 ];
 const CLOUD_SHARED_STORES = new Set(['priceGroups', 'settings', 'commissionRules']);
 

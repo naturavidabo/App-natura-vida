@@ -10,6 +10,9 @@ const AppState = {
   messages: [],
   expenses: [],
   receivablePayments: [],
+  historicalReceivables: [],
+  financialDocuments: [],
+  paymentPlans: [],
   rawMaterials: [],
   rawMaterialMovements: [],
   productionOrders: [],
@@ -69,7 +72,7 @@ const AppState = {
 };
 
 async function loadAllState() {
-  const [products, priceGroups, sales, clients, quotes, messages, expenses, receivablePayments, rawMaterials, rawMaterialMovements, productionOrders, productionBatches, representatives, settingsRows] = await Promise.all([
+  const [products, priceGroups, sales, clients, quotes, messages, expenses, receivablePayments, historicalReceivables, financialDocuments, paymentPlans, rawMaterials, rawMaterialMovements, productionOrders, productionBatches, representatives, settingsRows] = await Promise.all([
     DB.getAll('products'),
     DB.getAll('priceGroups'),
     DB.getAll('sales'),
@@ -78,6 +81,9 @@ async function loadAllState() {
     DB.getAll('messages').catch(() => []),
     DB.getAll('expenses').catch(() => []),
     DB.getAll('receivablePayments').catch(() => []),
+    DB.getAll('historicalReceivables').catch(() => []),
+    DB.getAll('financialDocuments').catch(() => []),
+    DB.getAll('paymentPlans').catch(() => []),
     DB.getAll('rawMaterials').catch(() => []),
     DB.getAll('rawMaterialMovements').catch(() => []),
     DB.getAll('productionOrders').catch(() => []),
@@ -93,6 +99,9 @@ async function loadAllState() {
   AppState.messages = messages || [];
   AppState.expenses = expenses || [];
   AppState.receivablePayments = receivablePayments || [];
+  AppState.historicalReceivables = historicalReceivables || [];
+  AppState.financialDocuments = financialDocuments || [];
+  AppState.paymentPlans = paymentPlans || [];
   AppState.rawMaterials = rawMaterials || [];
   AppState.rawMaterialMovements = rawMaterialMovements || [];
   AppState.productionOrders = productionOrders || [];

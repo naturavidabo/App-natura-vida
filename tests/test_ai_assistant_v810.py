@@ -1,10 +1,10 @@
-# Compatibilidad histórica: la implementación vigente es V8.1.2.
+# Compatibilidad histórica: la implementación vigente es V8.2.0.
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 js=(root/'js/v8-ai-assistant.js').read_text(encoding='utf-8')
 html=(root/'index.html').read_text(encoding='utf-8')
 checks={
- 'script incluido':'v8-ai-assistant.js?v=8.1.2' in html,
+ 'script incluido':'v8-ai-assistant.js?v=8.2.0' in html,
  'solo administrador':'adminAllowed' in js and 'isAdmin()' in js,
  'fab flotante':'nvAiFab' in js,
  'panel rápido':'nvAiSheet' in js,

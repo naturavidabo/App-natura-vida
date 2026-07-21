@@ -329,6 +329,7 @@ function clientCardHtmlV723(c) {
       ${c.city || c.address ? `<div class="costline">📍 ${escapeHtml([c.city, c.address].filter(Boolean).join(' · '))}</div>` : ''}
     </div>
     <div class="cardactions">
+      <button class="accountClientBtnV820" data-id="${c.id}">💳 Estado de cuenta</button>
       <button class="histClientBtn" data-id="${c.id}">📜 Historial</button>
       <button class="quoteClientBtnV725" data-id="${c.id}">💬 Precios</button>
       <button class="benefitClientBtnV725" data-id="${c.id}">🎁 Beneficio</button>
@@ -353,6 +354,7 @@ function renderClients() {
   $all('.editClientBtn').forEach(b => b.addEventListener('click', () => openClientForm(b.dataset.id)));
   $all('.delClientBtn').forEach(b => b.addEventListener('click', () => confirmDeleteClient(b.dataset.id)));
   $all('.histClientBtn').forEach(b => b.addEventListener('click', () => openClientHistory(b.dataset.id)));
+  $all('.accountClientBtnV820').forEach(b => b.addEventListener('click', () => window.openClientAccountV820 ? openClientAccountV820(b.dataset.id) : openClientHistory(b.dataset.id)));
   $all('.waMiniV723').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); const c = AppState.clients.find(x => x.id === b.dataset.wa); if (c) openWhatsAppV723(c.phone, c.name); }));
   $all('.quoteClientBtnV725').forEach(b => b.addEventListener('click', () => { const c=AppState.clients.find(x=>x.id===b.dataset.id); if(c && window.openQuoteForm) openQuoteForm({client:c, priceGroupId:c.priceGroupId||''}); }));
   $all('.benefitClientBtnV725').forEach(b => b.addEventListener('click', () => openClientBenefitV725(b.dataset.id)));

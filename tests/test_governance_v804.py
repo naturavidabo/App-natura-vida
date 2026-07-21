@@ -6,7 +6,7 @@ app=(root/'js/app.js').read_text()
 index=(root/'index.html').read_text()
 css=(root/'css/v8.css').read_text()
 checks={
-'governance loaded':'js/v8-governance.js?v=8.1.2' in index,
+'governance loaded':'js/v8-governance.js?v=8.2.0' in index,
 'duplicate detection':'findClientDuplicates' in js,
 'inventory checks':'inventoryIssues' in js,
 'system health':'systemHealth' in js,
@@ -17,9 +17,9 @@ checks={
 'settings entry':'openGovernanceBtn' in settings,
 'user badges':'nv804UserFlags' in app,
 'responsive styles':'.nv804Grid' in css and '@media(max-width:420px)' in css,
-'updated version':'8.1.2' in (root/'app-version.json').read_text(),
+'updated version':'8.2.0' in (root/'app-version.json').read_text(),
 }
 failed=[k for k,v in checks.items() if not v]
 if failed:
  print('FALLÓ:', ', '.join(failed)); raise SystemExit(1)
-print(f'Auditoría saneamiento V8.1.2: {len(checks)}/{len(checks)} controles OK')
+print(f'Auditoría saneamiento V8.2.0: {len(checks)}/{len(checks)} controles OK')

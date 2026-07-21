@@ -293,6 +293,7 @@ function canAccessTab(tab) {
     ajustes: true,
     'reglas-comerciales': !!(window.isAdmin && isAdmin()),
     'asistente-ia': !!(window.isAdmin && isAdmin()),
+    'estado-cuenta': hasPermission('receivables:manage') || (window.isAdmin && isAdmin()),
     pedido: true,
     inbox: true,
     usuarios: false,
@@ -336,6 +337,7 @@ function render() {
     case 'ajustes': renderSettings(); break;
     case 'reglas-comerciales': window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderSettings(); break;
     case 'asistente-ia': window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicio(); break;
+    case 'estado-cuenta': window.renderClientAccountV820 ? renderClientAccountV820() : renderClients(); break;
     case 'usuarios': renderUsersFoundation(); break;
     case 'reportes-pro': renderReportsFoundation(); break;
     case 'mas': renderMas(); break;
