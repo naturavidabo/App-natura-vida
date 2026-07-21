@@ -1,4 +1,4 @@
-# Natura Vida V8.1.1 — Asistente IA estable y conversación persistente
+# Natura Vida V8.1.2 — Asistente comercial analítico y recomendaciones inteligentes
 
 ## Correcciones principales
 - La conversación del asistente ya no desaparece cuando la pantalla se vuelve a renderizar por Realtime, sincronización u otro refresco interno.

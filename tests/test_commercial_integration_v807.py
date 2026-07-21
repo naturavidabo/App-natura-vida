@@ -9,8 +9,8 @@ rep=read('js/v7-inventory-sales.js'); settings=read('js/settings.js'); app=read(
 shell=read('js/v7-shell.js'); center=read('js/v7-management-center.js'); sw=read('service-worker.js'); css=read('css/v8.css')
 version=json.loads(read('app-version.json'))
 checks={
- 'versión 8.1.1':version.get('version')=='8.1.1',
- 'módulo cargado':'js/v8-commercial-rules.js?v=8.1.1' in index,
+ 'versión 8.1.2':version.get('version')=='8.1.2',
+ 'módulo cargado':'js/v8-commercial-rules.js?v=8.1.2' in index,
  'orden de carga':index.index('v8-commercial-rules.js') < index.index('products.js') < index.index('sales.js'),
  'módulo en caché':"'./js/v8-commercial-rules.js'" in sw,
  'configuración persistente':'commercialRules' in state and 'commercialPromotions' in state,
@@ -30,7 +30,7 @@ checks={
  'sin IA automática':'La IA todavía no modifica precios' in rules,
 }
 failed=[name for name,ok in checks.items() if not ok]
-print(f"Integración comercial V8.1.1: {len(checks)-len(failed)}/{len(checks)} controles OK")
+print(f"Integración comercial V8.1.2: {len(checks)-len(failed)}/{len(checks)} controles OK")
 if failed:
  for name in failed: print('ERROR:',name)
  sys.exit(1)

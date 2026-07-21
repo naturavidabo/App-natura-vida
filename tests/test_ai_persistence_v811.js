@@ -37,8 +37,8 @@ sandbox.window.MutationObserver=sandbox.MutationObserver;
 Object.assign(sandbox,sandbox.window);
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(require('path').join(__dirname,'../js/v8-ai-assistant.js'),'utf8'),sandbox);
-const api=sandbox.window.__nvAiV811;
-if(!api) throw new Error('API interna V8.1.1 no disponible');
+const api=sandbox.window.__nvAiV812;
+if(!api) throw new Error('API interna V8.1.2 no disponible');
 api.clearConversation();
 api.addEntry({role:'user',text:'¿Cómo van las ventas hoy?',at:1});
 api.addEntry({role:'assistant',response:api.answerLocal('ventas hoy'),at:2});
@@ -48,4 +48,4 @@ if(rows[0].role!=='user'||rows[1].role!=='assistant') throw new Error('Orden o r
 if(!rows[1].response.title.includes('ventas')) throw new Error('Respuesta estructurada no persistió');
 const reloaded=api.readConversation();
 if(JSON.stringify(rows)!==JSON.stringify(reloaded)) throw new Error('La conversación no sobrevive una nueva lectura');
-console.log('OK conversación persistente V8.1.1:',rows.length,'entradas');
+console.log('OK conversación persistente V8.1.2:',rows.length,'entradas');

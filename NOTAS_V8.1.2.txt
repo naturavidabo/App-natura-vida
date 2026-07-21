@@ -1,0 +1,13 @@
+NATURA VIDA V8.1.2 — ASISTENTE COMERCIAL ANALÍTICO
+
+Incluye:
+- recomendaciones priorizadas basadas en datos locales;
+- resumen ejecutivo;
+- análisis de ventas, utilidad, margen, stock, clientes y cobranzas;
+- simulación de descuentos por producto;
+- accesos rápidos por tema;
+- conversación persistente;
+- acceso exclusivo del administrador central;
+- ninguna acción automática ni modificación de datos.
+
+El motor generativo externo aún no está conectado. Esta etapa valida cálculos e interfaz antes de usar una API protegida.

@@ -1,11 +1,11 @@
-/* Natura Vida V8.1.1 — Asistente IA estable.
+/* Natura Vida V8.1.2 — Asistente comercial analítico.
    Acceso exclusivo para administrador central, conversación persistente,
    panel rápido y pantalla propia dentro de la aplicación.
    El motor externo continúa desactivado: los análisis son locales y verificables. */
 (function(){
   'use strict';
 
-  const VERSION='8.1.1';
+  const VERSION='8.1.2';
   const MAX_ENTRIES=60;
   let oldNavigate=null;
   let oldRender=null;
@@ -22,7 +22,7 @@
     const s=window.AppState?.session||{};
     return String(s.onlineUserId||s.userId||s.email||'central-admin').replace(/[^a-zA-Z0-9_-]/g,'_');
   }
-  function historyKey(){ return `nv_ai_conversation_v811_${userKey()}`; }
+  function historyKey(){ return `nv_ai_conversation_v812_${userKey()}`; }
   function esc(v){
     return window.escapeHtml ? escapeHtml(String(v??'')) : String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
@@ -93,20 +93,52 @@
     const negative=products.filter(p=>Number(p.stock||0)<0);
     return {critical,negative,total:products.length};
   }
+  function normalizedName(v){ return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+  function dateMs(v){ const n=Number(new Date(v||0)); return Number.isFinite(n)?n:0; }
+  function daysSince(v){ const n=dateMs(v); return n?Math.max(0,Math.floor((Date.now()-n)/86400000)):9999; }
+  function receivableStats(){
+    const {sales,payments}=dataset();
+    const paidBySale=new Map();
+    (payments||[]).forEach(x=>paidBySale.set(String(x.saleId||x.receivableId||''),(paidBySale.get(String(x.saleId||x.receivableId||''))||0)+(Number(x.amount)||0)));
+    const open=[];
+    (sales||[]).forEach(x=>{ const total=Number(x.total)||0; const direct=Number(x.paidAmount||x.amountPaid)||0; const paid=Math.max(direct,paidBySale.get(String(x.id||''))||0); const balance=Math.max(0,total-paid); if(balance>.009 && (x.paymentType==='credit'||x.status==='pending'||paid>0)) open.push({...x,balance}); });
+    return {open,total:open.reduce((a,x)=>a+x.balance,0),overdue:open.filter(x=>x.dueDate&&dateMs(x.dueDate)<Date.now())};
+  }
+  function productByQuestion(q){
+    const products=dataset().products||[]; const nq=normalizedName(q);
+    return products.map(p=>({p,score:normalizedName(p.name).split(/\s+/).filter(w=>w.length>2&&nq.includes(w)).length})).sort((a,b)=>b.score-a.score)[0]?.score?products.map(p=>({p,score:normalizedName(p.name).split(/\s+/).filter(w=>w.length>2&&nq.includes(w)).length})).sort((a,b)=>b.score-a.score)[0].p:null;
+  }
+  function promotionCandidates(){
+    const st=salesStats(30), products=dataset().products||[];
+    const sold=new Map(st.byProduct.map(x=>[normalizedName(x.name),x.qty]));
+    return products.map(p=>{ const stock=Number(p.stock||0); const qty=sold.get(normalizedName(p.name))||0; const cost=Number(p.cost??p.baseCost??0)||0; const price=Number(p.price??p.retailPrice??0)||0; const margin=price?((price-cost)/price*100):0; return {p,stock,qty,margin,score:(stock>10?2:0)+(qty<3?2:0)+(margin>25?1:0)}; }).filter(x=>x.score>=3).sort((a,b)=>b.score-a.score).slice(0,6);
+  }
+  function recommendations(){
+    const rec=[]; const st=salesStats(30), cs=clientStats(), ss=stockStats(), rs=receivableStats();
+    if(ss.negative.length) rec.push({level:'critical',title:'Corregir stock negativo',detail:`${ss.negative.length} producto(s) presentan stock negativo.`,question:'¿Qué productos tienen stock negativo?'});
+    if(ss.critical.length) rec.push({level:'high',title:'Priorizar reposición',detail:`${ss.critical.length} producto(s) están en stock crítico.`,question:'¿Tengo stock crítico?'});
+    if(rs.overdue.length) rec.push({level:'high',title:'Revisar cobranzas vencidas',detail:`${rs.overdue.length} cuenta(s) vencidas por ${money(rs.overdue.reduce((a,x)=>a+x.balance,0))}.`,question:'¿Qué cuentas están vencidas?'});
+    if(cs.inactive.length) rec.push({level:'medium',title:'Recuperar clientes inactivos',detail:`${cs.inactive.length} cliente(s) no compran hace más de 30 días.`,question:'¿Qué clientes requieren seguimiento?'});
+    if(st.margin>0&&st.margin<25) rec.push({level:'high',title:'Revisar margen',detail:`El margen promedio de 30 días es ${st.margin.toFixed(1)}%.`,question:'¿Cómo está mi margen?'});
+    promotionCandidates().slice(0,2).forEach(x=>rec.push({level:'medium',title:`Impulsar ${x.p.name||'producto'}`,detail:`Stock ${x.stock}; movimiento bajo y margen estimado ${x.margin.toFixed(1)}%.`,question:`Analiza una promoción para ${x.p.name||'este producto'}`}));
+    return rec.slice(0,6);
+  }
+  function discountSimulation(product,percent=5,qty=1){
+    if(!product) return null; const price=Number(product.price??product.retailPrice??product.publicPrice??0)||0; const cost=Number(product.cost??product.baseCost??0)||0; const pct=Math.max(0,Math.min(100,Number(percent)||0)); const final=price*(1-pct/100); const profit=(final-cost)*qty; const margin=final?((final-cost)/final*100):0; const settings=dataset().settings||{}; const minMargin=Number(settings.minMargin??settings.minimumMargin??25)||25; return {price,cost,pct,final,profit,margin,minMargin,allowed:margin>=minMargin};
+  }
   function answerLocal(question){
     const q=String(question||'').toLowerCase();
-    const st=salesStats(q.includes('hoy')?1:q.includes('semana')?7:30);
-    const cs=clientStats();
-    const ss=stockStats();
-    if (/venta|vendimos|factur/.test(q)) return {title:'Análisis de ventas',body:`En el periodo analizado se registraron <b>${st.rows.length} operaciones</b> por ${money(st.revenue)}. La utilidad estimada es ${money(st.profit)} y el margen promedio ${st.margin.toFixed(1)}%.`,cards:[['Operaciones',st.rows.length],['Ingresos',money(st.revenue)],['Utilidad',money(st.profit)],['Margen',st.margin.toFixed(1)+'%']]};
-    if (/utilidad|margen|producto.*mejor|más rentable/.test(q)) {
-      const top=st.byProduct.slice(0,5);
-      return {title:'Productos con mayor utilidad estimada',body:top.length?'Cálculo basado en ventas y costos registrados.':'No hay ventas suficientes en el periodo.',table:top.map(x=>[x.name,x.qty,money(x.revenue-x.cost),x.revenue?(((x.revenue-x.cost)/x.revenue)*100).toFixed(1)+'%':'0%'])};
-    }
-    if (/stock|inventario|agot/.test(q)) return {title:'Estado de inventario',body:`Hay <b>${ss.critical.length} productos</b> en nivel crítico y ${ss.negative.length} con stock negativo.`,list:ss.critical.slice(0,8).map(p=>`${p.name||'Producto'}: ${Number(p.stock||0)} unidad(es)`) };
-    if (/cliente|seguimiento|inactiv/.test(q)) return {title:'Seguimiento de clientes',body:`Se identificaron <b>${cs.inactive.length} clientes</b> con compras anteriores y sin movimiento en los últimos 30 días. ${cs.incomplete.length} fichas requieren completar nombre o teléfono.`,list:cs.inactive.slice(0,8).map(c=>c.name||c.businessName||'Cliente sin nombre')};
-    if (/descuento|promoci/.test(q)) return {title:'Simulación comercial segura',body:'Puedo analizar un descuento usando costo real, precio mínimo y margen configurado. Abre un producto o indica producto, cantidad y porcentaje. Ningún descuento se aplicará sin tu confirmación.',action:{label:'Abrir reglas comerciales',tab:'reglas-comerciales'}};
-    return {title:'Asistente comercial',body:'Puedo analizar ventas, utilidad, margen, inventario, clientes inactivos y reglas de descuento. Esta versión usa cálculos locales verificables; el motor generativo externo todavía no está activado.',suggestions:['¿Cómo van las ventas hoy?','¿Qué productos dejan mayor utilidad?','¿Qué clientes requieren seguimiento?','¿Tengo stock crítico?']};
+    const st=salesStats(q.includes('hoy')?1:q.includes('semana')?7:30), cs=clientStats(), ss=stockStats(), rs=receivableStats();
+    if (/resumen|panorama|cómo va|como va/.test(q)) return {title:'Resumen ejecutivo',body:`En el periodo analizado hay <b>${st.rows.length} ventas</b> por ${money(st.revenue)}, utilidad estimada de ${money(st.profit)} y margen de ${st.margin.toFixed(1)}%.`,cards:[['Ventas',st.rows.length],['Ingresos',money(st.revenue)],['Por cobrar',money(rs.total)],['Alertas',recommendations().length]],list:recommendations().slice(0,4).map(x=>`${x.title}: ${x.detail}`),suggestions:['¿Qué debo atender primero?','¿Qué clientes requieren seguimiento?','¿Tengo stock crítico?']};
+    if (/venta|vendimos|factur/.test(q)) return {title:'Análisis de ventas',body:`Se registraron <b>${st.rows.length} operaciones</b> por ${money(st.revenue)}. La utilidad estimada es ${money(st.profit)} y el margen promedio ${st.margin.toFixed(1)}%.`,cards:[['Operaciones',st.rows.length],['Ingresos',money(st.revenue)],['Utilidad',money(st.profit)],['Margen',st.margin.toFixed(1)+'%']],suggestions:['Comparar productos','¿Qué producto deja más utilidad?','¿Cómo está mi margen?']};
+    if (/utilidad|margen|producto.*mejor|más rentable/.test(q)) { const top=st.byProduct.slice(0,5); return {title:'Productos con mayor utilidad estimada',body:top.length?'Cálculo basado en ventas y costos registrados.':'No hay ventas suficientes en el periodo.',table:top.map(x=>[x.name,x.qty,money(x.revenue-x.cost),x.revenue?(((x.revenue-x.cost)/x.revenue)*100).toFixed(1)+'%':'0%']),suggestions:['¿Qué producto debería impulsar?','Simular descuento del 5%']}; }
+    if (/stock|inventario|agot/.test(q)) return {title:'Estado de inventario',body:`Hay <b>${ss.critical.length} productos</b> en nivel crítico y ${ss.negative.length} con stock negativo.`,list:ss.critical.slice(0,8).map(p=>`${p.name||'Producto'}: ${Number(p.stock||0)} unidad(es)`),action:{label:'Abrir inventario',tab:'inventario'}};
+    if (/cliente|seguimiento|inactiv/.test(q)) return {title:'Seguimiento de clientes',body:`Se identificaron <b>${cs.inactive.length} clientes</b> sin movimiento en los últimos 30 días y ${cs.incomplete.length} fichas incompletas.`,list:cs.inactive.slice(0,8).map(c=>`${c.name||c.businessName||'Cliente sin nombre'} · ${c.phone||c.whatsapp||'sin teléfono'}`),action:{label:'Abrir clientes',tab:'clientes'},suggestions:['Preparar mensaje de seguimiento','¿Cuántas fichas están incompletas?']};
+    if (/cobran|deuda|vencid|por cobrar/.test(q)) return {title:'Cobranzas',body:`El saldo pendiente estimado es ${money(rs.total)} en ${rs.open.length} cuenta(s). ${rs.overdue.length} están vencidas.`,cards:[['Pendientes',rs.open.length],['Saldo',money(rs.total)],['Vencidas',rs.overdue.length]],list:rs.overdue.slice(0,6).map(x=>`${x.clientName||x.customerName||'Cliente'}: ${money(x.balance)}`),action:{label:'Abrir cuentas por cobrar',tab:'por-cobrar'}};
+    if (/qué debo|prioridad|alerta|recomienda|recomendación/.test(q)) { const rec=recommendations(); return {title:'Prioridades recomendadas',body:rec.length?'Estas recomendaciones se basan en datos y reglas locales verificables.':'No detecté alertas relevantes con los datos disponibles.',list:rec.map(x=>`${x.title} — ${x.detail}`),suggestions:rec.slice(0,3).map(x=>x.question)}; }
+    if (/mensaje|whatsapp/.test(q)) return {title:'Mensaje sugerido',body:'Buenas tardes. Esperamos que se encuentre muy bien. Queríamos consultar si necesita reponer sus productos Natura Vida. Podemos prepararle su pedido y coordinar la entrega. <br><br><small>Revisa y personaliza el texto antes de enviarlo.</small>'};
+    if (/descuento|promoci/.test(q)) { const product=productByQuestion(q); const pm=q.match(/(\d+(?:[.,]\d+)?)\s*%/); const pct=pm?Number(pm[1].replace(',','.')):5; const sim=discountSimulation(product,pct,1); if(sim) return {title:`Simulación: ${product.name||'Producto'}`,body:`Con ${sim.pct}% de descuento, el precio sería ${money(sim.final)}, la utilidad por unidad ${money(sim.final-sim.cost)} y el margen ${sim.margin.toFixed(1)}%. ${sim.allowed?'<b>Está dentro del margen mínimo.</b>':'<b>No cumple el margen mínimo configurado.</b>'}`,cards:[['Precio actual',money(sim.price)],['Precio final',money(sim.final)],['Margen',sim.margin.toFixed(1)+'%'],['Resultado',sim.allowed?'Permitido':'No recomendado']],action:{label:'Abrir reglas comerciales',tab:'reglas-comerciales'}}; return {title:'Simulación comercial segura',body:'Indica el nombre del producto y el porcentaje. Ejemplo: “Simula 5% de descuento para Aceite de Coco 500 ml”.',action:{label:'Abrir reglas comerciales',tab:'reglas-comerciales'}}; }
+    return {title:'Asistente comercial analítico',body:'Puedo analizar ventas, utilidad, margen, inventario, cobranzas, clientes inactivos, prioridades y descuentos. Los cálculos son locales y verificables; Ninguna acción se ejecuta automáticamente.',suggestions:['Dame un resumen','¿Qué debo atender primero?','¿Qué productos dejan mayor utilidad?','¿Qué cuentas están vencidas?']};
   }
 
   function normalizeEntry(entry){
@@ -197,16 +229,21 @@
     const values={nvAiStatSales:money(st.revenue),nvAiStatProfit:money(st.profit),nvAiStatStock:ss.critical.length,nvAiStatFollow:cs.inactive.length};
     Object.entries(values).forEach(([id,value])=>{ const el=document.getElementById(id); if(el) el.textContent=String(value); });
   }
+  function renderRecommendations(){
+    const box=document.getElementById('nvAiRecommendations'); if(!box) return;
+    const rec=recommendations(); box.innerHTML=rec.length?rec.map(x=>`<button type="button" class="${esc(x.level)}" data-ai-q="${esc(x.question)}"><span></span><div><strong>${esc(x.title)}</strong><small>${esc(x.detail)}</small></div><b>›</b></button>`).join(''):'<p class="nvAiNoRec">Sin alertas prioritarias con los datos actuales.</p>'; bindInline(box);
+    const topics=document.getElementById('nvAiTopicTabs'); if(topics){ topics.innerHTML=['Resumen','Ventas','Clientes','Inventario','Cobranzas','Descuentos'].map(x=>`<button type="button" data-ai-q="${x==='Resumen'?'Dame un resumen':x==='Ventas'?'Analiza las ventas':x==='Clientes'?'¿Qué clientes requieren seguimiento?':x==='Inventario'?'¿Tengo stock crítico?':x==='Cobranzas'?'¿Qué cuentas están vencidas?':'Simular descuento del 5%'}">${x}</button>`).join(''); bindInline(topics); }
+  }
   function buildAssistantPage(){
     const {st,cs,ss}=statsSnapshot();
     const main=document.getElementById('mainArea');
     main.innerHTML=`<section class="nvAiPage">
-      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>BETA</span></h1><p>Exclusivo del administrador central</p></div><button id="nvAiClear" class="nvAiGhost" type="button">Nueva conversación</button></header>
+      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>ANALÍTICO</span></h1><p>Exclusivo del administrador central</p></div><button id="nvAiClear" class="nvAiGhost" type="button">Nueva conversación</button></header>
       <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Datos actuales de Natura Vida · conversación guardada en este dispositivo</small></div>
       <div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div>
-      <div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div>
+      <section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div><div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div>
       <div class="nvAiComposer"><textarea id="nvAiInput" rows="1" placeholder="Escribe tu consulta…" aria-label="Consulta para el asistente"></textarea><button id="nvAiSend" type="button" aria-label="Enviar">➤</button></div>
-      <p class="nvAiDisclaimer">Beta local: verifica decisiones importantes. Ninguna acción se ejecuta sin confirmación.</p>
+      <p class="nvAiDisclaimer">Análisis local verificable: revisa decisiones importantes. Ninguna acción se ejecuta sin confirmación.</p>
     </section>`;
     document.getElementById('nvAiBack').onclick=()=>window.navigateTo(lastNonAiTab||'inicio');
     document.getElementById('nvAiClear').onclick=()=>{
@@ -217,7 +254,9 @@
       renderConversation(false);
     };
     document.getElementById('nvAiSend').onclick=()=>ask();
+    document.getElementById('nvAiRefreshRec').onclick=renderRecommendations;
     document.getElementById('nvAiInput').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(); } });
+    renderRecommendations();
     renderConversation(false);
   }
   function renderAssistant(options={}){
@@ -269,8 +308,8 @@
   }
 
   function install(){
-    if(window.__NV_AI_V811_INSTALLED) return;
-    window.__NV_AI_V811_INSTALLED=true;
+    if(window.__NV_AI_V812_INSTALLED) return;
+    window.__NV_AI_V812_INSTALLED=true;
     oldNavigate=window.navigateTo;
     oldRender=window.render;
     window.navigateTo=function(tab){
@@ -300,13 +339,13 @@
       observer.observe(main,{childList:true,subtree:false});
     }
     setTimeout(ensureFab,250);
-    window.renderAIAssistantV811=renderAssistant;
+    window.renderAIAssistantV812=renderAssistant;
     window.renderAIAssistantV810=renderAssistant;
-    window.openAIAssistantSheetV811=openSheet;
+    window.openAIAssistantSheetV812=openSheet;
     window.openAIAssistantSheetV810=openSheet;
   }
 
-  window.__nvAiV811={VERSION,readConversation,writeConversation,addEntry,clearConversation,answerLocal,renderAssistant,openSheet,ask,botSvg};
+  window.__nvAiV812={VERSION,readConversation,writeConversation,addEntry,clearConversation,answerLocal,recommendations,discountSimulation,renderAssistant,openSheet,ask,botSvg};
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0));
   else setTimeout(install,0);
 })();

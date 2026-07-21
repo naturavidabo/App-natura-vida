@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.1.1 — Asistente IA estable",
-  "short_name": "Natura Vida V8.1.1",
+  "name": "NATURA VIDA V8.1.2 — Asistente Comercial Analítico",
+  "short_name": "Natura Vida V8.1.2",
   "description": "Gestión Natura Vida con asistente IA local estable, conversación persistente, acceso propio en Administración, reglas comerciales, continuidad segura y calidad de datos.",
-  "start_url": "./index.html?v=8.1.1",
+  "start_url": "./index.html?v=8.1.2",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

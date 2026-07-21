@@ -335,7 +335,7 @@ function render() {
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
     case 'reglas-comerciales': window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderSettings(); break;
-    case 'asistente-ia': window.renderAIAssistantV811 ? renderAIAssistantV811() : renderInicio(); break;
+    case 'asistente-ia': window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicio(); break;
     case 'usuarios': renderUsersFoundation(); break;
     case 'reportes-pro': renderReportsFoundation(); break;
     case 'mas': renderMas(); break;

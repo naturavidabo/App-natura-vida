@@ -8,8 +8,8 @@ css=(root/'css/v8.css').read_text(encoding='utf-8')
 sw=(root/'service-worker.js').read_text(encoding='utf-8')
 version=json.loads((root/'app-version.json').read_text(encoding='utf-8'))
 checks={
- 'version 8.1.1':version.get('version')=='8.1.1',
- 'module loaded':'js/v8-quality-assurance.js?v=8.1.1' in index,
+ 'version 8.1.2':version.get('version')=='8.1.2',
+ 'module loaded':'js/v8-quality-assurance.js?v=8.1.2' in index,
  'module cached':"'./js/v8-quality-assurance.js'" in sw,
  'verified backup schema':'natura-vida-verified-backup' in js,
  'sha256 integrity':'SHA-256' in js and 'payloadHash' in js,
@@ -26,7 +26,7 @@ checks={
  'responsive styles':'.nv806Metrics' in css and '@media(max-width:640px)' in css,
 }
 failed=[name for name,ok in checks.items() if not ok]
-print(f"Control administrativo V8.1.1: {len(checks)-len(failed)}/{len(checks)} controles OK")
+print(f"Control administrativo V8.1.2: {len(checks)-len(failed)}/{len(checks)} controles OK")
 if failed:
     for name in failed: print('ERROR:',name)
     sys.exit(1)

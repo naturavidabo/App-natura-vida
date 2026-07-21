@@ -1,8 +1,8 @@
 {
-  "version": "8.1.1",
-  "build": "2026-07-20-v811-asistente-ia-estable-conversacion-persistente",
-  "releasedAt": "2026-07-20T20:20:00-04:00",
+  "version": "8.1.2",
+  "build": "2026-07-20-v812-asistente-comercial-analitico-recomendaciones",
+  "releasedAt": "2026-07-20T21:30:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.1.1 - Asistente IA estable y conversación persistente",
-  "createdAt": "2026-07-20T20:20:00-04:00"
+  "label": "Natura Vida V8.1.2 - Asistente Comercial Analítico y Recomendaciones Inteligentes",
+  "createdAt": "2026-07-20T21:30:00-04:00"
 }

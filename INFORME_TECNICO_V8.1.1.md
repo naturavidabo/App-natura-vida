@@ -1,4 +1,4 @@
-# Informe técnico — Natura Vida V8.1.1
+# Informe técnico — Natura Vida V8.1.2
 
 ## Incidencias corregidas
 1. El módulo anterior reconstruía el contenido completo del asistente cuando `render()` era invocado de nuevo. Como el historial solo guardaba títulos, las respuestas visibles se perdían.

@@ -206,7 +206,7 @@
       case 'reportes-pro': oldRenderReports ? oldRenderReports() : renderInicioV7(); break;
       case 'ajustes': isAdmin() ? renderSettings() : renderProfileV7(); break;
       case 'reglas-comerciales': isAdmin() && window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderProfileV7(); break;
-      case 'asistente-ia': isAdmin() && window.renderAIAssistantV811 ? renderAIAssistantV811() : renderInicioV7(); break;
+      case 'asistente-ia': isAdmin() && window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicioV7(); break;
       case 'mas': renderMasV7(); break;
       default: renderInicioV7();
     }
