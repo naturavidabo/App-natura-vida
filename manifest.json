@@ -1,8 +1,8 @@
 {
-  "name": "Natura Vida V8.2.1",
+  "name": "Natura Vida V8.2.2",
   "short_name": "Natura Vida",
-  "description": "Gestión comercial Natura Vida con asistente IA híbrido seguro",
-  "start_url": "./index.html?v=8.2.1",
+  "description": "Gestión comercial Natura Vida con asistente IA operativo seguro y acciones confirmadas",
+  "start_url": "./index.html?v=8.2.2",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

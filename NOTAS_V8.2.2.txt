@@ -1,0 +1,21 @@
+NATURA VIDA V8.2.2 — ASISTENTE IA OPERATIVO Y AFINACIÓN MÓVIL
+
+CAMBIOS VISIBLES
+- Corregido el desbordamiento horizontal del Asistente IA.
+- Corregido el desbordamiento del Estado de cuenta.
+- Botones financieros reorganizados para celular.
+- Métricas y mensajes ya no quedan cortados a la derecha.
+- El robot flotante no cubre la ficha financiera.
+- Nuevo botón “Analizar con IA” dentro del Estado de cuenta.
+
+ASISTENTE
+- Puede analizar el cliente abierto y sus cifras financieras.
+- Presenta acciones que requieren confirmación.
+- Puede preparar mensajes, cobros, pagos y cotizaciones sin ejecutarlos automáticamente.
+- Mantiene motor local y motor Gemini mediante Edge Function.
+
+SEGURIDAD
+- Solo administrador central.
+- Ningún pago, descuento, venta o movimiento se confirma solo.
+- Sin cola offline automática.
+- 97 archivos en el repositorio.

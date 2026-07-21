@@ -9,9 +9,9 @@ db=(root/'js/db.js').read_text()
 sync=(root/'js/supabase-sync.js').read_text()
 version=json.loads((root/'app-version.json').read_text())
 checks={
- 'version 8.2.0':version.get('version')=='8.2.1',
- 'core loaded':'js/v8-financial-core.js?v=8.2.1' in index,
- 'module loaded':'js/v8-financial-accounts.js?v=8.2.1' in index,
+ 'version 8.2.0':version.get('version')=='8.2.2',
+ 'core loaded':'js/v8-financial-core.js?v=8.2.2' in index,
+ 'module loaded':'js/v8-financial-accounts.js?v=8.2.2' in index,
  'account tab':'estado-cuenta' in (root/'js/v7-shell.js').read_text(),
  'client button':'accountClientBtnV820' in (root/'js/clients.js').read_text(),
  'historical state':'historicalReceivables' in state,
@@ -33,4 +33,4 @@ checks={
 }
 failed=[k for k,v in checks.items() if not v]
 if failed: raise SystemExit('FALLÓ: '+', '.join(failed))
-print(f'Interfaz financiera V8.2.1: {len(checks)}/{len(checks)} controles OK')
+print(f'Interfaz financiera V8.2.2: {len(checks)}/{len(checks)} controles OK')

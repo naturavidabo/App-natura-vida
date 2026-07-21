@@ -128,6 +128,7 @@
   }
 
   function renderReceivablesV820(){
+    window.__nv820ActiveAccountContext=null;
     $('#fabAdd')?.classList.add('hidden');
     const totals=receivableTotalsV820();
     const all=financialClientSummariesV820();
@@ -166,7 +167,9 @@
     $('#fabAdd')?.classList.add('hidden');
     const tabs=[['summary','Resumen'],['debts','Deudas activas'],['payments','Pagos'],['orders','Pedidos'],['sales','Ventas'],['documents','Documentos']];
     const body={summary:accountSummaryHtmlV820,debts:accountDebtsHtmlV820,payments:accountPaymentsHtmlV820,orders:accountOrdersHtmlV820,sales:accountSalesHtmlV820,documents:accountDocumentsHtmlV820}[currentAccountTab] || accountSummaryHtmlV820;
-    $('#mainArea').innerHTML=`<section class="nv820AccountHead"><button class="nv820Back" id="nv820BackAccounts">← Cuentas por cobrar</button><span class="v7Eyebrow">Estado de cuenta</span><h1>${esc(account.client.name)}</h1><p>${esc([account.client.phone,regionForAccount(account),sellerForAccount(account)].filter(Boolean).join(' · '))}</p><div class="nv820AccountActions"><button class="btn" id="nv820AccountPay">Registrar pago</button><button class="btn outline" id="nv820AccountStatement">Estado de cuenta</button><button class="btn outline" id="nv820AccountCollection">Recibo consolidado</button><button class="btn outline" id="nv820AccountCsv">Exportar CSV</button></div></section>
+    window.__nv820ActiveAccountContext={clientId:account.client.id,name:account.client.name||'Cliente',phone:account.client.phone||'',region:regionForAccount(account),seller:sellerForAccount(account),totalBought:account.totalBought,totalPaid:account.totalPaid,totalDebt:account.totalDebt,pendingCount:account.pendingCount,lastPaymentDate:account.lastPaymentDate,oldestDebtDate:account.oldestDebtDate,daysLate:account.daysLate,operationCount:account.operations.length};
+    const aiAccountButton=(window.isAdmin&&isAdmin()&&window.__nvAiV822)?'<button class="btn outline nv820AiAccountBtn" id="nv820AccountAi">Analizar con IA</button>':'';
+    $('#mainArea').innerHTML=`<section class="nv820AccountHead"><button class="nv820Back" id="nv820BackAccounts">← Cuentas por cobrar</button><span class="v7Eyebrow">Estado de cuenta</span><h1>${esc(account.client.name)}</h1><p>${esc([account.client.phone,regionForAccount(account),sellerForAccount(account)].filter(Boolean).join(' · '))}</p><div class="nv820AccountActions"><button class="btn" id="nv820AccountPay">Registrar pago</button><button class="btn outline" id="nv820AccountStatement">Estado de cuenta</button><button class="btn outline" id="nv820AccountCollection">Recibo consolidado</button><button class="btn outline" id="nv820AccountCsv">Exportar CSV</button>${aiAccountButton}</div></section>
       <section class="nv820AccountMetrics"><article><span>Total comprado</span><strong>${money(account.totalBought)}</strong></article><article><span>Total pagado</span><strong>${money(account.totalPaid)}</strong></article><article class="debt"><span>Total adeudado</span><strong>${money(account.totalDebt)}</strong></article><article><span>Ventas pendientes</span><strong>${account.pendingCount}</strong></article><article><span>Último pago</span><strong>${dateText(account.lastPaymentDate)}</strong></article><article><span>Deuda más antigua</span><strong>${dateText(account.oldestDebtDate)}</strong></article><article><span>Días de atraso</span><strong>${account.daysLate}</strong></article></section>
       <nav class="nv820AccountTabs">${tabs.map(([id,label])=>`<button class="${currentAccountTab===id?'active':''}" data-account-tab="${id}">${label}</button>`).join('')}</nav><section class="nv820AccountBody">${body(account)}</section>`;
     $('#nv820BackAccounts')?.addEventListener('click',()=>navigateTo('por-cobrar'));
@@ -174,6 +177,7 @@
     $('#nv820AccountStatement')?.addEventListener('click',()=>requestClientDocumentV820(account.client.id,'EC'));
     $('#nv820AccountCollection')?.addEventListener('click',()=>requestClientDocumentV820(account.client.id,'COB'));
     $('#nv820AccountCsv')?.addEventListener('click',()=>exportClientFinancialCsvV820(account.client.id));
+    $('#nv820AccountAi')?.addEventListener('click',()=>window.__nvAiV822?.openForContext?.({tab:'estado-cuenta',label:`Estado de cuenta: ${account.client.name}`,clientId:account.client.id},'Analiza el estado de cuenta de este cliente y dime qué debería atender primero.'));
     $all('[data-account-tab]').forEach(b=>b.addEventListener('click',()=>{currentAccountTab=b.dataset.accountTab;renderClientAccountV820();}));
     bindAccountBodyActionsV820(account);
   }

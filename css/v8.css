@@ -209,6 +209,121 @@
 @media(max-width:560px){.nv820DocumentMode{grid-template-columns:1fr}.nv820DocumentMode button{min-height:86px}.nv820PlanPreview>span{grid-template-columns:1fr auto}.nv820PlanPreview span small{grid-column:1}.nv820PlanPreview span em{grid-row:1/3;grid-column:2}}
 
 
-/* ===== NATURA VIDA V8.2.1 — MOTOR IA HÍBRIDO SEGURO ===== */
+/* ===== NATURA VIDA V8.2.2 — MOTOR IA HÍBRIDO SEGURO ===== */
 .nvAiEngineBar{display:flex;align-items:center;gap:8px;margin:0 0 9px;padding:8px 10px;border:1px solid #dce9e2;border-radius:14px;background:#fff}.nvAiEngineBar>small{color:#6f8378;font-size:.72rem;flex:1}.nvAiEngineBar>button:last-child{border:0;background:#edf7f1;color:#126143;border-radius:999px;padding:7px 10px;font-size:.72rem;font-weight:800}.nvAiEngineBadge{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:7px 10px;font-weight:800;font-size:.75rem}.nvAiEngineBadge i{width:8px;height:8px;border-radius:50%;background:currentColor}.nvAiEngineBadge.online,.nvAiEngineMini.online{background:#dff6e9;color:#087346}.nvAiEngineBadge.checking,.nvAiEngineMini.checking{background:#fff2d6;color:#926000}.nvAiEngineBadge.warning,.nvAiEngineMini.warning{background:#ffeadf;color:#a84d20}.nvAiEngineBadge.local,.nvAiEngineMini.local{background:#edf1ef;color:#586b61}.nvAiEngineMini{font-style:normal;border-radius:999px;padding:4px 8px;font-size:.68rem;font-weight:800}.nvAiSheetContext{display:flex;align-items:center;justify-content:space-between;gap:8px}.nvAiAnswerHead{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:5px}.nvAiAnswerHead>strong{margin:0;min-width:0}.nvAiAnswerHead>span{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.nvAiAnswerSource,.nvAiConfidence{display:inline-flex;align-items:center;border-radius:999px;padding:3px 6px;font-size:.61rem;font-weight:800;white-space:nowrap}.nvAiAnswerSource.external{background:#daf5e6;color:#087246}.nvAiAnswerSource.fallback{background:#ffeadf;color:#a44d21}.nvAiAnswerSource.local{background:#edf2ef;color:#5d6f66}.nvAiConfidence{background:#f4f0df;color:#7b681d}.nvAiSectionLabel{display:inline-block;margin-top:7px;color:#537165;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.nvAiBubble li{overflow-wrap:anywhere}
 @media(max-width:430px){.nvAiEngineBar{flex-wrap:wrap}.nvAiEngineBar>small{order:3;flex-basis:100%}.nvAiAnswerHead{display:block}.nvAiAnswerHead>span{justify-content:flex-start;margin:4px 0 7px}}
+
+/* ======================================================================
+   NATURA VIDA V8.2.2 — AFINACIÓN MÓVIL, ESTADO DE CUENTA RESPONSIVO
+   Y ASISTENTE IA CON ACCIONES CONFIRMADAS
+   ====================================================================== */
+#app,#mainArea{min-width:0;width:100%}
+#mainArea{overflow-x:hidden}
+
+/* Asistente: todo el contenido debe permanecer dentro del ancho del celular. */
+.nvAiPage{width:100%;max-width:100%;min-width:0;margin:0;padding:8px 0 calc(146px + env(safe-area-inset-bottom))}
+.nvAiPage>*{max-width:100%;min-width:0}
+.nvAiHead{display:grid;grid-template-columns:40px 48px minmax(0,1fr) auto;gap:9px;width:100%;padding:6px 0 12px}
+.nvAiHead>div:nth-child(3){min-width:0}
+.nvAiHead h1,.nvAiHead p{overflow-wrap:anywhere}
+.nvAiHead h1{font-size:clamp(1.05rem,5vw,1.28rem);line-height:1.15}
+.nvAiHead p{font-size:.74rem;line-height:1.28}
+.nvAiGhost{max-width:86px;white-space:normal;line-height:1.15;text-align:right}
+.nvAiEngineBar{width:100%;min-width:0;flex-wrap:wrap}
+.nvAiEngineBar>small{min-width:85px;overflow-wrap:anywhere}
+.nvAiEngineBar>button{min-width:0;white-space:nowrap}
+.nvAiEngineBar #nvAiOpenActions b{display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:3px;border-radius:999px;background:#0b7d4f;color:#fff;font-size:.62rem}
+.nvAiContext{width:100%;min-width:0;grid-template-columns:auto minmax(0,1fr);overflow:hidden}
+.nvAiContext strong,.nvAiContext small{min-width:0;overflow-wrap:anywhere;white-space:normal}
+.nvAiQuickStats{width:100%;min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.nvAiQuickStats>div{min-width:0;overflow:hidden}
+.nvAiQuickStats b{font-size:clamp(.94rem,4.6vw,1.13rem);line-height:1.18;overflow-wrap:anywhere}
+.nvAiRecPanel{width:100%;min-width:0;margin:10px 0 0;padding:12px}
+.nvAiRecHead{min-width:0}
+.nvAiRecHead strong{min-width:0;overflow-wrap:anywhere}
+.nvAiRecommendations,.nvAiRecommendations>button,.nvAiRecommendations>button>div{min-width:0;width:100%}
+.nvAiRecommendations strong,.nvAiRecommendations small{overflow-wrap:anywhere;white-space:normal}
+.nvAiTopicTabs{width:100%;max-width:100%;min-width:0;padding:10px 0 4px;overscroll-behavior-inline:contain}
+.nvAiTopicTabs button{flex:0 0 auto}
+.nvAiFeed{width:100%;min-width:0;overflow:visible}
+.nvAiMessage{width:100%;min-width:0}
+.nvAiMessage.assistant .nvAiBubble{flex:1;min-width:0;max-width:calc(100% - 40px)}
+.nvAiMessage.user .nvAiBubble{min-width:0;max-width:88%;overflow-wrap:anywhere;word-break:break-word}
+.nvAiBubble{min-width:0;overflow:hidden;overflow-wrap:anywhere}
+.nvAiBubble p,.nvAiBubble li,.nvAiBubble strong{overflow-wrap:anywhere;word-break:normal}
+.nvAiMetrics{grid-template-columns:repeat(2,minmax(0,1fr));min-width:0}
+.nvAiMetrics div{min-width:0}
+.nvAiMetrics b{display:block;overflow-wrap:anywhere}
+.nvAiTable{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
+.nvAiTable>div{min-width:430px}
+.nvAiSuggestions{max-width:100%}
+.nvAiSuggestions button,.nvAiInlineAction{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}
+.nvAiComposer{width:100%;min-width:0;bottom:82px;padding:9px 0 10px}
+.nvAiComposer textarea{min-width:0;width:100%}
+.nvAiDisclaimer{padding-inline:6px;line-height:1.35}
+
+/* Acciones de IA: se preparan y se ejecutan únicamente después de confirmación. */
+.nvAiActionPanel{margin-top:12px;padding-top:10px;border-top:1px solid #e3ece7}
+.nvAiActionPanel>span{display:block;margin-bottom:7px;color:#5e786b;font-size:.69rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.nvAiActionGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.nvAiActionGrid button{min-width:0;border:1px solid #cfe4d8;background:linear-gradient(145deg,#f7fcf9,#eef8f2);border-radius:13px;padding:9px;text-align:left;color:#174e38}
+.nvAiActionGrid button b,.nvAiActionGrid button small{display:block;overflow-wrap:anywhere}
+.nvAiActionGrid button b{font-size:.76rem}
+.nvAiActionGrid button small{margin-top:3px;color:#6b8176;font-size:.64rem;line-height:1.3}
+.nvAiActionSheet{max-width:540px}
+.nvAiActionSheetHead{display:flex;align-items:center;gap:12px;padding-right:42px;margin-bottom:14px}
+.nvAiActionSheetHead h2{margin:0;color:#164a35;font-size:1.08rem}
+.nvAiActionSheetHead p{margin:3px 0 0;color:#708178;font-size:.78rem;line-height:1.35}
+.nvAiActionReview{border:1px solid #d9e8e0;background:#f7fbf8;border-radius:16px;padding:14px;margin-bottom:12px}
+.nvAiActionReview strong{display:block;color:#164a35}
+.nvAiActionReview p{margin:6px 0;color:#586f63;line-height:1.42}
+.nvAiActionReview small{color:#71857a}
+.nvAiActionButtons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.nvAiMessageDraft{display:block;margin-bottom:12px}
+.nvAiMessageDraft span{display:block;margin-bottom:6px;color:#5c7568;font-size:.72rem;font-weight:800;text-transform:uppercase}
+.nvAiMessageDraft textarea{width:100%;min-width:0;resize:vertical;border:1px solid #cedfd6;border-radius:14px;background:#fff;padding:12px;font:inherit;line-height:1.45}
+.nvAiActionHistory{display:grid;gap:8px;max-height:55vh;overflow:auto}
+.nvAiActionHistory article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;border:1px solid #dce9e2;background:#fff;border-radius:13px;padding:10px}
+.nvAiActionHistory strong,.nvAiActionHistory small{min-width:0;overflow-wrap:anywhere}
+.nvAiActionHistory small{color:#6c8075}
+.nvAiActionHistory time{grid-row:1/3;grid-column:2;color:#829088;font-size:.65rem;white-space:nowrap}
+
+/* Estado de cuenta: cabecera, botones y métricas sin desbordamiento horizontal. */
+.nv820AccountHead{width:100%;max-width:100%;min-width:0;margin:0 0 14px;padding:17px 15px 21px}
+.nv820AccountHead h1{max-width:100%;font-size:clamp(1.35rem,7vw,1.75rem);line-height:1.08;overflow-wrap:anywhere}
+.nv820AccountHead p{max-width:100%;font-size:.82rem;line-height:1.4;overflow-wrap:anywhere;white-space:normal}
+.nv820AccountActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}
+.nv820AccountActions .btn{width:100%;min-width:0;min-height:44px;padding:10px 9px;white-space:normal;line-height:1.2;text-align:center}
+.nv820AccountActions .nv820AiAccountBtn{background:linear-gradient(145deg,rgba(231,255,239,.18),rgba(255,239,181,.14));border-color:rgba(238,255,222,.54)}
+.nv820AccountMetrics{width:100%;max-width:100%;min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.nv820AccountMetrics article{min-width:0;overflow:hidden;padding:12px 11px}
+.nv820AccountMetrics span,.nv820AccountMetrics strong{overflow-wrap:anywhere}
+.nv820AccountMetrics strong{font-size:clamp(.9rem,4.5vw,1.05rem);line-height:1.18}
+.nv820AccountMetrics .debt strong{font-size:clamp(1rem,5vw,1.22rem)}
+.nv820AccountTabs{width:100%;max-width:100%;overscroll-behavior-inline:contain}
+.nv820AccountBody{width:100%;min-width:0;padding-bottom:28px}
+.nv820AccountGrid,.nv820QuickDocGrid,.nv820QuickDocGrid.large{min-width:0}
+.nv820OperationLine,.nv820PaymentLine,.nv820DocumentList>button{min-width:0;max-width:100%}
+.nv820OperationLine>div,.nv820PaymentLine>div,.nv820DocumentList>button>*{min-width:0;overflow-wrap:anywhere}
+
+/* El botón flotante no debe cubrir fichas financieras ni la barra inferior. */
+.nvAiFab{right:max(12px,env(safe-area-inset-right));bottom:calc(94px + env(safe-area-inset-bottom));width:54px;height:54px;border-radius:19px}
+
+@media(max-width:430px){
+  .nvAiHead{grid-template-columns:38px 44px minmax(0,1fr);align-items:center}
+  .nvAiHead .nvAiGhost{grid-column:2/4;justify-self:end;margin-top:-4px;max-width:none;text-align:right;padding:3px 0!important}
+  .nvAiHead .nvAiAvatar{width:44px;height:44px}
+  .nvAiHead .nvAiAvatar .nvAiBotSvg{width:39px;height:39px}
+  .nvAiEngineBar>small{order:4;flex-basis:100%}
+  .nvAiActionGrid{grid-template-columns:1fr}
+  .nvAiActionButtons{grid-template-columns:1fr}
+  .nv820AccountActions{grid-template-columns:1fr 1fr}
+  .nv820AccountActions .btn{font-size:.78rem}
+}
+@media(max-width:350px){
+  .nvAiQuickStats,.nv820AccountMetrics{grid-template-columns:1fr}
+  .nv820AccountActions{grid-template-columns:1fr}
+  .nvAiActionHistory article{grid-template-columns:1fr}
+  .nvAiActionHistory time{grid-row:auto;grid-column:auto}
+}
+.nv820AccountActions .nv820AiAccountBtn{grid-column:1/-1}

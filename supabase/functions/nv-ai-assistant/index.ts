@@ -1,4 +1,4 @@
-// Natura Vida V8.2.1 — Edge Function para motor IA híbrido seguro.
+// Natura Vida V8.2.2 — Edge Function segura con propuestas de acción controladas.
 // Secrets requeridos: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -31,6 +31,7 @@ function compactSnapshot(source: unknown) {
     criticalStock: Array.isArray(s.criticalStock) ? s.criticalStock.slice(0, 12) : [],
     customersForFollowUp: Array.isArray(s.customersForFollowUp) ? s.customersForFollowUp.slice(0, 14) : [],
     topReceivables: Array.isArray(s.topReceivables) ? s.topReceivables.slice(0, 14) : [],
+    focusedAccount: s.focusedAccount && typeof s.focusedAccount === 'object' ? s.focusedAccount : null,
     alerts: Array.isArray(s.alerts) ? s.alerts.slice(0, 8) : [],
   };
   const serialized = JSON.stringify(compact);
@@ -83,11 +84,11 @@ Deno.serve(async (req) => {
     const usage = migrationReady ? usageData : { used: 0, limit: dailyLimit, remaining: dailyLimit };
 
     if (action === "health") {
-      return reply(200, { ok: true, configured: Boolean(apiKey), migrationReady, model, usage, message: !apiKey ? "Falta configurar GEMINI_API_KEY." : !migrationReady ? "Falta ejecutar la migración V8.2.1." : "Motor IA disponible." });
+      return reply(200, { ok: true, configured: Boolean(apiKey), migrationReady, model, usage, message: !apiKey ? "Falta configurar GEMINI_API_KEY." : !migrationReady ? "Falta ejecutar la migración del motor IA." : "Motor IA disponible." });
     }
     if (action !== "chat") return reply(400, { ok: false, code: "INVALID_ACTION", message: "Acción no reconocida." });
     if (!apiKey) return reply(503, { ok: false, code: "AI_ENGINE_NOT_CONFIGURED", message: "El motor IA todavía no tiene una clave configurada." });
-    if (!migrationReady) return reply(503, { ok: false, code: "AI_MIGRATION_REQUIRED", message: "Ejecuta la migración V8.2.1 antes de habilitar consultas externas." });
+    if (!migrationReady) return reply(503, { ok: false, code: "AI_MIGRATION_REQUIRED", message: "Ejecuta la migración del motor IA antes de habilitar consultas externas." });
 
     const question = text(body.question, 1200);
     if (question.length < 2) return reply(400, { ok: false, code: "QUESTION_REQUIRED", message: "Escribe una consulta." });
@@ -97,7 +98,8 @@ Deno.serve(async (req) => {
     const snapshot = compactSnapshot(body.snapshot);
     const history = Array.isArray(body.history) ? body.history.slice(-8).map((x: any) => ({ role: x?.role === "assistant" ? "assistant" : "user", text: text(x?.text, 700) })) : [];
     const contextLabel = text(body.context?.label || "Negocio general", 80);
-    const prompt = `Eres el analista comercial privado de Natura Vida Bolivia. Responde en español claro y profesional.\n\nREGLAS OBLIGATORIAS:\n1. Usa solamente el resumen empresarial proporcionado; no inventes cifras, fechas, clientes ni acciones.\n2. Los cálculos críticos del resumen son la fuente de verdad. Si falta un dato, dilo.\n3. Separa hechos comprobados de sugerencias. Toda recomendación debe explicar su motivo y riesgo.\n4. No afirmes que modificaste precios, inventario, ventas, pagos, clientes o promociones. Solo propones; la aplicación exige confirmación humana.\n5. Evita recomendaciones que violen el margen mínimo o el descuento máximo.\n6. Prioriza acciones realistas para un negocio en crecimiento.\n7. Sé breve: conclusión, datos, recomendaciones y riesgos.\n\nContexto visible: ${contextLabel}\nHistorial reciente: ${JSON.stringify(history)}\nPregunta: ${question}\nResumen empresarial: ${JSON.stringify(snapshot)}`;
+    const prompt = `Eres el analista comercial privado de Natura Vida Bolivia. Responde en español claro y profesional.\n\nREGLAS OBLIGATORIAS:\n1. Usa solamente el resumen empresarial proporcionado; no inventes cifras, fechas, clientes ni acciones.\n2. Los cálculos críticos del resumen son la fuente de verdad. Si falta un dato, dilo.\n3. Separa hechos comprobados de sugerencias. Toda recomendación debe explicar su motivo y riesgo.\n4. No afirmes que modificaste precios, inventario, ventas, pagos, clientes o promociones. Solo propones; la aplicación exige confirmación humana.\n5. Evita recomendaciones que violen el margen mínimo o el descuento máximo.\n6. Prioriza acciones realistas para un negocio en crecimiento.\n7. Sé breve: conclusión, datos, recomendaciones y riesgos.
+8. Puedes sugerir acciones, pero solo de la lista permitida y siempre como propuesta que requiere confirmación en la aplicación.\n\nContexto visible: ${contextLabel}\nHistorial reciente: ${JSON.stringify(history)}\nPregunta: ${question}\nResumen empresarial: ${JSON.stringify(snapshot)}`;
     const schema = {
       type: "object", additionalProperties: false,
       properties: {
@@ -109,7 +111,8 @@ Deno.serve(async (req) => {
         next_questions: { type: "array", items: { type: "string" }, maxItems: 4 },
         confidence: { type: "string", enum: ["alta", "media", "baja"] },
         action_area: { type: "string", enum: ["none", "ventas", "clientes", "inventario", "cobranzas", "reglas-comerciales", "territorio", "finanzas"] },
-      }, required: ["title", "summary", "facts", "recommendations", "risks", "next_questions", "confidence", "action_area"]
+        suggested_actions: { type: "array", items: { type: "string", enum: ["open_area", "prepare_followup", "prepare_collection", "simulate_discount", "create_quote"] }, maxItems: 3 },
+      }, required: ["title", "summary", "facts", "recommendations", "risks", "next_questions", "confidence", "action_area", "suggested_actions"]
     };
     const started = Date.now();
     const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
