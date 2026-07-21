@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.1.0 — Reglas comerciales, márgenes y descuentos",
-  "short_name": "Natura Vida V8.1.0",
-  "description": "Gestión Natura Vida con reglas de margen, precio mínimo, descuentos por rol, promociones controladas, simulador de utilidad, continuidad segura y calidad de datos.",
-  "start_url": "./index.html?v=8.1.0",
+  "name": "NATURA VIDA V8.1.1 — Asistente IA estable",
+  "short_name": "Natura Vida V8.1.1",
+  "description": "Gestión Natura Vida con asistente IA local estable, conversación persistente, acceso propio en Administración, reglas comerciales, continuidad segura y calidad de datos.",
+  "start_url": "./index.html?v=8.1.1",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

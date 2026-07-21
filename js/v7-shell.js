@@ -135,6 +135,7 @@
     if (!requireAuth()) return false;
     const always = ['inicio','mas','perfil','inbox','actualizaciones'];
     if (always.includes(tab)) return true;
+    if (tab === 'asistente-ia') return !!(window.isAdmin && isAdmin());
     if (isAdmin()) return !['compra','perfil-cambio'].includes(tab);
     const permissionMap = {
       vender:'sales:create', clientes:'clients:manage', historial:'own_reports:read', estadisticas:'own_reports:read',
@@ -205,6 +206,7 @@
       case 'reportes-pro': oldRenderReports ? oldRenderReports() : renderInicioV7(); break;
       case 'ajustes': isAdmin() ? renderSettings() : renderProfileV7(); break;
       case 'reglas-comerciales': isAdmin() && window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderProfileV7(); break;
+      case 'asistente-ia': isAdmin() && window.renderAIAssistantV811 ? renderAIAssistantV811() : renderInicioV7(); break;
       case 'mas': renderMasV7(); break;
       default: renderInicioV7();
     }

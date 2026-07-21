@@ -47,6 +47,7 @@
 
       { id: 'perfil', category: 'administracion', icon: '👤', title: 'Mi perfil, función y QR', subtitle: 'Identidad, rol, datos comerciales y cobros', tab: 'perfil', always: true },
       { id: 'ajustes', category: 'administracion', icon: '⚙️', title: 'Configuración del negocio', subtitle: 'Marca, contacto y parámetros', tab: 'ajustes', adminOnly: true },
+      { id: 'asistente-ia', category: 'administracion', icon: '<span class="nvAiMenuFace" aria-hidden="true"></span>', title: 'Asistente IA', subtitle: 'Análisis comercial, clientes, inventario y márgenes', tab: 'asistente-ia', adminOnly: true },
       { id: 'actualizaciones', category: 'administracion', icon: '🔄', title: 'Actualizaciones', subtitle: 'Versión, revisión y recarga segura', handler: () => window.openUpdateCenter ? openUpdateCenter() : showToast('El módulo de actualización no está disponible.', 'error'), always: true },
       { id: 'bandeja', category: 'administracion', icon: '🔔', title: 'Bandeja y actividad', subtitle: 'Avisos, aprobaciones y comprobantes', handler: () => openInboxPanel(), always: true }
     ];
@@ -69,7 +70,7 @@
       { id: 'territorio', icon: '🗺️', title: 'Territorio', subtitle: 'Prospectos, visitas, mapas y cobertura comercial', tone: 'lime' },
       { id: 'personal', icon: '👥', title: team ? 'Personal y funciones' : 'Mi trabajo', subtitle: team ? 'Equipo, roles, tareas, asistencia y mano de obra' : 'Tareas, asistencia y perfil operativo', tone: 'violet' },
       { id: 'finanzas', icon: '📒', title: admin() ? 'Finanzas' : 'Cobranzas y finanzas', subtitle: 'Cobros, egresos y control económico autorizado', tone: 'gold' },
-      { id: 'administracion', icon: '⚙️', title: admin() ? 'Administración' : 'Configuración', subtitle: 'Perfil, función, bandeja y actualización', tone: 'slate' }
+      { id: 'administracion', icon: '⚙️', title: admin() ? 'Administración' : 'Configuración', subtitle: 'Perfil, asistente, bandeja y actualización', tone: 'slate' }
     ];
   }
 
@@ -141,7 +142,7 @@
   function renderMainView(actions) {
     const results = filteredActions(actions);
     const categories = categoryRegistryV770().filter(category => actions.some(action => action.category === category.id));
-    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Centro de gestión V8.0.7</span><h1>Todo organizado por área</h1><p>Accede más rápido a las herramientas comerciales, operativas y administrativas de tu función.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
+    return `<section class="v770CenterHead"><div class="v770CenterGlow"></div><div class="v770CenterGlow second"></div><span class="v7Eyebrow">Centro de gestión V8.1.1</span><h1>Todo organizado por área</h1><p>Accede más rápido a las herramientas comerciales, operativas y administrativas de tu función.</p><label class="v770ModuleSearch"><span>⌕</span><input id="managementSearchV770" value="${esc(searchTerm)}" placeholder="Buscar clientes, rutas, personal, egresos…"></label></section>
       ${searchTerm ? `<section class="v770SearchResults"><div class="v770SectionTitle"><span>Resultados</span><b>${results.length}</b></div>${results.map(action => actionButton(action, true)).join('') || '<div class="v770Hint"><span>⌕</span><p>No se encontró una función con ese nombre.</p></div>'}</section>` : `
       <section class="v770FavoriteSection"><div class="v770SectionTitle"><span>Favoritos</span><small>Accesos personalizados</small></div>${renderFavorites(actions)}</section>
       <section class="v770CategoryGrid">${categories.map(category => {
@@ -149,7 +150,7 @@
         return `<button class="v770CategoryCard v802CategoryCard ${esc(category.tone)}" data-category="${esc(category.id)}" aria-label="Abrir ${esc(category.title)}"><span class="v770CategoryGlow"></span><span class="v802CategoryArt">${categoryArtV802(category.id)}</span><span class="v802CategoryCopy"><strong>${esc(category.title)}</strong><small>${esc(category.subtitle)}</small><u>Ver funciones <b>›</b></u></span><em>${count}</em></button>`;
       }).join('')}</section>${renderRecents(actions)}`}
       <section class="v770SettingsSeparation"><span>⚙️</span><div><strong>Configuración está separada de la operación</strong><p>Los ajustes del negocio están dentro de Administración; ventas, catálogo, stock y rutas permanecen como herramientas de trabajo.</p></div></section>
-      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '8.0.7')} · Centro modular · Supabase Realtime</div>`;
+      <button class="v7Logout" id="v770LogoutBtn">Cerrar sesión</button><div class="v7Version">Natura Vida V${esc(window.NATURA_APP_VERSION || '8.1.1')} · Centro modular · Supabase Realtime</div>`;
   }
 
   function bindCenterEvents(actions) {

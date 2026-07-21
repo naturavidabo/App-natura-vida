@@ -24,14 +24,14 @@ version=json.loads(read('app-version.json')); manifest=json.loads(read('manifest
 
 # Paquete y despliegue
 require(index.lstrip().startswith('<!DOCTYPE html>'),'index.html no inicia como HTML')
-require(version.get('version')=='8.0.7','app-version no indica 8.0.4')
-require("CURRENT_VERSION = '8.0.7'" in update,'app-update no indica 8.0.4')
-require('service-worker.js?v=8.0.7' in update,'registro del service worker no usa 8.0.4')
-require('natura-vida-v8-0-7' in sw.lower(),'service worker no corresponde a V8.0.4')
-require('V8.0.7' in manifest.get('name',''),'manifest no identifica V8.0.4')
-require('css/v8.css?v=8.0.7' in index,'index no carga CSS V8.0.4')
+require(version.get('version')=='8.1.1','app-version no indica 8.1.1')
+require("CURRENT_VERSION = '8.1.1'" in update,'app-update no indica 8.1.1')
+require('service-worker.js?v=8.1.1' in update,'registro del service worker no usa 8.1.1')
+require('natura-vida-v8-1-1' in sw.lower(),'service worker no corresponde a V8.1.1')
+require('V8.1.1' in manifest.get('name',''),'manifest no identifica V8.1.1')
+require('css/v8.css?v=8.1.1' in index,'index no carga CSS V8.1.1')
 for script in ['clients.js','sales.js','v7-documents.js','v7-management-center.js','v8-territory.js','v7-shell.js']:
-    require(f'js/{script}?v=8.0.7' in index,f'index no carga {script} con versión correcta')
+    require(f'js/{script}?v=8.1.1' in index,f'index no carga {script} con versión correcta')
 require(index.index('clients.js') < index.index('sales.js'),'clientes debe cargarse antes de ventas')
 require(index.index('v8-stability.js') < index.index('v7-commercial-center.js'),'estabilidad se carga después de módulos comerciales')
 
@@ -117,7 +117,7 @@ for match in re.findall(r'(?:src|href)="((?:css|js|icons|img)/[^"?]+)', index):
     require((ROOT/match).exists(),f'recurso local inexistente: {match}')
 
 if errors:
-    print(f'Auditoría Natura Vida V8.0.7: {checks-len(errors)}/{checks} controles OK')
+    print(f'Auditoría Natura Vida V8.1.1: {checks-len(errors)}/{checks} controles OK')
     for e in errors: print('ERROR:',e)
     sys.exit(1)
-print(f'Auditoría Natura Vida V8.0.7: {checks}/{checks} controles OK')
+print(f'Auditoría Natura Vida V8.1.1: {checks}/{checks} controles OK')
