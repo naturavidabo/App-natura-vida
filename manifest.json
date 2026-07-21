@@ -1,8 +1,8 @@
 {
-  "name": "NATURA VIDA V8.2.0 — Estados de cuenta y cobranzas",
-  "short_name": "Natura Vida V8.2.0",
-  "description": "Gestión Natura Vida con estados de cuenta, deudas activas, pagos parciales, documentos de cobro, asistente comercial y continuidad segura.",
-  "start_url": "./index.html?v=8.2.0",
+  "name": "Natura Vida V8.2.1",
+  "short_name": "Natura Vida",
+  "description": "Gestión comercial Natura Vida con asistente IA híbrido seguro",
+  "start_url": "./index.html?v=8.2.1",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

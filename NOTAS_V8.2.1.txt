@@ -1,0 +1,10 @@
+NATURA VIDA V8.2.1 — MOTOR IA HÍBRIDO SEGURO
+
+- Conecta el asistente con Gemini mediante una Supabase Edge Function.
+- Acceso exclusivo para administrador central.
+- Envía solo un resumen empresarial limitado; excluye teléfonos, direcciones, correos y comprobantes.
+- Conserva cálculos locales como fuente verificable y respaldo automático.
+- Límite diario configurable y auditoría mínima por hash, sin guardar preguntas ni respuestas.
+- Ninguna recomendación ejecuta cambios.
+- Se mantiene toda la funcionalidad financiera V8.2.0.
+- Total de archivos del repositorio: se valida automáticamente que sea menor a 100.

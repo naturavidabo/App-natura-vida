@@ -52,6 +52,13 @@ function renderSettings() {
       <button class="btn block" id="openCommercialRulesV807Btn">Abrir reglas comerciales</button>
     </div>` : ''}
 
+    ${window.isAdmin && isAdmin() ? `<div class="sectiontitle">Motor de inteligencia artificial</div>
+    <div class="card settingsCard nv821AiSettingsCard">
+      <div class="name">Asistente híbrido seguro</div>
+      <div class="costline">Usa cálculos locales verificables y, cuando la Edge Function esté configurada, Gemini interpreta un resumen sin teléfonos, direcciones ni correos. Las claves nunca se guardan en el navegador.</div>
+      <div class="field-row"><button class="btn block" id="openAiAssistantV821Btn">Abrir asistente</button><button class="btn outline block" id="checkAiEngineV821Btn">Comprobar motor</button></div>
+    </div>` : ''}
+
     <div class="sectiontitle">Conexión del sistema</div>
     <div class="card cloudOfficialCard">
       <div class="cloudStatus ${escapeHtml(conn.state || 'connecting')}">
@@ -88,8 +95,8 @@ function renderSettings() {
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V8.0.7 · Supabase + Realtime</div>
-      <div class="costline">Sin cola offline automática. Incluye continuidad segura, respaldo verificable, auditoría, control de calidad y reglas comerciales protegidas.</div>
+      <div class="costline">NATURA VIDA — V8.2.1 · Supabase + Realtime + IA híbrida</div>
+      <div class="costline">Sin cola offline automática. Incluye continuidad segura, control financiero, auditoría, reglas comerciales y motor IA protegido por Edge Function.</div>
     </div>
   `;
 
@@ -147,6 +154,20 @@ function renderSettings() {
   $('#openCommercialRulesV807Btn')?.addEventListener('click', () => {
     if (window.navigateTo) navigateTo('reglas-comerciales');
     else if (window.renderCommercialRulesV807) renderCommercialRulesV807();
+  });
+
+  $('#openAiAssistantV821Btn')?.addEventListener('click', () => {
+    if (window.navigateTo) navigateTo('asistente-ia');
+  });
+
+  $('#checkAiEngineV821Btn')?.addEventListener('click', async () => {
+    const btn = $('#checkAiEngineV821Btn');
+    btn.disabled = true; btn.textContent = 'Comprobando…';
+    try {
+      const state = await window.__nvAiV821?.checkEngine?.(true);
+      showToast(state?.message || 'Comprobación del motor terminada.', state?.mode === 'external' ? undefined : 'error');
+    } catch (err) { showToast(err.message || 'No se pudo comprobar el motor IA.', 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Comprobar motor'; }
   });
 
   $('#openOfflineContinuityBtn').addEventListener('click', () => {

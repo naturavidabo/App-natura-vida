@@ -1,18 +1,22 @@
-/* Natura Vida V8.2.0 — Asistente comercial analítico.
-   Acceso exclusivo para administrador central, conversación persistente,
-   panel rápido y pantalla propia dentro de la aplicación.
-   El motor externo continúa desactivado: los análisis son locales y verificables. */
+/* Natura Vida V8.2.1 — Asistente comercial con motor IA híbrido seguro.
+   Acceso exclusivo para administrador central. Los cálculos críticos continúan
+   siendo locales; Gemini interpreta un resumen empresarial limitado a través
+   de una Supabase Edge Function y nunca recibe claves desde el navegador. */
 (function(){
   'use strict';
 
-  const VERSION='8.2.0';
+  const VERSION='8.2.1';
   const MAX_ENTRIES=60;
+  const AI_FUNCTION_NAME='nv-ai-assistant';
+  const ENGINE_TIMEOUT_MS=28000;
+  const ENGINE_HEALTH_TTL=5*60*1000;
   let oldNavigate=null;
   let oldRender=null;
   let lastNonAiTab='inicio';
   let assistantContext={tab:'inicio',label:'Negocio general'};
   let pendingQuestion='';
   let answerTimer=null;
+  let engineState={mode:'checking',configured:false,migrationReady:false,model:'gemini-2.5-flash-lite',checkedAt:0,usage:null,message:'Comprobando motor IA'};
 
   function adminAllowed(){
     try { return !!(window.requireAuth && requireAuth() && window.isAdmin && isAdmin()); }
@@ -28,6 +32,20 @@
   }
   function money(v){ return window.fmtMoney ? fmtMoney(Number(v)||0) : `Bs ${(Number(v)||0).toFixed(2)}`; }
   function uid(){ return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`; }
+  function clampText(v,max=300){ return String(v??'').replace(/\s+/g,' ').trim().slice(0,max); }
+  function safeHtml(v){ return esc(v).replace(/\n/g,'<br>'); }
+  function engineLabel(mode=engineState.mode){
+    return mode==='external'?'IA conectada':mode==='checking'?'Comprobando IA':mode==='local-fallback'?'Respaldo local':'Análisis local';
+  }
+  function engineClass(mode=engineState.mode){ return mode==='external'?'online':mode==='checking'?'checking':mode==='local-fallback'?'warning':'local'; }
+  function getSupabaseForAI(){ try { return window.getSupabaseClient ? getSupabaseClient() : null; } catch(_) { return null; } }
+  function withTimeout(promise,ms=ENGINE_TIMEOUT_MS){
+    let timer;
+    return Promise.race([
+      Promise.resolve(promise).finally(()=>clearTimeout(timer)),
+      new Promise((_,reject)=>{ timer=setTimeout(()=>reject(new Error('El motor IA tardó demasiado en responder.')),ms); })
+    ]);
+  }
   function botSvg(extraClass=''){
     return `<svg class="nvAiBotSvg ${extraClass}" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <defs><linearGradient id="nvAiBotGlow" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dff8e9"/><stop offset="1" stop-color="#aee7c9"/></linearGradient><linearGradient id="nvAiBotScreen" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#064e34"/><stop offset="1" stop-color="#0b8555"/></linearGradient></defs>
@@ -127,6 +145,118 @@
     promotionCandidates().slice(0,2).forEach(x=>rec.push({level:'medium',title:`Impulsar ${x.p.name||'producto'}`,detail:`Stock ${x.stock}; movimiento bajo y margen estimado ${x.margin.toFixed(1)}%.`,question:`Analiza una promoción para ${x.p.name||'este producto'}`}));
     return rec.slice(0,6);
   }
+
+  function clientCommercialRows(){
+    const {clients,sales}=dataset();
+    const rs=receivableStats();
+    const balanceByClient=new Map();
+    rs.open.forEach(x=>{
+      const amount=Number(x.balance||0);
+      const idKey=String(x.clientId||'');
+      const nameKey=normalizedName(x.clientName||x.customerName||'');
+      if(idKey) balanceByClient.set(idKey,(balanceByClient.get(idKey)||0)+amount);
+      if(nameKey) balanceByClient.set(nameKey,(balanceByClient.get(nameKey)||0)+amount);
+    });
+    return clients.map(c=>{
+      const own=sales.filter(x=>String(x.clientId||'')===String(c.id||''));
+      const last=Math.max(0,...own.map(x=>dateMs(x.date||x.createdAt)));
+      const revenue=own.reduce((a,x)=>a+(Number(x.total)||0),0);
+      const idKey=String(c.id||''); const nameKey=normalizedName(c.name||c.businessName||'');
+      const balance=Math.max(balanceByClient.get(idKey)||0,balanceByClient.get(nameKey)||0);
+      return {name:clampText(c.name||c.businessName||'Cliente',90),sales:own.length,revenue:Number(revenue.toFixed(2)),daysSinceLast:last?daysSince(last):null,balance:Number(balance.toFixed(2)),region:clampText(c.regionName||c.region||c.city||'',50)};
+    });
+  }
+  function businessSnapshot(question=''){
+    const today=salesStats(1), week=salesStats(7), month=salesStats(30), ss=stockStats(), rs=receivableStats();
+    const clients=clientCommercialRows();
+    const productRows=month.byProduct.slice(0,12).map(x=>({name:clampText(x.name,90),units:Number(x.qty||0),revenue:Number(x.revenue.toFixed(2)),profit:Number((x.revenue-x.cost).toFixed(2)),margin:Number((x.revenue?((x.revenue-x.cost)/x.revenue*100):0).toFixed(1))}));
+    const productMap=new Map((dataset().products||[]).map(p=>[normalizedName(p.name),p]));
+    productRows.forEach(x=>{ const p=productMap.get(normalizedName(x.name))||{}; x.stock=Number(p.stock||0); x.price=Number(p.price??p.retailPrice??0)||0; x.cost=Number(p.cost??p.baseCost??0)||0; });
+    const topClients=clients.sort((a,b)=>(b.balance-a.balance)||(b.revenue-a.revenue)).slice(0,14);
+    const receivables=rs.open.slice().sort((a,b)=>Number(b.balance||0)-Number(a.balance||0)).slice(0,14).map(x=>({client:clampText(x.clientName||x.customerName||'Cliente',90),balance:Number(Number(x.balance||0).toFixed(2)),paid:Number(Number(x.paid||0).toFixed(2)),daysOverdue:Math.max(0,daysSince(x.dueDate||x.originalDate||x.date)),historical:!!x.historical}));
+    const settings=dataset().settings||{};
+    return {
+      generatedAt:new Date().toISOString(),
+      context:{tab:assistantContext.tab,label:assistantContext.label,questionTopic:clampText(question,140)},
+      privacy:{phonesExcluded:true,addressesExcluded:true,emailsExcluded:true,rawReceiptsExcluded:true},
+      metrics:{
+        today:{operations:today.rows.length,revenue:Number(today.revenue.toFixed(2)),profit:Number(today.profit.toFixed(2)),margin:Number(today.margin.toFixed(1))},
+        sevenDays:{operations:week.rows.length,revenue:Number(week.revenue.toFixed(2)),profit:Number(week.profit.toFixed(2)),margin:Number(week.margin.toFixed(1))},
+        thirtyDays:{operations:month.rows.length,revenue:Number(month.revenue.toFixed(2)),profit:Number(month.profit.toFixed(2)),margin:Number(month.margin.toFixed(1)),units:month.units},
+        receivables:{operations:rs.open.length,total:Number(rs.total.toFixed(2)),overdue:rs.overdue.length,historical:rs.historical.length},
+        inventory:{products:ss.total,critical:ss.critical.length,negative:ss.negative.length},
+        customers:{total:(dataset().clients||[]).length,inactive30Days:clientStats().inactive.length,incomplete:clientStats().incomplete.length}
+      },
+      commercialRules:{minimumMargin:Number(settings.minMargin??settings.minimumMargin??25)||25,maximumDiscount:Number(settings.maxDiscount??settings.maximumDiscount??10)||10,currency:'BOB'},
+      topProducts:productRows,
+      criticalStock:ss.critical.slice(0,12).map(p=>({name:clampText(p.name||'Producto',90),stock:Number(p.stock||0),price:Number(p.price??p.retailPrice??0)||0,cost:Number(p.cost??p.baseCost??0)||0})),
+      customersForFollowUp:topClients,
+      topReceivables:receivables,
+      alerts:recommendations().map(x=>({level:x.level,title:clampText(x.title,100),detail:clampText(x.detail,180)}))
+    };
+  }
+  function conversationForEngine(){
+    return readConversation().slice(-8).map(x=>x.role==='user'?{role:'user',text:clampText(x.text,600)}:{role:'assistant',text:clampText(`${x.response?.title||''}. ${String(x.response?.body||'').replace(/<[^>]*>/g,' ')}`,700)});
+  }
+  function normalizeEngineResponse(data){
+    const a=data?.answer||{};
+    const facts=(Array.isArray(a.facts)?a.facts:[]).slice(0,6).map(x=>clampText(x,220)).filter(Boolean);
+    const rec=(Array.isArray(a.recommendations)?a.recommendations:[]).slice(0,5).map(x=>clampText(x,240)).filter(Boolean);
+    const risks=(Array.isArray(a.risks)?a.risks:[]).slice(0,4).map(x=>clampText(x,220)).filter(Boolean);
+    const next=(Array.isArray(a.next_questions)?a.next_questions:[]).slice(0,4).map(x=>clampText(x,150)).filter(Boolean);
+    const tabMap={ventas:'historial',clientes:'clientes',inventario:'inventario',cobranzas:'por-cobrar','reglas-comerciales':'reglas-comerciales',territorio:'territorio',finanzas:'egresos'};
+    const area=String(a.action_area||'none');
+    const action=tabMap[area]?{label:`Abrir ${area.replace('-',' ')}`,tab:tabMap[area]}:null;
+    const bodyParts=[safeHtml(a.summary||'Análisis completado con los datos disponibles.')];
+    if(facts.length) bodyParts.push(`<span class="nvAiSectionLabel">Datos verificados</span>`);
+    return {
+      title:clampText(a.title||'Análisis inteligente',100),
+      body:bodyParts.join('<br>'),
+      list:[...facts.map(x=>`Dato: ${x}`),...rec.map(x=>`Sugerencia: ${x}`),...risks.map(x=>`Riesgo: ${x}`)],
+      suggestions:next,
+      action,
+      confidence:['alta','media','baja'].includes(String(a.confidence))?String(a.confidence):'media',
+      engine:'external',
+      model:clampText(data?.model||engineState.model,60),
+      usage:data?.usage||null,
+      privacy:data?.privacy||{snapshotOnly:true}
+    };
+  }
+  async function checkEngine(force=false){
+    if(!adminAllowed()) return engineState;
+    if(!force && engineState.checkedAt && Date.now()-engineState.checkedAt<ENGINE_HEALTH_TTL) return engineState;
+    if(!navigator.onLine){ engineState={...engineState,mode:'local',configured:false,checkedAt:Date.now(),message:'Sin internet: análisis local'}; updateEngineUI(); return engineState; }
+    const sb=getSupabaseForAI();
+    if(!sb?.functions?.invoke){ engineState={...engineState,mode:'local',configured:false,checkedAt:Date.now(),message:'Edge Functions no disponible'}; updateEngineUI(); return engineState; }
+    engineState={...engineState,mode:'checking',message:'Comprobando motor IA'}; updateEngineUI();
+    try{
+      const result=await withTimeout(sb.functions.invoke(AI_FUNCTION_NAME,{body:{action:'health'}}),12000);
+      if(result?.error) throw new Error(result.error.message||'No se pudo comprobar el motor IA.');
+      const data=result?.data||{};
+      engineState={mode:(data.configured&&data.migrationReady)?'external':'local',configured:!!data.configured,migrationReady:!!data.migrationReady,model:data.model||engineState.model,checkedAt:Date.now(),usage:data.usage||null,message:data.message||((data.configured&&data.migrationReady)?'Motor IA disponible':'Configuración pendiente')};
+    }catch(error){ engineState={...engineState,mode:'local',configured:false,checkedAt:Date.now(),message:clampText(error.message||'Motor no disponible',120)}; }
+    updateEngineUI();
+    return engineState;
+  }
+  async function answerWithEngine(question){
+    const health=await checkEngine(false);
+    if(health.mode!=='external') throw new Error(health.message||'Motor externo no disponible.');
+    const sb=getSupabaseForAI();
+    const result=await withTimeout(sb.functions.invoke(AI_FUNCTION_NAME,{body:{action:'chat',question:clampText(question,1200),context:assistantContext,snapshot:businessSnapshot(question),history:conversationForEngine()}}));
+    if(result?.error) throw new Error(result.error.message||'El motor IA no pudo responder.');
+    if(!result?.data?.ok) throw new Error(result?.data?.message||'Respuesta IA inválida.');
+    engineState={...engineState,mode:'external',configured:true,migrationReady:true,model:result.data.model||engineState.model,usage:result.data.usage||engineState.usage,checkedAt:Date.now(),message:'Motor IA conectado'};
+    updateEngineUI();
+    return normalizeEngineResponse(result.data);
+  }
+  function updateEngineUI(){
+    const badge=document.getElementById('nvAiEngineBadge');
+    if(badge){ badge.className=`nvAiEngineBadge ${engineClass()}`; badge.innerHTML=`<i></i><span>${esc(engineLabel())}</span>`; badge.title=engineState.message||engineLabel(); }
+    const usage=document.getElementById('nvAiUsage');
+    if(usage){ const u=engineState.usage; usage.textContent=u&&Number.isFinite(Number(u.used))?`${u.used}/${u.limit} consultas hoy`:(engineState.mode==='external'?'Motor disponible':'Modo local seguro'); }
+    document.querySelectorAll?.('.nvAiEngineMini').forEach(el=>{ el.className=`nvAiEngineMini ${engineClass()}`; el.textContent=engineLabel(); });
+  }
+
   function discountSimulation(product,percent=5,qty=1){
     if(!product) return null; const price=Number(product.price??product.retailPrice??product.publicPrice??0)||0; const cost=Number(product.cost??product.baseCost??0)||0; const pct=Math.max(0,Math.min(100,Number(percent)||0)); const final=price*(1-pct/100); const profit=(final-cost)*qty; const margin=final?((final-cost)/final*100):0; const settings=dataset().settings||{}; const minMargin=Number(settings.minMargin??settings.minimumMargin??25)||25; return {price,cost,pct,final,profit,margin,minMargin,allowed:margin>=minMargin};
   }
@@ -173,7 +303,9 @@
   }
 
   function renderResponse(r){
-    return `<article class="nvAiMessage assistant"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><strong>${esc(r.title)}</strong><p>${r.body||''}</p>${r.cards?`<div class="nvAiMetrics">${r.cards.map(x=>`<div><small>${esc(x[0])}</small><b>${esc(x[1])}</b></div>`).join('')}</div>`:''}${r.table?`<div class="nvAiTable"><div class="head"><span>Producto</span><span>Unid.</span><span>Utilidad</span><span>Margen</span></div>${r.table.map(row=>`<div>${row.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`).join('')}</div>`:''}${r.list?.length?`<ul>${r.list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.action?`<button class="nvAiInlineAction" type="button" data-ai-tab="${esc(r.action.tab)}">${esc(r.action.label)}</button>`:''}${r.suggestions?`<div class="nvAiSuggestions">${r.suggestions.map(x=>`<button type="button" data-ai-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}</div></article>`;
+    const source=r.engine==='external'?`<span class="nvAiAnswerSource external">IA · ${esc(r.model||'Gemini')}</span>`:r.engine==='local-fallback'?'<span class="nvAiAnswerSource fallback">Respaldo local</span>':'<span class="nvAiAnswerSource local">Cálculo local</span>';
+    const confidence=r.confidence?`<span class="nvAiConfidence">Confianza ${esc(r.confidence)}</span>`:'';
+    return `<article class="nvAiMessage assistant"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><div class="nvAiAnswerHead"><strong>${esc(r.title)}</strong><span>${source}${confidence}</span></div><p>${r.body||''}</p>${r.cards?`<div class="nvAiMetrics">${r.cards.map(x=>`<div><small>${esc(x[0])}</small><b>${esc(x[1])}</b></div>`).join('')}</div>`:''}${r.table?`<div class="nvAiTable"><div class="head"><span>Producto</span><span>Unid.</span><span>Utilidad</span><span>Margen</span></div>${r.table.map(row=>`<div>${row.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`).join('')}</div>`:''}${r.list?.length?`<ul>${r.list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.action?`<button class="nvAiInlineAction" type="button" data-ai-tab="${esc(r.action.tab)}">${esc(r.action.label)}</button>`:''}${r.suggestions?.length?`<div class="nvAiSuggestions">${r.suggestions.map(x=>`<button type="button" data-ai-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}</div></article>`;
   }
   function renderEntry(entry){
     if(entry.role==='user') return `<article class="nvAiMessage user" data-ai-entry="${esc(entry.id)}"><div class="nvAiBubble">${esc(entry.text)}</div></article>`;
@@ -184,7 +316,7 @@
     return `<article class="nvAiMessage assistant nvAiWelcome"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><strong>Hola, ${esc(name)}</strong><p>Puedo ayudarte a interpretar ventas, márgenes, inventario y clientes. Las respuestas permanecerán guardadas en esta conversación aunque la pantalla se actualice.</p><div class="nvAiSuggestions">${['¿Cómo van las ventas hoy?','¿Qué productos dejan mayor utilidad?','¿Qué clientes requieren seguimiento?','¿Tengo stock crítico?'].map(x=>`<button type="button" data-ai-q="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></article>`;
   }
   function thinkingHtml(){
-    return `<article class="nvAiMessage assistant nvAiThinking"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><span class="nvAiTyping"><i></i><i></i><i></i></span><small>Analizando los datos actuales…</small></div></article>`;
+    return `<article class="nvAiMessage assistant nvAiThinking"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><span class="nvAiTyping"><i></i><i></i><i></i></span><small>${engineState.mode==='external'?'Consultando motor IA y verificando datos…':'Calculando con los datos locales…'}</small></div></article>`;
   }
   function bindInline(root=document){
     root.querySelectorAll?.('[data-ai-tab]').forEach(b=>{ b.onclick=()=>window.navigateTo(b.dataset.aiTab); });
@@ -200,7 +332,7 @@
     if(preserveBottom && (nearBottom||pendingQuestion)) requestAnimationFrame(()=>{ feed.scrollTop=feed.scrollHeight; });
   }
 
-  function ask(question){
+  async function ask(question){
     const input=document.getElementById('nvAiInput');
     const q=String(question||input?.value||'').trim();
     if(!q||pendingQuestion) return;
@@ -209,17 +341,27 @@
     pendingQuestion=q;
     renderConversation(true);
     clearTimeout(answerTimer);
-    answerTimer=setTimeout(()=>{
-      try {
-        const response=answerLocal(q);
-        addEntry({role:'assistant',response,at:Date.now()});
-      } catch(error) {
-        addEntry({role:'assistant',response:{title:'No pude completar el análisis',body:'Ocurrió un problema al leer los datos actuales. Puedes volver a intentarlo sin perder la conversación.'},at:Date.now()});
-      } finally {
-        pendingQuestion='';
-        if(String(window.AppState?.currentTab)==='asistente-ia') renderConversation(true);
+    try{
+      let response;
+      if(navigator.onLine){
+        try { response=await answerWithEngine(q); }
+        catch(error){
+          response=answerLocal(q);
+          response.engine='local-fallback';
+          response.body=`${response.body||''}<br><small>El motor IA externo no estuvo disponible; se utilizó el cálculo local sin perder la consulta.</small>`;
+          engineState={...engineState,mode:'local-fallback',message:clampText(error.message||'Motor externo no disponible',120),checkedAt:Date.now()};
+          updateEngineUI();
+        }
+      } else {
+        response=answerLocal(q); response.engine='local';
       }
-    },260);
+      addEntry({role:'assistant',response,at:Date.now()});
+    }catch(error){
+      addEntry({role:'assistant',response:{title:'No pude completar el análisis',body:'Ocurrió un problema al leer los datos actuales. Puedes volver a intentarlo sin perder la conversación.',engine:'local'},at:Date.now()});
+    }finally{
+      pendingQuestion='';
+      if(String(window.AppState?.currentTab)==='asistente-ia') renderConversation(true);
+    }
   }
 
   function statsSnapshot(){
@@ -242,12 +384,12 @@
     const {st,cs,ss}=statsSnapshot();
     const main=document.getElementById('mainArea');
     main.innerHTML=`<section class="nvAiPage">
-      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>ANALÍTICO</span></h1><p>Exclusivo del administrador central</p></div><button id="nvAiClear" class="nvAiGhost" type="button">Nueva conversación</button></header>
-      <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Datos actuales de Natura Vida · conversación guardada en este dispositivo</small></div>
+      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>HÍBRIDO</span></h1><p>Exclusivo del administrador central</p></div><button id="nvAiClear" class="nvAiGhost" type="button">Nueva conversación</button></header><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
+      <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Resumen empresarial sin teléfonos, direcciones ni correos · conversación guardada en este dispositivo</small></div>
       <div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div>
       <section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div><div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div>
       <div class="nvAiComposer"><textarea id="nvAiInput" rows="1" placeholder="Escribe tu consulta…" aria-label="Consulta para el asistente"></textarea><button id="nvAiSend" type="button" aria-label="Enviar">➤</button></div>
-      <p class="nvAiDisclaimer">Análisis local verificable: revisa decisiones importantes. Ninguna acción se ejecuta sin confirmación.</p>
+      <p class="nvAiDisclaimer">Motor híbrido: cálculos verificables + interpretación IA cuando esté conectada. Ninguna acción se ejecuta sin confirmación.</p>
     </section>`;
     document.getElementById('nvAiBack').onclick=()=>window.navigateTo(lastNonAiTab||'inicio');
     document.getElementById('nvAiClear').onclick=()=>{
@@ -259,9 +401,13 @@
     };
     document.getElementById('nvAiSend').onclick=()=>ask();
     document.getElementById('nvAiRefreshRec').onclick=renderRecommendations;
+    document.getElementById('nvAiCheckEngine').onclick=async()=>{ await checkEngine(true); if(window.showToast) showToast(engineState.message||engineLabel()); };
+    document.getElementById('nvAiEngineBadge').onclick=()=>document.getElementById('nvAiCheckEngine')?.click();
     document.getElementById('nvAiInput').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(); } });
     renderRecommendations();
     renderConversation(false);
+    updateEngineUI();
+    checkEngine(false).catch(()=>{});
   }
   function renderAssistant(options={}){
     if(!adminAllowed()){
@@ -290,7 +436,7 @@
     closeSheet();
     const ctx=currentContext();
     const hasHistory=readConversation().length>0;
-    document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiOverlay"><section class="nvAiSheet" role="dialog" aria-modal="true" aria-labelledby="nvAiSheetTitle"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiClose" type="button" aria-label="Cerrar">×</button><div class="nvAiSheetIntro"><div class="nvAiAvatar">${botSvg()}</div><div><h2 id="nvAiSheetTitle">Asistente Natura</h2><p>${hasHistory?'Tu conversación está guardada.':'¿En qué puedo ayudarte?'}</p></div></div><div class="nvAiSheetContext">Contexto: <b>${esc(ctx.label)}</b></div><div class="nvAiSheetActions">${[['Resumen de hoy','¿Cómo van las ventas hoy?'],['Analizar ventas','¿Qué productos dejan mayor utilidad?'],['Revisar clientes','¿Qué clientes requieren seguimiento?']].map(x=>`<button type="button" data-sheet-q="${esc(x[1])}">${esc(x[0])}</button>`).join('')}<button class="primary" id="nvAiOpenFull" type="button">${hasHistory?'Continuar conversación':'Abrir asistente completo'}</button></div></section></div>`);
+    document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiOverlay"><section class="nvAiSheet" role="dialog" aria-modal="true" aria-labelledby="nvAiSheetTitle"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiClose" type="button" aria-label="Cerrar">×</button><div class="nvAiSheetIntro"><div class="nvAiAvatar">${botSvg()}</div><div><h2 id="nvAiSheetTitle">Asistente Natura</h2><p>${hasHistory?'Tu conversación está guardada.':'¿En qué puedo ayudarte?'}</p></div></div><div class="nvAiSheetContext"><span>Contexto: <b>${esc(ctx.label)}</b></span><em class="nvAiEngineMini ${engineClass()}">${esc(engineLabel())}</em></div><div class="nvAiSheetActions">${[['Resumen de hoy','¿Cómo van las ventas hoy?'],['Analizar ventas','¿Qué productos dejan mayor utilidad?'],['Revisar clientes','¿Qué clientes requieren seguimiento?']].map(x=>`<button type="button" data-sheet-q="${esc(x[1])}">${esc(x[0])}</button>`).join('')}<button class="primary" id="nvAiOpenFull" type="button">${hasHistory?'Continuar conversación':'Abrir asistente completo'}</button></div></section></div>`);
     document.getElementById('nvAiClose').onclick=closeSheet;
     document.getElementById('nvAiOverlay').onclick=e=>{ if(e.target.id==='nvAiOverlay') closeSheet(); };
     document.getElementById('nvAiOpenFull').onclick=()=>openFull();
@@ -312,8 +458,8 @@
   }
 
   function install(){
-    if(window.__NV_AI_V812_INSTALLED) return;
-    window.__NV_AI_V812_INSTALLED=true;
+    if(window.__NV_AI_V821_INSTALLED) return;
+    window.__NV_AI_V821_INSTALLED=true;
     oldNavigate=window.navigateTo;
     oldRender=window.render;
     window.navigateTo=function(tab){
@@ -343,13 +489,17 @@
       observer.observe(main,{childList:true,subtree:false});
     }
     setTimeout(ensureFab,250);
+    setTimeout(()=>checkEngine(false).catch(()=>{}),700);
+    window.renderAIAssistantV821=renderAssistant;
     window.renderAIAssistantV812=renderAssistant;
     window.renderAIAssistantV810=renderAssistant;
+    window.openAIAssistantSheetV821=openSheet;
     window.openAIAssistantSheetV812=openSheet;
     window.openAIAssistantSheetV810=openSheet;
   }
 
-  window.__nvAiV812={VERSION,readConversation,writeConversation,addEntry,clearConversation,answerLocal,recommendations,discountSimulation,renderAssistant,openSheet,ask,botSvg};
+  window.__nvAiV821={VERSION,readConversation,writeConversation,addEntry,clearConversation,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,ask,botSvg,get engineState(){return {...engineState};}};
+  window.__nvAiV812=window.__nvAiV821;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0));
   else setTimeout(install,0);
 })();

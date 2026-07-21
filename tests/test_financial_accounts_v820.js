@@ -22,4 +22,4 @@ assert(Math.abs(after.totalDebt-4926.20)<0.001,'El pago parcial no redujo el sal
 const voided={...payment,status:'voided'};
 const restored=Core.aggregateClient(client,rows,[voided],[]);
 assert(Math.abs(restored.totalDebt-5426.20)<0.001,'La anulación no restauró el saldo');
-console.log('OK V8.2.0 Gabriela:',{operations:rows.length,paid:account.totalPaid,balance:account.totalDebt,afterPayment:after.totalDebt,restored:restored.totalDebt});
+console.log('OK V8.2.1 Gabriela:',{operations:rows.length,paid:account.totalPaid,balance:account.totalDebt,afterPayment:after.totalDebt,restored:restored.totalDebt});

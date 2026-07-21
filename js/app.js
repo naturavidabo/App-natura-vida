@@ -336,7 +336,7 @@ function render() {
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
     case 'reglas-comerciales': window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderSettings(); break;
-    case 'asistente-ia': window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicio(); break;
+    case 'asistente-ia': window.renderAIAssistantV821 ? renderAIAssistantV821() : (window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicio()); break;
     case 'estado-cuenta': window.renderClientAccountV820 ? renderClientAccountV820() : renderClients(); break;
     case 'usuarios': renderUsersFoundation(); break;
     case 'reportes-pro': renderReportsFoundation(); break;

@@ -1,0 +1,22 @@
+NATURA VIDA V8.2.1 — RESULTADO DE PRUEBAS
+
+- Auditoría integral del sitio: 133/133.
+- Auditoría de despliegue: 23/23.
+- Autocompletado de clientes: 4/4.
+- Regresión territorial: 9/9.
+- Saneamiento y seguridad: 12/12.
+- Continuidad sin conexión: 12/12.
+- Control administrativo: 16/16.
+- Reglas comerciales: 6/6 grupos.
+- Integración comercial: 19/19.
+- Cápsula de conexión: 9/9.
+- Asistente analítico: 8/8.
+- Motor IA híbrido V8.2.1: 10/10.
+- Interfaz financiera: 21/21.
+- Persistencia de conversación: aprobada.
+- Caso Gabriela Espinoza: 7 operaciones, Bs 2.095 pagados y Bs 5.426,20 pendientes.
+- Sintaxis JavaScript: 45 archivos correctos.
+- Sintaxis TypeScript de Edge Function: correcta.
+- Total del repositorio: 97 archivos, por debajo del límite de 100.
+
+La llamada real a Gemini requiere desplegar la Edge Function, ejecutar la migración y configurar GEMINI_API_KEY en Supabase Secrets. Sin esa configuración, el asistente utiliza automáticamente el motor local.

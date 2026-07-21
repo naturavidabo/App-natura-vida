@@ -1,8 +1,8 @@
 {
-  "version": "8.2.0",
-  "build": "2026-07-21-v820-estados-cuenta-deudas-documentos-cobro",
-  "releasedAt": "2026-07-21T03:00:00-04:00",
+  "version": "8.2.1",
+  "build": "2026-07-21-v821-motor-ia-hibrido-seguro",
+  "releasedAt": "2026-07-21T14:30:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.2.0 - Estados de cuenta, deudas activas y documentos de cobro",
-  "createdAt": "2026-07-21T03:00:00-04:00"
+  "label": "Natura Vida V8.2.1 - Motor IA híbrido seguro y contexto empresarial",
+  "createdAt": "2026-07-21T14:30:00-04:00"
 }

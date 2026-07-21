@@ -32,7 +32,7 @@ require('retention-days: 1' in text,'retención del artefacto no está limitada'
 require((ROOT/'index.html').read_text(encoding='utf-8').lstrip().startswith('<!DOCTYPE html>'),'index inválido')
 require(all('supabase' in p.relative_to(ROOT).parts for p in ROOT.rglob('*.sql')),'los SQL deben estar aislados en supabase y fuera de _site')
 if errors:
- print(f'Auditoría de despliegue V8.2.0: {checks-len(errors)}/{checks} controles OK')
+ print(f'Auditoría de despliegue V8.2.1: {checks-len(errors)}/{checks} controles OK')
  for e in errors: print('ERROR:',e)
  sys.exit(1)
-print(f'Auditoría de despliegue V8.2.0: {checks}/{checks} controles OK')
+print(f'Auditoría de despliegue V8.2.1: {checks}/{checks} controles OK')
