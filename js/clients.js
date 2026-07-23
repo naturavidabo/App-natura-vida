@@ -433,7 +433,7 @@ function findLikelyDuplicateClientV802(name, phone, excludeId = '') {
   return null;
 }
 
-function clientAutocompleteQueryStateV823(value) {
+function clientAutocompleteQueryStateV824(value) {
   const raw = String(value || '').trim();
   const normalized = normalizeClientMatchV802(raw);
   const tokens = normalized.split(' ').filter(token => token.length >= 2);
@@ -459,7 +459,7 @@ function bindClientAutocompleteV802(options = {}) {
   const hide = () => {
     expanded = false;
     container.classList.add('hidden');
-    container.classList.remove('peekV823', 'expandedV823');
+    container.classList.remove('peekV824', 'expandedV824');
     container.innerHTML = '';
   };
   const selectClient = client => {
@@ -469,53 +469,53 @@ function bindClientAutocompleteV802(options = {}) {
     hide();
     if (typeof options.onSelect === 'function') options.onSelect(client);
   };
-  const rowHtml = ({ client, score }) => `<article class="clientSuggestionRowV823" data-id="${client.id}">
+  const rowHtml = ({ client, score }) => `<article class="clientSuggestionRowV824" data-id="${client.id}">
       <span class="clientSuggestionAvatarV802">${escapeHtml(String(client.name || client.businessName || 'C').trim().charAt(0).toUpperCase())}</span>
-      <span class="clientSuggestionTextV823"><strong>${escapeHtml(client.businessName || client.name || 'Cliente')}</strong><small>${escapeHtml([client.phone || 'sin teléfono', client.city || client.address || customerTypeLabelV723(client.customerType)].filter(Boolean).join(' · '))}</small></span>
-      <span class="clientSuggestionMatchV823">${score >= 100 ? 'Exacto' : score >= 90 ? 'Muy similar' : 'Posible'}</span>
-      <button type="button" class="clientSuggestionUseV823" data-use-id="${client.id}">Usar</button>
+      <span class="clientSuggestionTextV824"><strong>${escapeHtml(client.businessName || client.name || 'Cliente')}</strong><small>${escapeHtml([client.phone || 'sin teléfono', client.city || client.address || customerTypeLabelV723(client.customerType)].filter(Boolean).join(' · '))}</small></span>
+      <span class="clientSuggestionMatchV824">${score >= 100 ? 'Exacto' : score >= 90 ? 'Muy similar' : 'Posible'}</span>
+      <button type="button" class="clientSuggestionUseV824" data-use-id="${client.id}">Usar</button>
     </article>`;
   const render = () => {
     const currentValue = input.value;
     if (currentValue !== lastValue) expanded = false;
     lastValue = currentValue;
     if (typeof options.onTyping === 'function') options.onTyping(currentValue);
-    const state = clientAutocompleteQueryStateV823(currentValue);
+    const state = clientAutocompleteQueryStateV824(currentValue);
     if (!state.enoughToSuggest) return hide();
     const rows = clientSuggestionsV802(currentValue, { ...options, limit: totalLimit }).filter(row => row.score >= Number(options.minimumScore || 64));
     if (!rows.length) return hide();
 
     const automatic = state.autoExpand || rows[0]?.score >= 100;
     if (!automatic && !expanded) {
-      container.innerHTML = `<button type="button" class="clientSuggestionPeekV823"><span>${rows.length} coincidencia${rows.length === 1 ? '' : 's'} posible${rows.length === 1 ? '' : 's'}</span><small>Ver sin interrumpir el formulario</small></button>`;
-      container.classList.remove('hidden', 'expandedV823');
-      container.classList.add('peekV823');
-      $('.clientSuggestionPeekV823', container)?.addEventListener('mousedown', e => e.preventDefault());
-      $('.clientSuggestionPeekV823', container)?.addEventListener('click', () => { expanded = true; render(); });
+      container.innerHTML = `<button type="button" class="clientSuggestionPeekV824"><span>${rows.length} coincidencia${rows.length === 1 ? '' : 's'} posible${rows.length === 1 ? '' : 's'}</span><small>Ver sin interrumpir el formulario</small></button>`;
+      container.classList.remove('hidden', 'expandedV824');
+      container.classList.add('peekV824');
+      $('.clientSuggestionPeekV824', container)?.addEventListener('mousedown', e => e.preventDefault());
+      $('.clientSuggestionPeekV824', container)?.addEventListener('click', () => { expanded = true; render(); });
       return;
     }
 
     const shown = rows.slice(0, expanded ? totalLimit : visibleLimit);
-    container.innerHTML = `<div class="clientSuggestionHeadV823"><span>Clientes parecidos</span><button type="button" class="clientSuggestionHideV823" aria-label="Ocultar coincidencias">Ocultar</button></div>
-      <div class="clientSuggestionListV823">${shown.map(rowHtml).join('')}</div>
-      <div class="clientSuggestionFooterV823">
-        ${rows.length > shown.length ? `<button type="button" class="clientSuggestionMoreV823">Ver ${rows.length - shown.length} más</button>` : ''}
-        <button type="button" class="clientCreateNewV823">No es ninguno · seguir escribiendo</button>
+    container.innerHTML = `<div class="clientSuggestionHeadV824"><span>Clientes parecidos</span><button type="button" class="clientSuggestionHideV824" aria-label="Ocultar coincidencias">Ocultar</button></div>
+      <div class="clientSuggestionListV824">${shown.map(rowHtml).join('')}</div>
+      <div class="clientSuggestionFooterV824">
+        ${rows.length > shown.length ? `<button type="button" class="clientSuggestionMoreV824">Ver ${rows.length - shown.length} más</button>` : ''}
+        <button type="button" class="clientCreateNewV824">No es ninguno · seguir escribiendo</button>
       </div>`;
-    container.classList.remove('hidden', 'peekV823');
-    container.classList.add('expandedV823');
+    container.classList.remove('hidden', 'peekV824');
+    container.classList.add('expandedV824');
     container.querySelectorAll('button').forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
     container.querySelectorAll('[data-use-id]').forEach(button => button.addEventListener('click', () => {
       const client = (AppState.clients || []).find(c => String(c.id) === String(button.dataset.useId));
       selectClient(client);
     }));
-    $('.clientSuggestionMoreV823', container)?.addEventListener('click', () => { expanded = true; render(); });
-    $('.clientSuggestionHideV823', container)?.addEventListener('click', hide);
-    $('.clientCreateNewV823', container)?.addEventListener('click', () => { hide(); input.focus(); });
+    $('.clientSuggestionMoreV824', container)?.addEventListener('click', () => { expanded = true; render(); });
+    $('.clientSuggestionHideV824', container)?.addEventListener('click', hide);
+    $('.clientCreateNewV824', container)?.addEventListener('click', () => { hide(); input.focus(); });
   };
   input.addEventListener('input', render);
   input.addEventListener('focus', () => {
-    const state = clientAutocompleteQueryStateV823(input.value);
+    const state = clientAutocompleteQueryStateV824(input.value);
     if (state.autoExpand) render();
   });
   input.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });

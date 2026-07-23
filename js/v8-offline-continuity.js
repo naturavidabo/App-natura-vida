@@ -207,6 +207,8 @@
   function trackEditing(event) {
     const el = event.target;
     if (!el.matches?.('input, textarea, select') || el.type === 'password' || el.type === 'file') return;
+    // El chat IA, buscadores y controles marcados como no transaccionales no son formularios pendientes.
+    if (el.closest?.('.nvAiPage, [data-nv-no-dirty="true"]')) return;
     window.V7_FORM_DIRTY = true;
     clearTimeout(inputTimer);
     inputTimer = setTimeout(() => {

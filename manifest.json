@@ -1,8 +1,8 @@
 {
-  "name": "Natura Vida V8.2.3",
+  "name": "Natura Vida V8.2.4",
   "short_name": "Natura Vida",
-  "description": "Gestión comercial Natura Vida con autocompletado intuitivo, conversaciones organizadas y motor IA diagnosticable",
-  "start_url": "./index.html?v=8.2.3",
+  "description": "Gestión comercial Natura Vida con motor IA externo corregido, chat organizado y formularios estables",
+  "start_url": "./index.html?v=8.2.4",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

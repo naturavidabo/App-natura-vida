@@ -42,13 +42,13 @@ if (!punctuationVariant || punctuationVariant.client.id !== '1') throw new Error
 if (!phoneMatch || phoneMatch.client.id !== '2' || phoneMatch.reason !== 'mismo teléfono') throw new Error('No detectó teléfono duplicado.');
 
 
-const shortState = context.clientAutocompleteQueryStateV823('M');
-const oneNameState = context.clientAutocompleteQueryStateV823('Marita');
-const twoNamesState = context.clientAutocompleteQueryStateV823('Marita Pérez');
+const shortState = context.clientAutocompleteQueryStateV824('M');
+const oneNameState = context.clientAutocompleteQueryStateV824('Marita');
+const twoNamesState = context.clientAutocompleteQueryStateV824('Marita Pérez');
 if (shortState.enoughToSuggest) throw new Error('El autocompletado se abre con una sola inicial.');
 if (!oneNameState.enoughToSuggest || oneNameState.autoExpand) throw new Error('Un solo nombre debe permitir aviso compacto, no desplegar la lista completa.');
 if (!twoNamesState.autoExpand) throw new Error('Dos nombres deben habilitar las coincidencias compactas.');
 const source = fs.readFileSync('js/clients.js', 'utf8');
-if (!source.includes('clientSuggestionPeekV823') || !source.includes('data-use-id') || !source.includes('visibleLimit')) throw new Error('Falta la interfaz compacta con selección explícita.');
+if (!source.includes('clientSuggestionPeekV824') || !source.includes('data-use-id') || !source.includes('visibleLimit')) throw new Error('Falta la interfaz compacta con selección explícita.');
 
-console.log('Autocompletado de clientes V8.2.3: 8/8 controles OK');
+console.log('Autocompletado de clientes V8.2.4: 8/8 controles OK');

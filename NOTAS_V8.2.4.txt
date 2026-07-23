@@ -1,0 +1,7 @@
+NATURA VIDA V8.2.4
+- Corrige error 500 client.rpc(...).catch is not a function.
+- La auditoría de IA deja de bloquear respuestas válidas.
+- El chat no activa falsamente “cambios sin guardar”.
+- Conserva borrador propio del texto no enviado.
+- Mantiene autocompletado intuitivo, historial organizado y acciones confirmadas.
+- 97 archivos.

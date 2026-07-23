@@ -1,8 +1,8 @@
 /* app-update.js — actualización visible y controlada para GitHub Pages/PWA. */
 
 (() => {
-  const CURRENT_VERSION = '8.2.3';
-  const BUILD_ID = '2026-07-23-v823-autocompletado-intuitivo-chat-organizado-motor-ia-corregido';
+  const CURRENT_VERSION = '8.2.4';
+  const BUILD_ID = '2026-07-23-v824-autocompletado-intuitivo-chat-organizado-motor-ia-corregido';
   let registration = null;
   let updateAvailable = false;
   let updateRequested = false;
@@ -66,7 +66,7 @@
 
   async function installAppUpdateManager() {
     if (!('serviceWorker' in navigator)) return { ok: false, unsupported: true };
-    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.2.3', { updateViaCache: 'none' });
+    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.2.4', { updateViaCache: 'none' });
     watchRegistration(registration);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!updateRequested) return;

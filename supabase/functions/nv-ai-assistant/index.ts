@@ -1,4 +1,4 @@
-// Natura Vida V8.2.3 — Edge Function corregida, segura y con errores diagnosticables.
+// Natura Vida V8.2.4 — Edge Function corregida, segura y con errores diagnosticables.
 // Secrets requeridos: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -189,7 +189,20 @@ Deno.serve(async (req) => {
     const answer = parseStructured(generatedText);
     const questionHash = await hashQuestion(question);
     const latencyMs = Date.now() - started;
-    await client.rpc("nv_log_ai_event", { p_engine: "gemini", p_model: model, p_status: "success", p_context: contextLabel, p_question_hash: questionHash, p_metadata: { latency_ms: latencyMs, snapshot_bytes: JSON.stringify(snapshot).length } }).catch(() => {});
+    // La auditoría es secundaria: nunca debe convertir una respuesta válida de Gemini en error 500.
+    try {
+      const { error: auditError } = await client.rpc("nv_log_ai_event", {
+        p_engine: "gemini",
+        p_model: model,
+        p_status: "success",
+        p_context: contextLabel,
+        p_question_hash: questionHash,
+        p_metadata: { latency_ms: latencyMs, snapshot_bytes: JSON.stringify(snapshot).length }
+      });
+      if (auditError) console.warn("NV_AI_AUDIT_WARNING", { message: auditError.message, code: auditError.code });
+    } catch (auditError) {
+      console.warn("NV_AI_AUDIT_WARNING", { message: auditError instanceof Error ? auditError.message : String(auditError) });
+    }
     return reply(200, { ok: true, engine: "gemini", model, answer, usage: quota, privacy: { snapshotOnly: true, phonesExcluded: true, addressesExcluded: true, emailsExcluded: true, serverConversationStorage: false } });
   } catch (error) {
     const message = text(error instanceof Error ? error.message : error, 300) || "No se pudo completar la consulta.";
