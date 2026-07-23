@@ -1,0 +1,52 @@
+Auditoría Natura Vida V8.2.3: 133/133 controles OK
+Auditoría de despliegue V8.2.3: 23/23 controles OK
+Autocompletado de clientes V8.2.3: 8/8 controles OK
+Regresión territorial V8.0.7: 9/9 controles OK
+Auditoría saneamiento V8.2.3: 12/12 controles OK
+Continuidad segura V8.2.3: 12/12 controles OK
+Control administrativo V8.2.3: 16/16 controles OK
+Núcleo de calidad V8.0.7: 5/5 grupos de prueba OK
+Reglas comerciales V8.0.7: 6/6 grupos de prueba OK
+Integración comercial V8.2.3: 19/19 controles OK
+Cápsula de conexión V8.0.7: 9/9 controles OK
+OK script incluido
+OK solo administrador
+OK fab flotante
+OK panel rápido
+OK pantalla completa
+OK análisis ventas
+OK clientes
+OK inventario
+OK persistencia
+OK sin ejecución automática
+OK versión 8.2.0
+OK script versionado
+OK acceso propio en administración
+OK navegación robusta
+OK conversación estructurada
+OK respuesta no se borra al renderizar
+OK panel rápido continúa conversación
+OK bot mejorado
+OK motor local sin acciones automáticas
+OK asistente incluido en caché
+OK caché V812
+OK css balanceado
+OK recommendations engine
+OK receivables analysis
+OK discount simulation
+OK contextual product matching
+OK recommendations panel
+OK topic shortcuts
+OK no automatic write
+OK recommendation styles
+Asistente analítico V8.2.3: 8/8 controles OK
+Motor IA V8.2.3: 15/15 controles OK · 97 archivos
+OK conversación persistente V8.1.2: 2 entradas
+OK V8.2.3 Gabriela: {
+  operations: 7,
+  paid: 2095,
+  balance: 5426.2,
+  afterPayment: 4926.2,
+  restored: 5426.2
+}
+Interfaz financiera V8.2.3: 21/21 controles OK

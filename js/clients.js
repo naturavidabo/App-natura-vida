@@ -433,29 +433,93 @@ function findLikelyDuplicateClientV802(name, phone, excludeId = '') {
   return null;
 }
 
+function clientAutocompleteQueryStateV823(value) {
+  const raw = String(value || '').trim();
+  const normalized = normalizeClientMatchV802(raw);
+  const tokens = normalized.split(' ').filter(token => token.length >= 2);
+  const phone = normalizePhoneV723(raw);
+  return {
+    raw,
+    normalized,
+    tokens,
+    phone,
+    enoughToSuggest: normalized.length >= 4 || phone.length >= 4,
+    autoExpand: tokens.length >= 2 || phone.length >= 5
+  };
+}
+
 function bindClientAutocompleteV802(options = {}) {
   const input = options.input; const container = options.container;
   if (!input || !container) return () => {};
   let hideTimer = null;
-  const hide = () => { container.classList.add('hidden'); container.innerHTML = ''; };
+  let expanded = false;
+  let lastValue = '';
+  const visibleLimit = Math.max(1, Number(options.visibleLimit || 2));
+  const totalLimit = Math.max(visibleLimit, Number(options.limit || 6));
+  const hide = () => {
+    expanded = false;
+    container.classList.add('hidden');
+    container.classList.remove('peekV823', 'expandedV823');
+    container.innerHTML = '';
+  };
+  const selectClient = client => {
+    if (!client) return;
+    const proceed = !options.confirmSelect || !window.confirm || window.confirm(`¿Usar el cliente existente “${client.businessName || client.name || 'Cliente'}”?\n\nEl formulario actual se completará con sus datos.`);
+    if (!proceed) return;
+    hide();
+    if (typeof options.onSelect === 'function') options.onSelect(client);
+  };
+  const rowHtml = ({ client, score }) => `<article class="clientSuggestionRowV823" data-id="${client.id}">
+      <span class="clientSuggestionAvatarV802">${escapeHtml(String(client.name || client.businessName || 'C').trim().charAt(0).toUpperCase())}</span>
+      <span class="clientSuggestionTextV823"><strong>${escapeHtml(client.businessName || client.name || 'Cliente')}</strong><small>${escapeHtml([client.phone || 'sin teléfono', client.city || client.address || customerTypeLabelV723(client.customerType)].filter(Boolean).join(' · '))}</small></span>
+      <span class="clientSuggestionMatchV823">${score >= 100 ? 'Exacto' : score >= 90 ? 'Muy similar' : 'Posible'}</span>
+      <button type="button" class="clientSuggestionUseV823" data-use-id="${client.id}">Usar</button>
+    </article>`;
   const render = () => {
-    if (typeof options.onTyping === 'function') options.onTyping(input.value);
-    const rows = clientSuggestionsV802(input.value, options);
+    const currentValue = input.value;
+    if (currentValue !== lastValue) expanded = false;
+    lastValue = currentValue;
+    if (typeof options.onTyping === 'function') options.onTyping(currentValue);
+    const state = clientAutocompleteQueryStateV823(currentValue);
+    if (!state.enoughToSuggest) return hide();
+    const rows = clientSuggestionsV802(currentValue, { ...options, limit: totalLimit }).filter(row => row.score >= Number(options.minimumScore || 64));
     if (!rows.length) return hide();
-    container.innerHTML = `<div class="clientSuggestionHeadV802"><span>Clientes parecidos</span><small>Selecciona para no duplicar</small></div>${rows.map(({client,score}) => `<button type="button" class="clientSuggestionItemV802" data-id="${client.id}"><span class="clientSuggestionAvatarV802">${escapeHtml(String(client.name || 'C').trim().charAt(0).toUpperCase())}</span><span><strong>${escapeHtml(client.businessName || client.name || 'Cliente')}</strong><small>${escapeHtml([client.phone || 'sin teléfono', client.city || client.address || customerTypeLabelV723(client.customerType)].filter(Boolean).join(' · '))}</small></span><em>${score >= 100 ? 'Exacto' : score >= 90 ? 'Muy similar' : 'Coincidencia'}</em></button>`).join('')}<button type="button" class="clientCreateNewV802">+ Crear un cliente nuevo con este nombre</button>`;
-    container.classList.remove('hidden');
-    $all('.clientSuggestionItemV802', container).forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
-    $all('.clientSuggestionItemV802', container).forEach(button => button.addEventListener('click', () => {
-      const client = (AppState.clients || []).find(c => c.id === button.dataset.id);
-      hide(); if (client && typeof options.onSelect === 'function') options.onSelect(client);
+
+    const automatic = state.autoExpand || rows[0]?.score >= 100;
+    if (!automatic && !expanded) {
+      container.innerHTML = `<button type="button" class="clientSuggestionPeekV823"><span>${rows.length} coincidencia${rows.length === 1 ? '' : 's'} posible${rows.length === 1 ? '' : 's'}</span><small>Ver sin interrumpir el formulario</small></button>`;
+      container.classList.remove('hidden', 'expandedV823');
+      container.classList.add('peekV823');
+      $('.clientSuggestionPeekV823', container)?.addEventListener('mousedown', e => e.preventDefault());
+      $('.clientSuggestionPeekV823', container)?.addEventListener('click', () => { expanded = true; render(); });
+      return;
+    }
+
+    const shown = rows.slice(0, expanded ? totalLimit : visibleLimit);
+    container.innerHTML = `<div class="clientSuggestionHeadV823"><span>Clientes parecidos</span><button type="button" class="clientSuggestionHideV823" aria-label="Ocultar coincidencias">Ocultar</button></div>
+      <div class="clientSuggestionListV823">${shown.map(rowHtml).join('')}</div>
+      <div class="clientSuggestionFooterV823">
+        ${rows.length > shown.length ? `<button type="button" class="clientSuggestionMoreV823">Ver ${rows.length - shown.length} más</button>` : ''}
+        <button type="button" class="clientCreateNewV823">No es ninguno · seguir escribiendo</button>
+      </div>`;
+    container.classList.remove('hidden', 'peekV823');
+    container.classList.add('expandedV823');
+    container.querySelectorAll('button').forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
+    container.querySelectorAll('[data-use-id]').forEach(button => button.addEventListener('click', () => {
+      const client = (AppState.clients || []).find(c => String(c.id) === String(button.dataset.useId));
+      selectClient(client);
     }));
-    $('.clientCreateNewV802', container)?.addEventListener('mousedown', e => e.preventDefault());
-    $('.clientCreateNewV802', container)?.addEventListener('click', hide);
+    $('.clientSuggestionMoreV823', container)?.addEventListener('click', () => { expanded = true; render(); });
+    $('.clientSuggestionHideV823', container)?.addEventListener('click', hide);
+    $('.clientCreateNewV823', container)?.addEventListener('click', () => { hide(); input.focus(); });
   };
   input.addEventListener('input', render);
-  input.addEventListener('focus', render);
+  input.addEventListener('focus', () => {
+    const state = clientAutocompleteQueryStateV823(input.value);
+    if (state.autoExpand) render();
+  });
   input.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
-  input.addEventListener('blur', () => { clearTimeout(hideTimer); hideTimer = setTimeout(hide, 180); });
+  input.addEventListener('blur', () => { clearTimeout(hideTimer); hideTimer = setTimeout(hide, 240); });
   return hide;
 }
 
@@ -465,7 +529,7 @@ function openClientForm(id, prefill = {}) {
   let photoData = current.storePhoto || '';
   const html = `
     <h2>${c ? 'Editar cliente' : 'Nuevo cliente'} <span class="x" id="closeSheet">✕</span></h2>
-    <div class="field"><label>${current.customerType === 'wholesale' ? 'Nombre de tienda / negocio' : 'Nombre del cliente'}</label><div class="clientAutocompleteV802"><input type="text" id="f_cname" autocomplete="off" placeholder="Ej: Comercial María" value="${escapeHtml(current.name || '')}"><div id="clientFormSuggestionsV802" class="clientSuggestionsV802 hidden"></div></div><small class="clientAssistV802">Escribe al menos 2 letras: se mostrarán clientes parecidos para evitar duplicados.</small></div>
+    <div class="field"><label>${current.customerType === 'wholesale' ? 'Nombre de tienda / negocio' : 'Nombre del cliente'}</label><div class="clientAutocompleteV802"><input type="text" id="f_cname" autocomplete="off" placeholder="Ej: Comercial María" value="${escapeHtml(current.name || '')}"><div id="clientFormSuggestionsV802" class="clientSuggestionsV802 hidden"></div></div><small class="clientAssistV802">Escribe con normalidad. Después de dos palabras aparecerán hasta dos coincidencias compactas; también puedes abrir una coincidencia posible manualmente.</small></div>
     <div class="field-row"><div class="field"><label>Celular / WhatsApp</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="f_cphone" autocomplete="off" placeholder="Ej: 71234567" value="${escapeHtml(current.phone || '')}"><button type="button" class="waIconBtnV723" id="f_cwa"><span class="waLogoV725">☎</span></button></div></div><div class="field"><label>Tipo</label><select id="f_ctype"><option value="unit" ${current.customerType==='unit'?'selected':''}>Unitario</option><option value="wholesale" ${current.customerType==='wholesale'?'selected':''}>Mayorista</option><option value="mixed" ${current.customerType==='mixed'?'selected':''}>Mixto</option><option value="unclassified" ${current.customerType==='unclassified'?'selected':''}>Sin clasificar</option></select></div></div>
     <div id="wholesaleFieldsV723" class="wholesaleFieldsV723">
       <div class="field"><label>Ciudad</label><input id="f_ccity" autocomplete="off" value="${escapeHtml(current.city || '')}" placeholder="Ej: Santa Cruz"></div>
@@ -492,6 +556,8 @@ function openClientForm(id, prefill = {}) {
       phoneInput: $('#f_cphone', overlay),
       excludeId: c?.id || '',
       preferredType: current.customerType,
+      visibleLimit: 2,
+      confirmSelect: true,
       onSelect: existingClient => {
         close();
         if (window._afterClientSaved) { const callback = window._afterClientSaved; window._afterClientSaved = null; callback(existingClient); }

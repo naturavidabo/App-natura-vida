@@ -1,4 +1,4 @@
-// Natura Vida V8.2.2 — Edge Function segura con propuestas de acción controladas.
+// Natura Vida V8.2.3 — Edge Function corregida, segura y con errores diagnosticables.
 // Secrets requeridos: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -117,17 +117,86 @@ Deno.serve(async (req) => {
     const started = Date.now();
     const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey, "Api-Revision": "2026-05-20" },
-      body: JSON.stringify({ model, input: prompt, store: false, generation_config: { temperature: 0.25, thinking_level: "low" }, response_format: [{ type: "text", mime_type: "application/json", schema }] }),
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        store: false,
+        generation_config: {
+          thinking_level: "low",
+          max_output_tokens: 4096,
+        },
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema,
+        },
+      }),
     });
-    const aiPayload = await aiResponse.json().catch(() => ({}));
-    if (!aiResponse.ok) throw new Error(text(aiPayload?.error?.message || `Gemini respondió ${aiResponse.status}`, 300));
-    const answer = parseStructured(outputText(aiPayload));
+
+    const aiRaw = await aiResponse.text();
+    let aiPayload: any = {};
+    try {
+      aiPayload = aiRaw ? JSON.parse(aiRaw) : {};
+    } catch {
+      console.error("Gemini devolvió una respuesta no JSON", {
+        status: aiResponse.status,
+        bodyPreview: text(aiRaw, 240),
+      });
+      return reply(502, {
+        ok: false,
+        code: "AI_INVALID_RESPONSE",
+        message: "Gemini devolvió una respuesta no válida.",
+        upstreamStatus: aiResponse.status,
+      });
+    }
+
+    if (!aiResponse.ok) {
+      const upstreamMessage = text(
+        aiPayload?.error?.message || aiPayload?.message || `Gemini respondió ${aiResponse.status}`,
+        300,
+      );
+      console.error("Error de Gemini", {
+        status: aiResponse.status,
+        model,
+        message: upstreamMessage,
+      });
+      return reply(aiResponse.status >= 400 && aiResponse.status < 500 ? aiResponse.status : 502, {
+        ok: false,
+        code: "GEMINI_UPSTREAM_ERROR",
+        message: upstreamMessage,
+        upstreamStatus: aiResponse.status,
+      });
+    }
+
+    const generatedText = outputText(aiPayload);
+    if (!generatedText) {
+      console.error("Gemini respondió sin texto utilizable", {
+        status: aiResponse.status,
+        model,
+        payloadKeys: Object.keys(aiPayload || {}),
+      });
+      return reply(502, {
+        ok: false,
+        code: "AI_EMPTY_RESPONSE",
+        message: "Gemini respondió sin contenido utilizable.",
+      });
+    }
+
+    const answer = parseStructured(generatedText);
     const questionHash = await hashQuestion(question);
     const latencyMs = Date.now() - started;
     await client.rpc("nv_log_ai_event", { p_engine: "gemini", p_model: model, p_status: "success", p_context: contextLabel, p_question_hash: questionHash, p_metadata: { latency_ms: latencyMs, snapshot_bytes: JSON.stringify(snapshot).length } }).catch(() => {});
     return reply(200, { ok: true, engine: "gemini", model, answer, usage: quota, privacy: { snapshotOnly: true, phonesExcluded: true, addressesExcluded: true, emailsExcluded: true, serverConversationStorage: false } });
   } catch (error) {
-    return reply(500, { ok: false, code: "AI_ENGINE_ERROR", message: text(error instanceof Error ? error.message : error, 300) || "No se pudo completar la consulta." });
+    const message = text(error instanceof Error ? error.message : error, 300) || "No se pudo completar la consulta.";
+    console.error("Fallo no controlado en nv-ai-assistant", {
+      message,
+      stack: error instanceof Error ? text(error.stack, 1000) : "",
+    });
+    return reply(500, { ok: false, code: "AI_ENGINE_ERROR", message });
   }
 });

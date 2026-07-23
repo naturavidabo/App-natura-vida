@@ -1,0 +1,15 @@
+NATURA VIDA V8.2.3
+
+CAMBIOS VISIBLES
+- Autocompletado compacto y no intrusivo.
+- Máximo inicial de 2 coincidencias.
+- Selección explícita con botón Usar.
+- Conversaciones del asistente organizadas por historial.
+- Panel gerencial plegable.
+- Diagnóstico claro del motor externo.
+
+IMPORTANTE
+Para activar la corrección externa debe volver a desplegarse:
+supabase/functions/nv-ai-assistant/index.ts
+
+No ejecutar nuevamente la migración si la V8.2.1 ya fue instalada correctamente.

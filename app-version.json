@@ -1,8 +1,8 @@
 {
-  "version": "8.2.2",
-  "build": "2026-07-21-v822-asistente-operativo-afinacion-movil",
-  "releasedAt": "2026-07-21T16:45:00-04:00",
+  "version": "8.2.3",
+  "build": "2026-07-23-v823-autocompletado-intuitivo-chat-organizado-motor-ia-corregido",
+  "releasedAt": "2026-07-23T18:10:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.2.2 - Asistente IA operativo, acciones confirmadas y afinación móvil",
-  "createdAt": "2026-07-21T16:45:00-04:00"
+  "label": "Natura Vida V8.2.3 - Autocompletado intuitivo, chat organizado y motor IA corregido",
+  "createdAt": "2026-07-23T18:10:00-04:00"
 }

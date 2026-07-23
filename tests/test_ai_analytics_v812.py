@@ -15,4 +15,4 @@ checks={
 failed=[k for k,v in checks.items() if not v]
 for k,v in checks.items(): print(('OK ' if v else 'FAIL ')+k)
 if failed: raise SystemExit(1)
-print(f'Asistente analítico V8.2.2: {len(checks)}/{len(checks)} controles OK')
+print(f'Asistente analítico V8.2.3: {len(checks)}/{len(checks)} controles OK')

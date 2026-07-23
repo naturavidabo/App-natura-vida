@@ -7,9 +7,9 @@ sw=(root/'service-worker.js').read_text()
 settings=(root/'js/settings.js').read_text()
 version=json.loads((root/'app-version.json').read_text())
 checks={
- 'version 8.2.0':version.get('version')=='8.2.2',
- 'module loaded':'js/v8-offline-continuity.js?v=8.2.2' in index,
- 'app shell cache':"APP_CACHE = 'nv-app-shell-v822'" in sw and 'APP_SHELL' in sw,
+ 'version 8.2.0':version.get('version')=='8.2.3',
+ 'module loaded':'js/v8-offline-continuity.js?v=8.2.3' in index,
+ 'app shell cache':"APP_CACHE = 'nv-app-shell-v823'" in sw and 'APP_SHELL' in sw,
  'navigation fallback':"cache.match('./index.html'" in sw,
  'no offline queue':'No existe cola offline' in js and 'no se envía automáticamente' in js,
  'compact status capsule':'cloudStatusBadge' in js and 'nv807ConnectionCapsule' in js,
@@ -21,6 +21,6 @@ checks={
  'readonly snapshot':'nv805:readonly-snapshot' in js,
 }
 failed=[k for k,v in checks.items() if not v]
-print(f"Continuidad segura V8.2.2: {len(checks)-len(failed)}/{len(checks)} controles OK")
+print(f"Continuidad segura V8.2.3: {len(checks)-len(failed)}/{len(checks)} controles OK")
 if failed:
     print('\n'.join('FALLÓ: '+x for x in failed)); sys.exit(1)

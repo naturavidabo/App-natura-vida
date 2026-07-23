@@ -1,12 +1,13 @@
-/* Natura Vida V8.2.2 — Asistente IA operativo seguro, acciones confirmadas y afinación móvil.
+/* Natura Vida V8.2.3 — Asistente IA organizado, motor diagnosticable y acciones confirmadas.
    Acceso exclusivo para administrador central. Los cálculos críticos continúan
    siendo locales; Gemini interpreta un resumen empresarial limitado a través
    de una Supabase Edge Function y nunca recibe claves desde el navegador. */
 (function(){
   'use strict';
 
-  const VERSION='8.2.2';
-  const MAX_ENTRIES=60;
+  const VERSION='8.2.3';
+  const MAX_ENTRIES=40;
+  const MAX_ARCHIVES=12;
   const MAX_ACTION_HISTORY=40;
   const AI_FUNCTION_NAME='nv-ai-assistant';
   const ENGINE_TIMEOUT_MS=28000;
@@ -16,6 +17,8 @@
   let lastNonAiTab='inicio';
   let assistantContext={tab:'inicio',label:'Negocio general'};
   let pendingQuestion='';
+  let pendingRequestId='';
+  let lastQuestionAt=0;
   let answerTimer=null;
   let engineState={mode:'checking',configured:false,migrationReady:false,model:'gemini-2.5-flash-lite',checkedAt:0,usage:null,message:'Comprobando motor IA'};
 
@@ -28,6 +31,8 @@
     return String(s.onlineUserId||s.userId||s.email||'central-admin').replace(/[^a-zA-Z0-9_-]/g,'_');
   }
   function historyKey(){ return `nv_ai_conversation_v812_${userKey()}`; }
+  function archiveKey(){ return `nv_ai_archives_v823_${userKey()}`; }
+  function dashboardKey(){ return `nv_ai_dashboard_collapsed_v823_${userKey()}`; }
   function actionHistoryKey(){ return `nv_ai_action_history_v822_${userKey()}`; }
   function esc(v){
     return window.escapeHtml ? escapeHtml(String(v??'')) : String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -236,6 +241,23 @@
       privacy:data?.privacy||{snapshotOnly:true}
     };
   }
+  async function invokeErrorMessageV823(error){
+    let message=clampText(error?.message||'El motor IA no pudo responder.',180);
+    let status='';
+    try{
+      const response=error?.context;
+      if(response){
+        status=String(response.status||'');
+        const clone=typeof response.clone==='function'?response.clone():response;
+        let data=null;
+        try{ data=await clone.json(); }catch(_){ try{ data={message:await clone.text()}; }catch(__){} }
+        const detail=data?.message||data?.error?.message||data?.error||data?.details;
+        if(detail) message=clampText(detail,220);
+      }
+    }catch(_){ }
+    return `${status?`Error ${status}: `:''}${message}`;
+  }
+
   async function checkEngine(force=false){
     if(!adminAllowed()) return engineState;
     if(!force && engineState.checkedAt && Date.now()-engineState.checkedAt<ENGINE_HEALTH_TTL) return engineState;
@@ -257,8 +279,8 @@
     if(health.mode!=='external') throw new Error(health.message||'Motor externo no disponible.');
     const sb=getSupabaseForAI();
     const result=await withTimeout(sb.functions.invoke(AI_FUNCTION_NAME,{body:{action:'chat',question:clampText(question,1200),context:assistantContext,snapshot:businessSnapshot(question),history:conversationForEngine()}}));
-    if(result?.error) throw new Error(result.error.message||'El motor IA no pudo responder.');
-    if(!result?.data?.ok) throw new Error(result?.data?.message||'Respuesta IA inválida.');
+    if(result?.error) throw new Error(await invokeErrorMessageV823(result.error));
+    if(!result?.data?.ok) throw new Error(clampText(result?.data?.message||result?.data?.error?.message||'Respuesta IA inválida.',220));
     engineState={...engineState,mode:'external',configured:true,migrationReady:true,model:result.data.model||engineState.model,usage:result.data.usage||engineState.usage,checkedAt:Date.now(),message:'Motor IA conectado'};
     updateEngineUI();
     return normalizeEngineResponse(result.data);
@@ -358,39 +380,107 @@
 
   function normalizeEntry(entry){
     if(!entry||typeof entry!=='object') return null;
-    if(entry.role==='user' && typeof entry.text==='string') return {id:entry.id||uid(),role:'user',text:entry.text.slice(0,1500),at:Number(entry.at)||Date.now()};
-    if(entry.role==='assistant' && entry.response && typeof entry.response==='object') return {id:entry.id||uid(),role:'assistant',response:entry.response,at:Number(entry.at)||Date.now()};
+    const base={id:entry.id||uid(),requestId:String(entry.requestId||''),at:Number(entry.at)||Date.now()};
+    if(entry.role==='user' && typeof entry.text==='string') return {...base,role:'user',text:entry.text.slice(0,1500)};
+    if(entry.role==='assistant' && entry.response && typeof entry.response==='object') return {...base,role:'assistant',response:entry.response};
     return null;
+  }
+  function entryFingerprintV823(entry){
+    if(!entry) return '';
+    if(entry.role==='user') return `u:${normalizedName(entry.text)}`;
+    const r=entry.response||{};
+    return `a:${normalizedName([r.title,r.body,(r.list||[]).join('|')].join('|')).slice(0,900)}`;
+  }
+  function dedupeEntriesV823(entries){
+    const out=[]; const requests=new Set();
+    (entries||[]).map(normalizeEntry).filter(Boolean).forEach(entry=>{
+      if(entry.requestId && requests.has(`${entry.role}:${entry.requestId}`)) return;
+      const last=out[out.length-1];
+      if(last && last.role===entry.role && entryFingerprintV823(last)===entryFingerprintV823(entry)) return;
+      out.push(entry);
+      if(entry.requestId) requests.add(`${entry.role}:${entry.requestId}`);
+    });
+    return out.slice(-MAX_ENTRIES);
   }
   function readConversation(){
     try {
       const data=JSON.parse(localStorage.getItem(historyKey())||'[]');
-      return (Array.isArray(data)?data:[]).map(normalizeEntry).filter(Boolean).slice(-MAX_ENTRIES);
+      const clean=dedupeEntriesV823(Array.isArray(data)?data:[]);
+      if(JSON.stringify(clean)!==JSON.stringify(Array.isArray(data)?data:[])) writeConversation(clean);
+      return clean;
     } catch(_) { return []; }
   }
   function writeConversation(entries){
-    try { localStorage.setItem(historyKey(),JSON.stringify(entries.slice(-MAX_ENTRIES))); }
+    try { localStorage.setItem(historyKey(),JSON.stringify(dedupeEntriesV823(entries))); }
     catch(_) {}
   }
   function addEntry(entry){
     const rows=readConversation();
     const normalized=normalizeEntry(entry);
-    if(normalized) rows.push(normalized);
+    if(!normalized) return null;
+    if(normalized.requestId && rows.some(x=>x.role===normalized.role&&x.requestId===normalized.requestId)) return rows.find(x=>x.role===normalized.role&&x.requestId===normalized.requestId)||null;
+    const last=rows[rows.length-1];
+    if(last && last.role===normalized.role && entryFingerprintV823(last)===entryFingerprintV823(normalized)) return last;
+    rows.push(normalized);
     writeConversation(rows);
     return normalized;
   }
   function clearConversation(){
     try { localStorage.removeItem(historyKey()); } catch(_) {}
   }
+  function readArchivesV823(){
+    try{const rows=JSON.parse(localStorage.getItem(archiveKey())||'[]');return (Array.isArray(rows)?rows:[]).slice(-MAX_ARCHIVES);}catch(_){return[];}
+  }
+  function saveArchivesV823(rows){try{localStorage.setItem(archiveKey(),JSON.stringify((rows||[]).slice(-MAX_ARCHIVES)));}catch(_){} }
+  function conversationTitleV823(entries){
+    const first=(entries||[]).find(x=>x.role==='user'&&String(x.text||'').trim());
+    return clampText(first?.text||assistantContext.label||'Conversación del asistente',58);
+  }
+  function archiveCurrentConversationV823(){
+    const entries=readConversation(); if(!entries.length) return null;
+    const archives=readArchivesV823();
+    const fingerprint=entryFingerprintV823(entries[0])+entryFingerprintV823(entries[entries.length-1]);
+    if(!archives.some(x=>x.fingerprint===fingerprint)) archives.push({id:uid(),title:conversationTitleV823(entries),context:assistantContext.label,createdAt:entries[0]?.at||Date.now(),updatedAt:entries[entries.length-1]?.at||Date.now(),fingerprint,entries});
+    saveArchivesV823(archives); return archives[archives.length-1]||null;
+  }
+  function startNewConversationV823(){
+    archiveCurrentConversationV823(); clearConversation(); pendingQuestion=''; pendingRequestId=''; renderConversation(false); setDashboardCollapsedV823(false);
+  }
+  function restoreArchiveV823(id){
+    const archive=readArchivesV823().find(x=>x.id===id); if(!archive) return;
+    archiveCurrentConversationV823(); writeConversation(archive.entries||[]); document.getElementById('nvAiHistoryOverlay')?.remove(); renderConversation(false); setTimeout(()=>scrollLatestV823(true),60);
+  }
+  function deleteArchiveV823(id){ saveArchivesV823(readArchivesV823().filter(x=>x.id!==id)); showConversationHistoryV823(); }
+  function dashboardCollapsedV823(){
+    try{const raw=localStorage.getItem(dashboardKey());if(raw!==null)return raw==='1';}catch(_){}
+    return readConversation().length>=4;
+  }
+  function setDashboardCollapsedV823(value){
+    try{localStorage.setItem(dashboardKey(),value?'1':'0');}catch(_){}
+    const dashboard=document.getElementById('nvAiDashboardV823'); if(dashboard) dashboard.classList.toggle('collapsed',!!value);
+    const label=document.getElementById('nvAiDashboardStateV823'); if(label) label.textContent=value?'Mostrar':'Ocultar';
+    const arrow=document.getElementById('nvAiDashboardArrowV823'); if(arrow) arrow.textContent=value?'⌄':'⌃';
+  }
+  function showConversationHistoryV823(){
+    document.getElementById('nvAiHistoryOverlay')?.remove();
+    const archives=readArchivesV823().slice().reverse();
+    document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiHistoryOverlay"><section class="nvAiSheet" role="dialog" aria-modal="true"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiHistoryCloseV823" type="button">×</button><div class="nvAiSheetIntro"><div class="nvAiAvatar">${botSvg()}</div><div><h2>Conversaciones</h2><p>Ordena el chat sin perder análisis anteriores.</p></div></div><div class="nvAiHistoryListV823">${archives.length?archives.map(a=>`<article class="nvAiHistoryItemV823"><strong>${esc(a.title)}</strong><small>${new Date(a.updatedAt||Date.now()).toLocaleString('es-BO')} · ${(a.entries||[]).length} mensajes</small><div><button type="button" data-open-archive="${esc(a.id)}">Abrir</button><button type="button" class="danger" data-delete-archive="${esc(a.id)}">Borrar</button></div></article>`).join(''):'<p class="nvAiNoRec">Todavía no existen conversaciones archivadas.</p>'}</div><div class="nvAiActionButtons" style="margin-top:12px"><button class="btn outline" id="nvAiClearCurrentV823" type="button">Limpiar conversación actual</button><button class="btn" id="nvAiNewFromHistoryV823" type="button">Nueva conversación</button></div></section></div>`);
+    document.getElementById('nvAiHistoryCloseV823').onclick=()=>document.getElementById('nvAiHistoryOverlay')?.remove();
+    document.getElementById('nvAiHistoryOverlay').onclick=e=>{if(e.target.id==='nvAiHistoryOverlay')e.currentTarget.remove();};
+    document.querySelectorAll('[data-open-archive]').forEach(b=>b.onclick=()=>restoreArchiveV823(b.dataset.openArchive));
+    document.querySelectorAll('[data-delete-archive]').forEach(b=>b.onclick=()=>{if(!window.confirm||window.confirm('¿Borrar esta conversación archivada?'))deleteArchiveV823(b.dataset.deleteArchive);});
+    document.getElementById('nvAiClearCurrentV823').onclick=()=>{if(!window.confirm||window.confirm('¿Limpiar solamente la conversación actual?')){clearConversation();document.getElementById('nvAiHistoryOverlay')?.remove();renderConversation(false);}};
+    document.getElementById('nvAiNewFromHistoryV823').onclick=()=>{startNewConversationV823();document.getElementById('nvAiHistoryOverlay')?.remove();};
+  }
 
-  function renderResponse(r){
+  function renderResponse(r,entry={}){
     const source=r.engine==='external'?`<span class="nvAiAnswerSource external">IA · ${esc(r.model||'Gemini')}</span>`:r.engine==='local-fallback'?'<span class="nvAiAnswerSource fallback">Respaldo local</span>':'<span class="nvAiAnswerSource local">Cálculo local</span>';
     const confidence=r.confidence?`<span class="nvAiConfidence">Confianza ${esc(r.confidence)}</span>`:'';
-    return `<article class="nvAiMessage assistant"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><div class="nvAiAnswerHead"><strong>${esc(r.title)}</strong><span>${source}${confidence}</span></div><p>${r.body||''}</p>${r.cards?`<div class="nvAiMetrics">${r.cards.map(x=>`<div><small>${esc(x[0])}</small><b>${esc(x[1])}</b></div>`).join('')}</div>`:''}${r.table?`<div class="nvAiTable"><div class="head"><span>Producto</span><span>Unid.</span><span>Utilidad</span><span>Margen</span></div>${r.table.map(row=>`<div>${row.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`).join('')}</div>`:''}${r.list?.length?`<ul>${r.list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.proposals?.length?`<div class="nvAiActionPanel"><span>Acciones con confirmación</span><div class="nvAiActionGrid">${r.proposals.map(a=>`<button type="button" data-ai-action="${esc(encodeURIComponent(JSON.stringify(a)))}"><b>${esc(a.label)}</b><small>${esc(a.summary||'Revisar antes de continuar')}</small></button>`).join('')}</div></div>`:''}${r.action&&!r.proposals?.some(a=>a.type==='open_tab'&&a.tab===r.action.tab)?`<button class="nvAiInlineAction" type="button" data-ai-tab="${esc(r.action.tab)}">${esc(r.action.label)}</button>`:''}${r.suggestions?.length?`<div class="nvAiSuggestions">${r.suggestions.map(x=>`<button type="button" data-ai-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}</div></article>`;
+    return `<article class="nvAiMessage assistant" data-request-id="${esc(entry.requestId||'')}"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><div class="nvAiAnswerHead"><strong>${esc(r.title)}</strong><span>${source}${confidence}</span></div><p>${r.body||''}</p>${r.cards?`<div class="nvAiMetrics">${r.cards.map(x=>`<div><small>${esc(x[0])}</small><b>${esc(x[1])}</b></div>`).join('')}</div>`:''}${r.table?`<div class="nvAiTable"><div class="head"><span>Producto</span><span>Unid.</span><span>Utilidad</span><span>Margen</span></div>${r.table.map(row=>`<div>${row.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`).join('')}</div>`:''}${r.list?.length?`<ul>${r.list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.diagnostic?`<div class="nvAiDiagnosticV823"><strong>Diagnóstico del motor</strong><br>${esc(r.diagnostic)}</div>`:''}${r.proposals?.length?`<div class="nvAiActionPanel"><span>Acciones con confirmación</span><div class="nvAiActionGrid">${r.proposals.map(a=>`<button type="button" data-ai-action="${esc(encodeURIComponent(JSON.stringify(a)))}"><b>${esc(a.label)}</b><small>${esc(a.summary||'Revisar antes de continuar')}</small></button>`).join('')}</div></div>`:''}${r.action&&!r.proposals?.some(a=>a.type==='open_tab'&&a.tab===r.action.tab)?`<button class="nvAiInlineAction" type="button" data-ai-tab="${esc(r.action.tab)}">${esc(r.action.label)}</button>`:''}${r.suggestions?.length?`<div class="nvAiSuggestions">${r.suggestions.map(x=>`<button type="button" data-ai-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}</div></article>`;
   }
   function renderEntry(entry){
-    if(entry.role==='user') return `<article class="nvAiMessage user" data-ai-entry="${esc(entry.id)}"><div class="nvAiBubble">${esc(entry.text)}</div></article>`;
-    return renderResponse(entry.response||{title:'Respuesta',body:'Sin contenido.'});
+    if(entry.role==='user') return `<article class="nvAiMessage user" data-ai-entry="${esc(entry.id)}" data-request-id="${esc(entry.requestId||'')}"><div class="nvAiBubble">${esc(entry.text)}</div></article>`;
+    return renderResponse(entry.response||{title:'Respuesta',body:'Sin contenido.'},entry);
   }
   function welcomeHtml(){
     const name=String(window.AppState?.session?.fullName||window.AppState?.session?.username||'Cristhian').split(' ')[0];
@@ -404,23 +494,40 @@
     root.querySelectorAll?.('[data-ai-q]').forEach(b=>{ b.onclick=()=>ask(b.dataset.aiQ); });
     root.querySelectorAll?.('[data-ai-action]').forEach(b=>{ b.onclick=()=>{try{openActionReview(JSON.parse(decodeURIComponent(b.dataset.aiAction)));}catch(_){window.showToast?.('No se pudo abrir la acción propuesta.','error');}}; });
   }
+  function scrollLatestV823(force=false){
+    const feed=document.getElementById('nvAiFeed'); if(!feed) return;
+    const last=feed.lastElementChild; if(!last) return;
+    const nearBottom=window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-220;
+    if(force||nearBottom||pendingQuestion) last.scrollIntoView({behavior:force?'auto':'smooth',block:'end'});
+  }
+  function updateJumpV823(){
+    const btn=document.getElementById('nvAiJumpLatestV823'); if(!btn) return;
+    const nearBottom=window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-260;
+    btn.classList.toggle('show',!nearBottom&&readConversation().length>2);
+  }
   function renderConversation(preserveBottom=true){
     const feed=document.getElementById('nvAiFeed');
     if(!feed) return;
-    const nearBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<90;
     const entries=readConversation();
     feed.innerHTML=(entries.length?entries.map(renderEntry).join(''):welcomeHtml())+(pendingQuestion?thinkingHtml():'');
     bindInline(feed);
-    if(preserveBottom && (nearBottom||pendingQuestion)) requestAnimationFrame(()=>{ feed.scrollTop=feed.scrollHeight; });
+    if(preserveBottom||pendingQuestion) requestAnimationFrame(()=>scrollLatestV823(false));
+    updateJumpV823();
   }
 
   async function ask(question){
     const input=document.getElementById('nvAiInput');
     const q=String(question||input?.value||'').trim();
+    const now=Date.now();
     if(!q||pendingQuestion) return;
+    const last=readConversation().slice(-1)[0];
+    if(last?.role==='user'&&normalizedName(last.text)===normalizedName(q)&&now-last.at<2500) return;
+    if(now-lastQuestionAt<450) return;
+    lastQuestionAt=now;
     if(input) input.value='';
-    addEntry({role:'user',text:q,at:Date.now()});
-    pendingQuestion=q;
+    const requestId=uid();
+    addEntry({role:'user',text:q,requestId,at:now});
+    pendingQuestion=q; pendingRequestId=requestId;
     renderConversation(true);
     clearTimeout(answerTimer);
     try{
@@ -430,19 +537,20 @@
         catch(error){
           response=answerLocal(q);
           response.engine='local-fallback';
-          response.body=`${response.body||''}<br><small>El motor IA externo no estuvo disponible; se utilizó el cálculo local sin perder la consulta.</small>`;
-          engineState={...engineState,mode:'local-fallback',message:clampText(error.message||'Motor externo no disponible',120),checkedAt:Date.now()};
+          response.diagnostic=clampText(error.message||'Motor externo no disponible',220);
+          response.body=`${response.body||''}<br><small>Se utilizó el cálculo local para conservar la consulta. Puedes revisar el diagnóstico o volver a intentar después de actualizar la función externa.</small>`;
+          engineState={...engineState,mode:'local-fallback',message:response.diagnostic,checkedAt:Date.now()};
           updateEngineUI();
         }
       } else {
         response=answerLocal(q); response.engine='local';
       }
       response=enrichResponse(response,q);
-      addEntry({role:'assistant',response,at:Date.now()});
+      addEntry({role:'assistant',response,requestId,at:Date.now()});
     }catch(error){
-      addEntry({role:'assistant',response:{title:'No pude completar el análisis',body:'Ocurrió un problema al leer los datos actuales. Puedes volver a intentarlo sin perder la conversación.',engine:'local'},at:Date.now()});
+      addEntry({role:'assistant',requestId,response:{title:'No pude completar el análisis',body:'Ocurrió un problema al leer los datos actuales. Puedes volver a intentarlo sin perder la conversación.',diagnostic:clampText(error.message||'',180),engine:'local'},at:Date.now()});
     }finally{
-      pendingQuestion='';
+      pendingQuestion=''; pendingRequestId='';
       if(String(window.AppState?.currentTab)==='asistente-ia') renderConversation(true);
     }
   }
@@ -467,27 +575,24 @@
     const {st,cs,ss}=statsSnapshot();
     const main=document.getElementById('mainArea');
     main.innerHTML=`<section class="nvAiPage">
-      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>OPERATIVO</span></h1><p>Exclusivo del administrador central</p></div><button id="nvAiClear" class="nvAiGhost" type="button">Nueva conversación</button></header><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Acciones <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='confirmed').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
+      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>ORGANIZADO</span></h1><p>Exclusivo del administrador central</p></div><div class="nvAiHeadActionsV823"><button id="nvAiNewV823" type="button">＋ Nueva</button><button id="nvAiHistoryV823" type="button">Historial</button></div></header><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Acciones <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='confirmed').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
       <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Resumen empresarial sin teléfonos, direcciones ni correos · conversación guardada en este dispositivo</small></div>
-      <div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div>
-      <section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div><div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div>
+      <section class="nvAiDashboardV823 ${dashboardCollapsedV823()?'collapsed':''}" id="nvAiDashboardV823"><button type="button" class="nvAiDashboardToggleV823" id="nvAiDashboardToggleV823"><span>Panel gerencial <small id="nvAiDashboardStateV823">${dashboardCollapsedV823()?'Mostrar':'Ocultar'}</small></span><b id="nvAiDashboardArrowV823">${dashboardCollapsedV823()?'⌄':'⌃'}</b></button><div class="nvAiDashboardBodyV823"><div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div><section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div></div></section><div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div><button type="button" class="nvAiJumpLatestV823" id="nvAiJumpLatestV823" aria-label="Ir al mensaje más reciente">↓</button>
       <div class="nvAiComposer"><textarea id="nvAiInput" rows="1" placeholder="Escribe tu consulta…" aria-label="Consulta para el asistente"></textarea><button id="nvAiSend" type="button" aria-label="Enviar">➤</button></div>
       <p class="nvAiDisclaimer">Motor híbrido: cálculos verificables + interpretación IA cuando esté conectada. Ninguna acción se ejecuta sin confirmación.</p>
     </section>`;
     document.getElementById('nvAiBack').onclick=()=>window.navigateTo(lastNonAiTab||'inicio');
-    document.getElementById('nvAiClear').onclick=()=>{
-      const ok=window.confirm?window.confirm('¿Iniciar una conversación nueva? Se borrará únicamente el historial local del asistente.'):true;
-      if(!ok) return;
-      clearConversation();
-      pendingQuestion='';
-      renderConversation(false);
-    };
+    document.getElementById('nvAiNewV823').onclick=()=>{ if(!window.confirm||window.confirm('¿Iniciar una conversación nueva? La actual quedará guardada en Historial.')) startNewConversationV823(); };
+    document.getElementById('nvAiHistoryV823').onclick=showConversationHistoryV823;
+    document.getElementById('nvAiDashboardToggleV823').onclick=()=>setDashboardCollapsedV823(!document.getElementById('nvAiDashboardV823').classList.contains('collapsed'));
+    document.getElementById('nvAiJumpLatestV823').onclick=()=>scrollLatestV823(true);
     document.getElementById('nvAiSend').onclick=()=>ask();
     document.getElementById('nvAiRefreshRec').onclick=renderRecommendations;
     document.getElementById('nvAiOpenActions').onclick=showActionHistory;
     document.getElementById('nvAiCheckEngine').onclick=async()=>{ await checkEngine(true); if(window.showToast) showToast(engineState.message||engineLabel()); };
     document.getElementById('nvAiEngineBadge').onclick=()=>document.getElementById('nvAiCheckEngine')?.click();
     document.getElementById('nvAiInput').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(); } });
+    window.removeEventListener('scroll',updateJumpV823); window.addEventListener('scroll',updateJumpV823,{passive:true});
     renderRecommendations();
     renderConversation(false);
     updateEngineUI();
@@ -547,8 +652,8 @@
   }
 
   function install(){
-    if(window.__NV_AI_V822_INSTALLED) return;
-    window.__NV_AI_V822_INSTALLED=true;
+    if(window.__NV_AI_V823_INSTALLED) return;
+    window.__NV_AI_V823_INSTALLED=true;
     oldNavigate=window.navigateTo;
     oldRender=window.render;
     window.navigateTo=function(tab){
@@ -579,19 +684,22 @@
     }
     setTimeout(ensureFab,250);
     setTimeout(()=>checkEngine(false).catch(()=>{}),700);
+    window.renderAIAssistantV823=renderAssistant;
     window.renderAIAssistantV822=renderAssistant;
     window.renderAIAssistantV821=renderAssistant;
     window.renderAIAssistantV812=renderAssistant;
     window.renderAIAssistantV810=renderAssistant;
+    window.openAIAssistantSheetV823=openSheet;
     window.openAIAssistantSheetV822=openSheet;
     window.openAIAssistantSheetV821=openSheet;
     window.openAIAssistantSheetV812=openSheet;
     window.openAIAssistantSheetV810=openSheet;
   }
 
-  window.__nvAiV822={VERSION,readConversation,writeConversation,addEntry,clearConversation,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,get engineState(){return {...engineState};}};
-  window.__nvAiV821=window.__nvAiV822;
-  window.__nvAiV812=window.__nvAiV822;
+  window.__nvAiV823={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV823,archiveCurrentConversationV823,startNewConversationV823,dedupeEntriesV823,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,get engineState(){return {...engineState};}};
+  window.__nvAiV822=window.__nvAiV823;
+  window.__nvAiV821=window.__nvAiV823;
+  window.__nvAiV812=window.__nvAiV823;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0));
   else setTimeout(install,0);
 })();
