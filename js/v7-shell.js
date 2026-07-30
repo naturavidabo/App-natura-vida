@@ -199,6 +199,7 @@
       case 'personal': window.renderWorkforceV770 ? renderWorkforceV770() : renderInicioV7(); break;
       case 'territorio': window.renderTerritoryV801 ? renderTerritoryV801() : (window.renderTerritoryV800 ? renderTerritoryV800() : renderInicioV7()); break;
       case 'puntos-stock': window.renderLinkedStockV801 ? renderLinkedStockV801() : renderInicioV7(); break;
+      case 'rendicion-caja': window.renderSellerSettlementV825 ? renderSellerSettlementV825() : renderInicioV7(); break;
       case 'roles-estructura': window.renderRolesStructureV800 ? renderRolesStructureV800() : renderInicioV7(); break;
       case 'cotizaciones': window.renderQuotes ? renderQuotes() : renderInicioV7(); break;
       case 'grupos': renderPriceGroups(); break;

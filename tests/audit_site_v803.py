@@ -24,14 +24,14 @@ version=json.loads(read('app-version.json')); manifest=json.loads(read('manifest
 
 # Paquete y despliegue
 require(index.lstrip().startswith('<!DOCTYPE html>'),'index.html no inicia como HTML')
-require(version.get('version')=='8.2.4','app-version no indica 8.1.2')
-require("CURRENT_VERSION = '8.2.4'" in update,'app-update no indica 8.1.2')
-require('service-worker.js?v=8.2.4' in update,'registro del service worker no usa 8.1.2')
-require('natura-vida-v8-2-4' in sw.lower(),'service worker no corresponde a V8.2.4')
-require('V8.2.4' in manifest.get('name',''),'manifest no identifica V8.2.4')
-require('css/v8.css?v=8.2.4' in index,'index no carga CSS V8.2.4')
+require(version.get('version')=='8.2.6','app-version no indica 8.2.6')
+require("CURRENT_VERSION = '8.2.6'" in update,'app-update no indica 8.1.2')
+require('service-worker.js?v=8.2.6' in update,'registro del service worker no usa 8.2.6')
+require('natura-vida-v8-2-6' in sw.lower(),'service worker no corresponde a V8.2.6')
+require('V8.2.6' in manifest.get('name',''),'manifest no identifica V8.2.6')
+require('css/v8.css?v=8.2.6' in index,'index no carga CSS V8.2.6')
 for script in ['clients.js','sales.js','v7-documents.js','v7-management-center.js','v8-territory.js','v7-shell.js']:
-    require(f'js/{script}?v=8.2.4' in index,f'index no carga {script} con versión correcta')
+    require(f'js/{script}?v=8.2.6' in index,f'index no carga {script} con versión correcta')
 require(index.index('clients.js') < index.index('sales.js'),'clientes debe cargarse antes de ventas')
 require(index.index('v8-stability.js') < index.index('v7-commercial-center.js'),'estabilidad se carga después de módulos comerciales')
 
@@ -84,15 +84,13 @@ require('usar el cliente existente' in clients and 'evitar duplicarlo' in sales 
 require('.clientSuggestionsV802' in css and '.clientSuggestionItemV802' in css,'faltan estilos de autocompletado')
 
 # Edición de precios
-require('v802EditablePriceGrid' in sales and 'v802EditableField' in sales,'editor de precios no identifica campos editables')
+require('v826PriceReferenceGrid' in sales and 'v826ManualPriceField' in sales and 'v826NeutralField' in sales,'editor de precios no diferencia el valor manual')
 require('v802PriceEditable' in sales and 'v802PriceEditable' in inv,'listas de venta no marcan visualmente el precio editable')
-require('.v802EditableField' in css and '.v802PriceEditable' in css and '--nv802-orange' in css,'falta lenguaje naranja de edición')
+require('.v826ManualPriceField' in css and '.v826NeutralField' in css and '.v802PriceEditable' in css,'falta lenguaje visual selectivo de edición')
 
 # Recibo
-require('const qrSize = 210' in docs,'QR no fue ampliado')
-require("ctx.imageSmoothingEnabled = false" in docs,'QR no protege nitidez')
-require("ctx.fillText('QR de pago'" in docs,'etiqueta QR no fue unificada')
-require('Escanee el código QR para realizar el pago.' in docs,'mensaje de pago no fue corregido')
+require('FORMA DE PAGO' in docs and 'paymentMethodLabelV826' in docs,'recibo no identifica la forma de pago')
+require('qrSource' not in docs and 'QR de pago' not in docs,'el QR todavía está incrustado en el recibo')
 require('Gracias por confiar en Natura Vida Bolivia.' in docs,'falta cierre único de marca')
 require('próximos pagos o consultas' not in docs and 'QR de cobro' not in docs,'quedan mensajes redundantes o incorrectos en el recibo')
 
@@ -117,7 +115,7 @@ for match in re.findall(r'(?:src|href)="((?:css|js|icons|img)/[^"?]+)', index):
     require((ROOT/match).exists(),f'recurso local inexistente: {match}')
 
 if errors:
-    print(f'Auditoría Natura Vida V8.2.4: {checks-len(errors)}/{checks} controles OK')
+    print(f'Auditoría Natura Vida V8.2.6: {checks-len(errors)}/{checks} controles OK')
     for e in errors: print('ERROR:',e)
     sys.exit(1)
-print(f'Auditoría Natura Vida V8.2.4: {checks}/{checks} controles OK')
+print(f'Auditoría Natura Vida V8.2.6: {checks}/{checks} controles OK')

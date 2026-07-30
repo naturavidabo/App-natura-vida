@@ -1,0 +1,14 @@
+NATURA VIDA V8.2.6
+
+PAGOS CLAROS, ASISTENTE SECRETARIO Y LECTURA EN ALTAVOZ
+
+- QR retirado de recibos y documentos financieros.
+- Selector de Efectivo, QR / transferencia o Crédito.
+- Preparación para confirmación bancaria oficial, sin simular conexión.
+- Efectivo separado de cobros digitales para rendición de caja.
+- Naranja reservado para Precio final manual.
+- Asistente con Rechazar, Editar y Aprobar.
+- Respuestas con Escuchar / Detener mediante voz local.
+- Sin micrófono, Gemini Live ni conversación por voz.
+- Sin migración SQL adicional.
+- Repositorio: 99 archivos.

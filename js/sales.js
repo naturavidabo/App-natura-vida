@@ -7,6 +7,154 @@ let _saleSearch = '';
 let _cart = {};       // { productId: qty }
 let _cartPrices = {}; // { productId: manual pricing entry }
 
+
+/* V8.2.6 — Selector compacto de forma de pago y preparación para verificación bancaria. */
+function paymentMethodLabelV826(method) {
+  return ({ cash: 'Efectivo', qr: 'QR / transferencia', credit: 'A crédito' })[String(method || '')] || 'Sin definir';
+}
+
+function paymentStatusLabelV826(status) {
+  return ({ paid: 'Pagado', partial: 'Pago parcial', pending: 'Pendiente', verified: 'Verificado', pending_verification: 'Esperando confirmación' })[String(status || '')] || String(status || 'Pendiente');
+}
+
+function paymentQrSourceV826() {
+  const profile = window.myCommercialProfile ? myCommercialProfile() : null;
+  return String(profile?.qrUrl || AppState?.settings?.paymentQrUrl || '');
+}
+
+function paymentChoiceSummaryV826(choice, total) {
+  if (!choice) return '<div class="nv826PaymentSummary empty"><span>Forma de pago</span><strong>Se elegirá al confirmar</strong><small>Efectivo, QR / transferencia o crédito.</small></div>';
+  const paid = Number(choice.amountPaid || 0);
+  const pending = Math.max(0, Number(total || 0) - paid);
+  return `<div class="nv826PaymentSummary ${escapeHtml(choice.method || '')}"><span>${escapeHtml(paymentMethodLabelV826(choice.method))}</span><strong>${escapeHtml(paymentStatusLabelV826(choice.paymentStatus))}</strong><small>Pagado ${fmtMoney(paid)}${pending > .009 ? ` · Saldo ${fmtMoney(pending)}` : ''}</small><button type="button" class="nv826ChangePayment">Cambiar</button></div>`;
+}
+
+function openPaymentMethodSelectorV826(options = {}) {
+  const total = roundBs(Math.max(0, Number(options.total || 0)));
+  const clientName = String(options.clientName || 'Cliente');
+  const qrUrl = String(options.qrUrl || paymentQrSourceV826());
+  const initial = options.initial || null;
+  const reference = String(initial?.reference || `NV-PAY-${Date.now().toString(36).toUpperCase()}`);
+  const gateway = window.NVBankPaymentAdapterV826 || null;
+  let gatewayIntent = null;
+  let gatewayUnsubscribe = null;
+  let qrVerified = initial?.verificationStatus === 'verified';
+  let qrVerificationMode = initial?.verificationMode || '';
+  let selected = String(initial?.method || 'cash');
+
+  return new Promise(resolve => {
+    const modal = openSheet(`
+      <h2>Seleccionar forma de pago <span class="x" id="closeSheet">✕</span></h2>
+      <div class="nv826PaymentIntro"><strong>${escapeHtml(clientName)}</strong><span>Total de la operación: <b>${fmtMoney(total)}</b></span></div>
+      <div class="nv826PaymentChoices" role="radiogroup" aria-label="Forma de pago">
+        <button type="button" data-pay-method="cash"><span>💵</span><b>Efectivo</b><small>Se suma a la rendición de caja.</small></button>
+        <button type="button" data-pay-method="qr"><span>▦</span><b>QR / transferencia</b><small>Se confirma antes de generar el recibo.</small></button>
+        <button type="button" data-pay-method="credit"><span>🗓</span><b>A crédito</b><small>Genera saldo en cuentas por cobrar.</small></button>
+      </div>
+      <section id="nv826CashPanel" class="nv826PaymentPanel">
+        <div class="field"><label>Monto recibido en efectivo</label><input id="nv826CashAmount" type="number" inputmode="decimal" min="0" max="${total}" step="0.01" value="${initial?.method === 'cash' ? Number(initial.amountPaid || total) : total}"></div>
+        <small>Si es menor al total, la diferencia quedará como saldo pendiente.</small>
+      </section>
+      <section id="nv826QrPanel" class="nv826PaymentPanel hidden">
+        <div class="nv826QrStage ${qrUrl ? '' : 'missing'}">
+          ${qrUrl ? `<img src="${escapeHtml(qrUrl)}" alt="QR de pago" loading="eager" decoding="async">` : '<div class="nv826QrMissing">QR no configurado</div>'}
+          <div><strong id="nv826QrStatus">${qrVerified ? 'Pago verificado' : (gateway ? 'Preparando verificación…' : 'Verificación manual disponible')}</strong><small id="nv826QrDetail">${gateway ? 'La aplicación esperará la respuesta del proveedor.' : 'Aún no existe una API bancaria conectada. Confirma únicamente después de comprobar el ingreso.'}</small><code>${escapeHtml(reference)}</code></div>
+        </div>
+        <label class="form-check nv826ManualConfirm"><input class="form-check-input" type="checkbox" id="nv826QrManual" ${qrVerified ? 'checked' : ''}><span class="form-check-label">Confirmé el ingreso en la cuenta autorizada</span></label>
+      </section>
+      <section id="nv826CreditPanel" class="nv826PaymentPanel hidden">
+        <div class="field"><label>Pago inicial opcional</label><input id="nv826CreditInitial" type="number" inputmode="decimal" min="0" max="${total}" step="0.01" value="${initial?.method === 'credit' ? Number(initial.amountPaid || 0) : 0}"></div>
+        <div class="field"><label>Motivo / acuerdo</label><input id="nv826CreditReason" value="${escapeHtml(initial?.pendingReason || '')}" placeholder="Ej.: venta a crédito, cuota inicial"></div>
+      </section>
+      <div id="nv826PaymentValidation" class="nv826PaymentValidation"></div>
+      <div class="actions two"><button class="btn outline" type="button" id="nv826CancelPayment">Cancelar</button><button class="btn" type="button" id="nv826ApplyPayment">Continuar</button></div>
+    `, (overlay, close) => {
+      const buttons = [...overlay.querySelectorAll('[data-pay-method]')];
+      const panels = {
+        cash: overlay.querySelector('#nv826CashPanel'),
+        qr: overlay.querySelector('#nv826QrPanel'),
+        credit: overlay.querySelector('#nv826CreditPanel')
+      };
+      const validation = overlay.querySelector('#nv826PaymentValidation');
+      const status = overlay.querySelector('#nv826QrStatus');
+      const detail = overlay.querySelector('#nv826QrDetail');
+      let bankEventHandler = null;
+      let settled = false;
+      const cleanupGateway = () => { try { gatewayUnsubscribe?.(); } catch (_) {} gatewayUnsubscribe = null; };
+      const cleanup = () => { cleanupGateway(); if (bankEventHandler) window.removeEventListener('nv:payment-confirmed', bankEventHandler); };
+      const finish = value => { if (settled) return; settled = true; cleanup(); close(); resolve(value); };
+      const closeAll = () => finish(null);
+      overlay.querySelector('#closeSheet').onclick = closeAll;
+      overlay.querySelector('#nv826CancelPayment').onclick = closeAll;
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeAll(); }, true);
+
+      const choose = method => {
+        selected = method;
+        buttons.forEach(button => button.classList.toggle('active', button.dataset.payMethod === method));
+        Object.entries(panels).forEach(([name, panel]) => panel.classList.toggle('hidden', name !== method));
+        validation.textContent = '';
+      };
+      buttons.forEach(button => button.onclick = () => choose(button.dataset.payMethod));
+      choose(selected);
+
+      const markVerified = (provider = 'manual', providerReference = reference) => {
+        qrVerified = true;
+        qrVerificationMode = provider === 'manual' ? 'manual' : 'automatic';
+        const checkbox = overlay.querySelector('#nv826QrManual');
+        if (checkbox) checkbox.checked = true;
+        if (status) status.textContent = provider === 'manual' ? 'Ingreso confirmado manualmente' : 'Pago confirmado en tiempo real';
+        if (detail) detail.textContent = provider === 'manual' ? 'La venta puede continuar bajo responsabilidad del usuario que confirmó.' : `Confirmado por ${provider}.`;
+        gatewayIntent = Object.assign({}, gatewayIntent || {}, { provider, reference: providerReference, status: 'verified' });
+      };
+      overlay.querySelector('#nv826QrManual')?.addEventListener('change', event => {
+        if (event.target.checked) markVerified('manual', reference);
+        else { qrVerified = false; qrVerificationMode = ''; if (status) status.textContent = gateway ? 'Esperando confirmación…' : 'Verificación manual disponible'; }
+      });
+
+      if (gateway && typeof gateway.createIntent === 'function') {
+        Promise.resolve(gateway.createIntent({ amount: total, clientName, reference })).then(intent => {
+          gatewayIntent = intent || { reference };
+          if (status) status.textContent = 'Esperando confirmación del banco';
+          if (detail) detail.textContent = 'La pantalla se actualizará automáticamente cuando llegue una respuesta válida.';
+          if (typeof gateway.subscribe === 'function') {
+            gatewayUnsubscribe = gateway.subscribe(gatewayIntent, event => {
+              if (event?.status === 'verified' || event?.status === 'paid') markVerified(event.provider || gateway.name || 'API bancaria', event.reference || gatewayIntent.reference || reference);
+            });
+          }
+        }).catch(error => {
+          if (status) status.textContent = 'No se pudo iniciar la verificación automática';
+          if (detail) detail.textContent = String(error?.message || 'Utiliza la confirmación manual después de revisar la cuenta.');
+        });
+      }
+      bankEventHandler = event => {
+        const data = event?.detail || {};
+        if (String(data.reference || '') === String(gatewayIntent?.reference || reference) && ['verified','paid'].includes(String(data.status || ''))) markVerified(data.provider || 'API bancaria', data.reference || reference);
+      };
+      window.addEventListener('nv:payment-confirmed', bankEventHandler);
+
+      overlay.querySelector('#nv826ApplyPayment').onclick = () => {
+        validation.textContent = '';
+        let choice;
+        if (selected === 'cash') {
+          const amountPaid = roundBs(Math.min(total, Math.max(0, Number(overlay.querySelector('#nv826CashAmount').value || 0))));
+          const pending = roundBs(Math.max(0, total - amountPaid));
+          choice = { method: 'cash', amountPaid, paymentStatus: pending > .009 ? (amountPaid > 0 ? 'partial' : 'pending') : 'paid', pendingReason: pending > .009 ? 'Saldo pendiente de pago en efectivo' : '', verificationStatus: 'not_required' };
+        } else if (selected === 'credit') {
+          const amountPaid = roundBs(Math.min(total, Math.max(0, Number(overlay.querySelector('#nv826CreditInitial').value || 0))));
+          const pending = roundBs(Math.max(0, total - amountPaid));
+          choice = { method: 'credit', amountPaid, paymentStatus: pending > .009 ? (amountPaid > 0 ? 'partial' : 'pending') : 'paid', pendingReason: overlay.querySelector('#nv826CreditReason').value.trim() || 'Venta a crédito', verificationStatus: 'not_required' };
+        } else {
+          if (!qrUrl) { validation.textContent = 'Configura primero el QR de cobro en el perfil comercial.'; return; }
+          if (!qrVerified) { validation.textContent = 'El pago QR todavía no está confirmado. Espera la respuesta bancaria o confirma manualmente después de verificar el ingreso.'; return; }
+          choice = { method: 'qr', amountPaid: total, paymentStatus: 'paid', pendingReason: '', verificationStatus: 'verified', verificationMode: qrVerificationMode || 'manual', provider: gatewayIntent?.provider || (qrVerificationMode === 'automatic' ? 'API bancaria' : 'manual'), reference: gatewayIntent?.reference || reference, confirmedAt: Date.now() };
+        }
+        finish(choice);
+      };
+    });
+    return modal;
+  });
+}
+
 function cartCount() {
   return Object.values(_cart).reduce((s, q) => s + Number(q || 0), 0);
 }
@@ -116,16 +264,17 @@ function openSalePriceEditorV7(options = {}) {
   openSheet(`
     <h2>Editar precio <span class="x" id="closeSheet">✕</span></h2>
     <div class="v7ProductMini"><div>${p.photo ? `<img src="${p.photo}" alt="" loading="lazy" decoding="async">` : 'NV'}</div><span><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category || 'General')}</small></span></div>
-    <div class="manualPriceGrid v802EditablePriceGrid">
+    <div class="manualPriceGrid v802EditablePriceGrid v826PriceReferenceGrid">
       <div><span>Precio de lista</span><strong>${fmtMoney(current.basePrice)}</strong></div>
       <div><span>Precio por grupo</span><strong>${fmtMoney(current.groupPrice)}</strong></div>
-      <div class="editable"><span>Precio actual</span><strong>${fmtMoney(current.unitPrice)}</strong></div>
+      <div><span>Precio actual</span><strong>${fmtMoney(current.unitPrice)}</strong></div>
     </div>
-    <div class="field-row">
-      <div class="field v802EditableField"><label>Tipo de ajuste</label><select id="manualMode"><option value="final">Precio final</option><option value="discount_amount">Rebaja Bs</option><option value="discount_percent">Rebaja %</option><option value="surcharge_amount">Recargo Bs</option><option value="surcharge_percent">Recargo %</option></select></div>
-      <div class="field v802EditableField"><label>Valor</label><input id="manualValue" type="number" inputmode="decimal" step="0.01" value=""></div>
+    <div class="field-row v826AdjustmentRow">
+      <div class="field v826NeutralField"><label>Tipo de ajuste</label><select id="manualMode"><option value="final">Precio final</option><option value="discount_amount">Rebaja Bs</option><option value="discount_percent">Rebaja %</option><option value="surcharge_amount">Recargo Bs</option><option value="surcharge_percent">Recargo %</option></select></div>
+      <div class="field v826NeutralField hidden" id="manualValueField"><label>Valor del ajuste</label><input id="manualValue" type="number" inputmode="decimal" step="0.01" value=""></div>
     </div>
-    <div class="field v802EditableField v802FinalPriceField"><label>Precio final manual</label><input id="manualFinal" type="number" inputmode="decimal" step="0.01" value="${existing ? existing.manualPrice : current.unitPrice}"><small>El color naranja identifica el valor que se modificará.</small></div>
+    <div class="field v826ManualPriceField" id="manualFinalField"><label>Precio final manual</label><input id="manualFinal" type="number" inputmode="decimal" step="0.01" value="${existing ? existing.manualPrice : current.unitPrice}"><small>Solo este campo usa naranja porque es el valor intervenido manualmente.</small></div>
+    <div class="v826CalculatedPrice hidden" id="manualCalculatedField"><span>Precio final calculado</span><strong id="manualCalculatedValue">${fmtMoney(existing ? existing.manualPrice : current.unitPrice)}</strong><small>Se calcula automáticamente según el tipo de ajuste.</small></div>
     <div class="field"><label>Motivo del ajuste</label><input id="manualReason" value="${escapeHtml(existing ? (existing.reason || '') : '')}" placeholder="Ej.: entrega, cliente antiguo, promoción"></div>
     ${window.promotionOptionsHtmlV807 ? promotionOptionsHtmlV807(p, current.referencePrice) : ''}
     <div class="v7PricePreview"><span>Diferencia frente al precio de lista</span><strong id="manualDiff"></strong></div>
@@ -136,6 +285,10 @@ function openSalePriceEditorV7(options = {}) {
     const value = $('#manualValue', overlay);
     const final = $('#manualFinal', overlay);
     const reason = $('#manualReason', overlay);
+    const valueField = $('#manualValueField', overlay);
+    const finalField = $('#manualFinalField', overlay);
+    const calculatedField = $('#manualCalculatedField', overlay);
+    const calculatedValue = $('#manualCalculatedValue', overlay);
     if (existing && existing.mode) mode.value = existing.mode;
     if (existing && existing.rawValue != null) value.value = existing.rawValue;
     const reference = current.groupId ? current.groupPrice : current.basePrice;
@@ -148,7 +301,15 @@ function openSalePriceEditorV7(options = {}) {
       if (mode.value === 'surcharge_amount') next = reference + v;
       if (mode.value === 'surcharge_percent') next = reference + (reference * v / 100);
       if (mode.value !== 'final') final.value = Math.max(0, roundBs(next));
+      if (calculatedValue) calculatedValue.textContent = fmtMoney(Math.max(0, roundBs(next)));
       updateDiff();
+    }
+    function syncModeFields() {
+      const isFinal = mode.value === 'final';
+      valueField?.classList.toggle('hidden', isFinal);
+      finalField?.classList.toggle('hidden', !isFinal);
+      calculatedField?.classList.toggle('hidden', isFinal);
+      if (!isFinal) computeFinalFromAdjustment();
     }
     function updateDiff() {
       const price = roundBs(Number(final.value || 0));
@@ -171,10 +332,11 @@ function openSalePriceEditorV7(options = {}) {
       }
     }
     $('#closeSheet', overlay).addEventListener('click', close);
-    mode.addEventListener('change', () => { if (mode.value === 'final') value.value = ''; computeFinalFromAdjustment(); });
+    mode.addEventListener('change', () => { if (mode.value === 'final') value.value = ''; syncModeFields(); computeFinalFromAdjustment(); });
     value.addEventListener('input', computeFinalFromAdjustment);
-    final.addEventListener('input', () => { mode.value = 'final'; value.value = ''; updateDiff(); });
+    final.addEventListener('input', () => { mode.value = 'final'; value.value = ''; syncModeFields(); updateDiff(); });
     reason.addEventListener('input', updateDiff);
+    syncModeFields();
     $all('.nv807PromoApply', overlay).forEach(button => button.addEventListener('click', () => {
       const promotion = window.getPromotionsV807 ? getPromotionsV807().find(row => row.id === button.dataset.promoId) : null;
       if (!promotion) return;
@@ -183,6 +345,7 @@ function openSalePriceEditorV7(options = {}) {
       value.value = Number(promotion.discountPercent || 0);
       final.value = nextPrice;
       reason.value = promotion.note || `Promoción: ${promotion.name}`;
+      syncModeFields();
       updateDiff();
     }));
     $('#resetManualPrice', overlay).addEventListener('click', () => { if (typeof options.onReset === 'function') options.onReset(); close(); });
@@ -468,11 +631,10 @@ function openCheckoutSheet() {
     ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
     <section class="nv771DeliveryToggle"><label><input id="ck_requiresDeliveryV771" type="checkbox"><span><strong>Requiere entrega</strong><small>Crear una entrega pendiente para planificarla en una ruta.</small></span></label><div id="ck_deliveryFieldsV771" class="hidden"><div class="field-row"><div class="field"><label>Fecha solicitada</label><input id="ck_deliveryDateV771" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Prioridad</label><select id="ck_deliveryPriorityV771"><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div></div><div class="field"><label>Dirección de entrega</label><input id="ck_deliveryAddressV771" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.address || '') : ''}" placeholder="Dirección, zona o referencia"></div><div class="field"><label>Observación de entrega</label><textarea id="ck_deliveryNotesV771" placeholder="Horario, persona de contacto o indicación especial"></textarea></div></div></section>
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
-    <div class="field-row"><div class="field"><label>Monto pagado ahora</label><input id="ck_amountPaid" type="number" inputmode="decimal" step="0.01" value="${total}"></div><div class="field"><label>Saldo pendiente</label><input id="ck_pendingBalance" readonly value="0"></div></div>
-    <div class="field"><label>Motivo si queda saldo pendiente</label><input id="ck_pendingReason" placeholder="Ej.: faltó cambio, transferencia pendiente, saldo por cobrar"></div>
-    <div class="v7CashNotice">Si el pago queda incompleto, la venta se registrará y aparecerá en Ventas por cobrar.</div>
+    <div id="ckPaymentSummaryV826">${paymentChoiceSummaryV826(null,total)}</div>
+    <div class="v7CashNotice">Al continuar elegirás Efectivo, QR / transferencia o Crédito. El recibo ya no incorpora el QR.</div>
     <div class="v7CashNotice">La operación usa un identificador único. Si se corta la conexión, se verificará primero si la venta ya quedó guardada para evitar duplicarla.</div>
-    <div class="actions stickyActions"><button class="btn block" id="confirmSale">Confirmar venta y generar recibo</button></div>`;
+    <div class="actions stickyActions"><button class="btn block" id="confirmSale">Elegir forma de pago</button></div>`;
   openSheet(html, (overlay, close) => {
     $('#closeSheet', overlay).addEventListener('click', () => { if (!operation.submitting) close(); });
     const fillClientV723 = (c) => {
@@ -520,8 +682,17 @@ function openCheckoutSheet() {
     $('#ck_requiresDeliveryV771', overlay)?.addEventListener('change', event => {
       $('#ck_deliveryFieldsV771', overlay)?.classList.toggle('hidden', !event.target.checked);
     });
-    const updatePaymentV725 = () => { const paid = Math.max(0, Number($('#ck_amountPaid', overlay).value || 0)); $('#ck_pendingBalance', overlay).value = roundBs(Math.max(0, total - paid)); };
-    $('#ck_amountPaid', overlay).addEventListener('input', updatePaymentV725); updatePaymentV725();
+    const renderPaymentChoiceV826 = () => {
+      const box = $('#ckPaymentSummaryV826', overlay);
+      if (box) {
+        box.innerHTML = paymentChoiceSummaryV826(operation.paymentChoice, total);
+        box.querySelector('.nv826ChangePayment')?.addEventListener('click', async () => {
+          const choice = await openPaymentMethodSelectorV826({ total, clientName: $('#ck_clientname', overlay).value.trim() || 'Cliente', qrUrl: paymentQrSourceV826(), initial: operation.paymentChoice });
+          if (choice) { operation.paymentChoice = choice; renderPaymentChoiceV826(); $('#confirmSale', overlay).textContent = 'Confirmar venta'; }
+        });
+      }
+    };
+    renderPaymentChoiceV826();
     $('#ck_clientname', overlay).addEventListener('blur', () => {
       const name = $('#ck_clientname', overlay).value.trim();
       const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
@@ -534,6 +705,14 @@ function openCheckoutSheet() {
       const clientPhone = $('#ck_clientphone', overlay).value.trim();
       if (!clientName) return showToast('⚠️ Ingresa el nombre del cliente', 'error');
       if (!operation.client && window.findLikelyDuplicateClientV802) { const match = findLikelyDuplicateClientV802(clientName, clientPhone); if (match && window.confirm(`Encontramos un cliente similar: “${match.client.name}”.\n\n¿Deseas usar ese registro para evitar duplicarlo?`)) operation.client = match.client; }
+      if (!operation.paymentChoice) {
+        const choice = await openPaymentMethodSelectorV826({ total, clientName, qrUrl: paymentQrSourceV826() });
+        if (!choice) return;
+        operation.paymentChoice = choice;
+        renderPaymentChoiceV826();
+        btn.textContent = 'Confirmar venta';
+        return;
+      }
       if (!navigator.onLine) return showToast('Sin internet. La venta no fue registrada.', 'error');
       operation.submitting = true; btn.disabled = true; btn.textContent = 'Verificando stock y guardando…';
       try {
@@ -551,7 +730,8 @@ function openCheckoutSheet() {
         }
         if (!operation.sale) {
           const groupName = _saleSelectedGroup ? (saleGroupInfoV7(_saleSelectedGroup) || {}).name : null;
-          const paidNow = roundBs(Math.min(total, Math.max(0, Number($('#ck_amountPaid', overlay).value || 0))));
+          const paymentChoice = operation.paymentChoice || { method: 'cash', amountPaid: total, paymentStatus: 'paid', verificationStatus: 'not_required' };
+          const paidNow = roundBs(Math.min(total, Math.max(0, Number(paymentChoice.amountPaid || 0))));
           const pendingNow = roundBs(Math.max(0, total - paidNow));
           const saleItems = buildSaleItemsFromCartV7(rawItems);
           const finalCommercialValidationV807 = window.validateSaleItemsV807 ? validateSaleItemsV807(saleItems, { roleCode: window.currentRoleCodeV807 ? currentRoleCodeV807() : AppState.session?.commercialRole, seller: sellerMode() }) : { allowed: true, evaluations: [] };
@@ -563,11 +743,16 @@ function openCheckoutSheet() {
             id: operation.id,
             documentNumber: operation.documentNumber,
             receiptNumber: operation.documentNumber,
-            paymentMethod: 'cash',
-            paymentStatus: pendingNow > 0 ? (paidNow > 0 ? 'partial' : 'pending') : 'paid',
+            paymentMethod: paymentChoice.method,
+            paymentStatus: paymentChoice.paymentStatus || (pendingNow > 0 ? (paidNow > 0 ? 'partial' : 'pending') : 'paid'),
+            paymentVerificationStatus: paymentChoice.verificationStatus || 'not_required',
+            paymentVerificationMode: paymentChoice.verificationMode || '',
+            paymentProvider: paymentChoice.provider || '',
+            paymentReference: paymentChoice.reference || '',
+            paymentConfirmedAt: paymentChoice.confirmedAt || null,
             amountPaid: paidNow,
             pendingBalance: pendingNow,
-            pendingReason: pendingNow > 0 ? $('#ck_pendingReason', overlay).value.trim() : '',
+            pendingReason: pendingNow > 0 ? (paymentChoice.pendingReason || 'Saldo pendiente') : '',
             type: _saleType,
             role: AppState.session ? AppState.session.roleName : '',
             sellerId: AppState.session ? (AppState.session.onlineUserId || AppState.session.userId) : null,
@@ -647,5 +832,10 @@ Object.assign(window, {
   buildSalePriceBreakdownV7,
   openSalePriceEditorV7,
   salePriceBadgeV7,
-  salePriceLabelV7
+  salePriceLabelV7,
+  openPaymentMethodSelectorV826,
+  paymentMethodLabelV826,
+  paymentStatusLabelV826,
+  paymentChoiceSummaryV826,
+  paymentQrSourceV826
 });

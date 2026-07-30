@@ -1,5 +1,5 @@
-// Natura Vida V8.2.4 — Edge Function corregida, segura y con errores diagnosticables.
-// Secrets requeridos: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
+// Natura Vida V8.2.6 — Motor IA ejecutivo con borradores operativos seguros.
+// Secrets: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const allowedOrigin = Deno.env.get("AI_ALLOWED_ORIGIN") || "*";
@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
-const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash-lite";
+const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.1-flash-lite";
 const dailyLimit = Math.max(1, Math.min(200, Number(Deno.env.get("AI_DAILY_LIMIT") || 30)));
 
 function reply(status: number, body: Record<string, unknown>) {
@@ -31,7 +31,7 @@ function compactSnapshot(source: unknown) {
     criticalStock: Array.isArray(s.criticalStock) ? s.criticalStock.slice(0, 12) : [],
     customersForFollowUp: Array.isArray(s.customersForFollowUp) ? s.customersForFollowUp.slice(0, 14) : [],
     topReceivables: Array.isArray(s.topReceivables) ? s.topReceivables.slice(0, 14) : [],
-    focusedAccount: s.focusedAccount && typeof s.focusedAccount === 'object' ? s.focusedAccount : null,
+    focusedAccount: s.focusedAccount && typeof s.focusedAccount === "object" ? s.focusedAccount : null,
     alerts: Array.isArray(s.alerts) ? s.alerts.slice(0, 8) : [],
   };
   const serialized = JSON.stringify(compact);
@@ -54,9 +54,68 @@ function outputText(payload: any) {
 }
 function parseStructured(raw: string) {
   const clean = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-  const value = JSON.parse(clean);
-  if (!value || typeof value !== "object") throw new Error("El modelo devolvió una respuesta vacía.");
-  return value;
+  try {
+    const value = JSON.parse(clean);
+    if (!value || typeof value !== "object") throw new Error("empty");
+    return value;
+  } catch {
+    const first = clean.indexOf("{");
+    const last = clean.lastIndexOf("}");
+    if (first >= 0 && last > first) {
+      const value = JSON.parse(clean.slice(first, last + 1));
+      if (value && typeof value === "object") return value;
+    }
+    throw new Error("El modelo no devolvió un JSON utilizable.");
+  }
+}
+
+const answerSchema = {
+  type: "object", additionalProperties: false,
+  properties: {
+    title: { type: "string", description: "Título breve" },
+    summary: { type: "string", description: "Conclusión directa y verificable" },
+    facts: { type: "array", items: { type: "string" }, maxItems: 6 },
+    recommendations: { type: "array", items: { type: "string" }, maxItems: 5 },
+    risks: { type: "array", items: { type: "string" }, maxItems: 4 },
+    next_questions: { type: "array", items: { type: "string" }, maxItems: 4 },
+    confidence: { type: "string", enum: ["alta", "media", "baja"] },
+    action_area: { type: "string", enum: ["none", "ventas", "clientes", "inventario", "cobranzas", "reglas-comerciales", "territorio", "finanzas", "rendicion"] },
+    intent: { type: "string", enum: ["analysis", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area"] },
+    missing_fields: { type: "array", items: { type: "string" }, maxItems: 5 },
+    draft_action: {
+      type: "object", additionalProperties: false,
+      properties: {
+        type: { type: "string", enum: ["none", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area"] },
+        client_query: { type: "string" }, amount: { type: "number" }, installment_amount: { type: "number" },
+        frequency: { type: "string", enum: ["", "monthly", "biweekly", "weekly"] },
+        start_date: { type: "string" }, note: { type: "string" }
+      },
+      required: ["type", "client_query", "amount", "installment_amount", "frequency", "start_date", "note"]
+    }
+  },
+  required: ["title", "summary", "facts", "recommendations", "risks", "next_questions", "confidence", "action_area", "intent", "missing_fields", "draft_action"]
+};
+
+async function callGemini(apiKey: string, prompt: string, structured = true) {
+  const body: Record<string, unknown> = {
+    model,
+    input: structured ? prompt : `${prompt}\n\nDevuelve SOLO un objeto JSON válido con las claves exactas del esquema descrito. No uses bloques Markdown.`,
+    store: false,
+    generation_config: { thinking_level: "low", max_output_tokens: 4096 },
+  };
+  if (structured) body.response_format = { type: "text", mime_type: "application/json", schema: answerSchema };
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, body: JSON.stringify(body),
+  });
+  const raw = await response.text();
+  let payload: any = {};
+  try { payload = raw ? JSON.parse(raw) : {}; }
+  catch { return { ok: false, status: response.status || 502, message: "Gemini devolvió una respuesta no JSON.", rawPreview: text(raw, 240) }; }
+  if (!response.ok) return { ok: false, status: response.status, message: text(payload?.error?.message || payload?.message || `Gemini respondió ${response.status}`, 300), payload };
+  const generated = outputText(payload);
+  if (!generated) return { ok: false, status: 502, message: "Gemini respondió sin contenido utilizable.", payload };
+  try { return { ok: true, status: response.status, answer: parseStructured(generated), payload, fallbackFormat: !structured }; }
+  catch (error) { return { ok: false, status: 502, message: text(error instanceof Error ? error.message : error, 300), rawPreview: text(generated, 300), payload }; }
 }
 
 Deno.serve(async (req) => {
@@ -83,12 +142,10 @@ Deno.serve(async (req) => {
     const migrationReady = !usageError;
     const usage = migrationReady ? usageData : { used: 0, limit: dailyLimit, remaining: dailyLimit };
 
-    if (action === "health") {
-      return reply(200, { ok: true, configured: Boolean(apiKey), migrationReady, model, usage, message: !apiKey ? "Falta configurar GEMINI_API_KEY." : !migrationReady ? "Falta ejecutar la migración del motor IA." : "Motor IA disponible." });
-    }
+    if (action === "health") return reply(200, { ok: true, configured: Boolean(apiKey), migrationReady, model, usage, message: !apiKey ? "Falta configurar GEMINI_API_KEY." : !migrationReady ? "Falta ejecutar la migración del motor IA." : "Motor IA disponible." });
     if (action !== "chat") return reply(400, { ok: false, code: "INVALID_ACTION", message: "Acción no reconocida." });
     if (!apiKey) return reply(503, { ok: false, code: "AI_ENGINE_NOT_CONFIGURED", message: "El motor IA todavía no tiene una clave configurada." });
-    if (!migrationReady) return reply(503, { ok: false, code: "AI_MIGRATION_REQUIRED", message: "Ejecuta la migración del motor IA antes de habilitar consultas externas." });
+    if (!migrationReady) return reply(503, { ok: false, code: "AI_MIGRATION_REQUIRED", message: "Ejecuta la migración del motor IA." });
 
     const question = text(body.question, 1200);
     if (question.length < 2) return reply(400, { ok: false, code: "QUESTION_REQUIRED", message: "Escribe una consulta." });
@@ -98,118 +155,30 @@ Deno.serve(async (req) => {
     const snapshot = compactSnapshot(body.snapshot);
     const history = Array.isArray(body.history) ? body.history.slice(-8).map((x: any) => ({ role: x?.role === "assistant" ? "assistant" : "user", text: text(x?.text, 700) })) : [];
     const contextLabel = text(body.context?.label || "Negocio general", 80);
-    const prompt = `Eres el analista comercial privado de Natura Vida Bolivia. Responde en español claro y profesional.\n\nREGLAS OBLIGATORIAS:\n1. Usa solamente el resumen empresarial proporcionado; no inventes cifras, fechas, clientes ni acciones.\n2. Los cálculos críticos del resumen son la fuente de verdad. Si falta un dato, dilo.\n3. Separa hechos comprobados de sugerencias. Toda recomendación debe explicar su motivo y riesgo.\n4. No afirmes que modificaste precios, inventario, ventas, pagos, clientes o promociones. Solo propones; la aplicación exige confirmación humana.\n5. Evita recomendaciones que violen el margen mínimo o el descuento máximo.\n6. Prioriza acciones realistas para un negocio en crecimiento.\n7. Sé breve: conclusión, datos, recomendaciones y riesgos.
-8. Puedes sugerir acciones, pero solo de la lista permitida y siempre como propuesta que requiere confirmación en la aplicación.\n\nContexto visible: ${contextLabel}\nHistorial reciente: ${JSON.stringify(history)}\nPregunta: ${question}\nResumen empresarial: ${JSON.stringify(snapshot)}`;
-    const schema = {
-      type: "object", additionalProperties: false,
-      properties: {
-        title: { type: "string", description: "Título breve del análisis" },
-        summary: { type: "string", description: "Conclusión directa basada en los datos" },
-        facts: { type: "array", items: { type: "string" }, maxItems: 6 },
-        recommendations: { type: "array", items: { type: "string" }, maxItems: 5 },
-        risks: { type: "array", items: { type: "string" }, maxItems: 4 },
-        next_questions: { type: "array", items: { type: "string" }, maxItems: 4 },
-        confidence: { type: "string", enum: ["alta", "media", "baja"] },
-        action_area: { type: "string", enum: ["none", "ventas", "clientes", "inventario", "cobranzas", "reglas-comerciales", "territorio", "finanzas"] },
-        suggested_actions: { type: "array", items: { type: "string", enum: ["open_area", "prepare_followup", "prepare_collection", "simulate_discount", "create_quote"] }, maxItems: 3 },
-      }, required: ["title", "summary", "facts", "recommendations", "risks", "next_questions", "confidence", "action_area", "suggested_actions"]
-    };
+    const prompt = `Eres el asistente ejecutivo privado de Natura Vida Bolivia. Responde en español claro y profesional.\n\nREGLAS:\n1. Usa solo el resumen proporcionado y no inventes cifras, clientes ni pagos.\n2. Separa hechos, sugerencias y riesgos.\n3. Puedes preparar borradores de plan de pagos, registro de pago, recibo o rendición, pero nunca afirmes que los guardaste.\n4. Si el usuario pide una acción y falta cliente, monto u otro dato imprescindible, pregunta únicamente lo necesario y enumera missing_fields.\n5. Para planes: detecta cliente, monto de cuota, frecuencia y fecha inicial. Para pagos/recibos: cliente y monto pagado.\n6. draft_action solo es una propuesta; la aplicación buscará el cliente real y exigirá confirmación humana.\n7. No sugieras descuentos que violen las reglas comerciales.\n8. Sé breve y útil.\n\nContexto: ${contextLabel}\nHistorial: ${JSON.stringify(history)}\nPregunta: ${question}\nResumen: ${JSON.stringify(snapshot)}`;
+
     const started = Date.now();
-    const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        model,
-        input: prompt,
-        store: false,
-        generation_config: {
-          thinking_level: "low",
-          max_output_tokens: 4096,
-        },
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema,
-        },
-      }),
-    });
-
-    const aiRaw = await aiResponse.text();
-    let aiPayload: any = {};
-    try {
-      aiPayload = aiRaw ? JSON.parse(aiRaw) : {};
-    } catch {
-      console.error("Gemini devolvió una respuesta no JSON", {
-        status: aiResponse.status,
-        bodyPreview: text(aiRaw, 240),
-      });
-      return reply(502, {
-        ok: false,
-        code: "AI_INVALID_RESPONSE",
-        message: "Gemini devolvió una respuesta no válida.",
-        upstreamStatus: aiResponse.status,
-      });
+    let result = await callGemini(apiKey, prompt, true);
+    if (!result.ok && [400, 422, 502].includes(Number(result.status))) {
+      console.warn("NV_AI_STRUCTURED_RETRY", { status: result.status, message: result.message, model });
+      result = await callGemini(apiKey, prompt, false);
+    }
+    if (!result.ok) {
+      console.error("NV_AI_GEMINI_ERROR", { status: result.status, model, message: result.message, rawPreview: result.rawPreview || "" });
+      return reply(Number(result.status) >= 400 && Number(result.status) < 500 ? Number(result.status) : 502, { ok: false, code: "GEMINI_UPSTREAM_ERROR", message: result.message, upstreamStatus: result.status });
     }
 
-    if (!aiResponse.ok) {
-      const upstreamMessage = text(
-        aiPayload?.error?.message || aiPayload?.message || `Gemini respondió ${aiResponse.status}`,
-        300,
-      );
-      console.error("Error de Gemini", {
-        status: aiResponse.status,
-        model,
-        message: upstreamMessage,
-      });
-      return reply(aiResponse.status >= 400 && aiResponse.status < 500 ? aiResponse.status : 502, {
-        ok: false,
-        code: "GEMINI_UPSTREAM_ERROR",
-        message: upstreamMessage,
-        upstreamStatus: aiResponse.status,
-      });
-    }
-
-    const generatedText = outputText(aiPayload);
-    if (!generatedText) {
-      console.error("Gemini respondió sin texto utilizable", {
-        status: aiResponse.status,
-        model,
-        payloadKeys: Object.keys(aiPayload || {}),
-      });
-      return reply(502, {
-        ok: false,
-        code: "AI_EMPTY_RESPONSE",
-        message: "Gemini respondió sin contenido utilizable.",
-      });
-    }
-
-    const answer = parseStructured(generatedText);
     const questionHash = await hashQuestion(question);
     const latencyMs = Date.now() - started;
-    // La auditoría es secundaria: nunca debe convertir una respuesta válida de Gemini en error 500.
     try {
-      const { error: auditError } = await client.rpc("nv_log_ai_event", {
-        p_engine: "gemini",
-        p_model: model,
-        p_status: "success",
-        p_context: contextLabel,
-        p_question_hash: questionHash,
-        p_metadata: { latency_ms: latencyMs, snapshot_bytes: JSON.stringify(snapshot).length }
-      });
+      const { error: auditError } = await client.rpc("nv_log_ai_event", { p_engine: "gemini", p_model: model, p_status: "success", p_context: contextLabel, p_question_hash: questionHash, p_metadata: { latency_ms: latencyMs, snapshot_bytes: JSON.stringify(snapshot).length, fallback_format: Boolean(result.fallbackFormat) } });
       if (auditError) console.warn("NV_AI_AUDIT_WARNING", { message: auditError.message, code: auditError.code });
-    } catch (auditError) {
-      console.warn("NV_AI_AUDIT_WARNING", { message: auditError instanceof Error ? auditError.message : String(auditError) });
-    }
-    return reply(200, { ok: true, engine: "gemini", model, answer, usage: quota, privacy: { snapshotOnly: true, phonesExcluded: true, addressesExcluded: true, emailsExcluded: true, serverConversationStorage: false } });
+    } catch (auditError) { console.warn("NV_AI_AUDIT_WARNING", { message: auditError instanceof Error ? auditError.message : String(auditError) }); }
+
+    return reply(200, { ok: true, engine: "gemini", model, answer: result.answer, usage: quota, retryMode: result.fallbackFormat ? "json_prompt" : "structured", privacy: { snapshotOnly: true, phonesExcluded: true, addressesExcluded: true, emailsExcluded: true, serverConversationStorage: false } });
   } catch (error) {
     const message = text(error instanceof Error ? error.message : error, 300) || "No se pudo completar la consulta.";
-    console.error("Fallo no controlado en nv-ai-assistant", {
-      message,
-      stack: error instanceof Error ? text(error.stack, 1000) : "",
-    });
+    console.error("Fallo no controlado en nv-ai-assistant", { message, stack: error instanceof Error ? text(error.stack, 1000) : "" });
     return reply(500, { ok: false, code: "AI_ENGINE_ERROR", message });
   }
 });

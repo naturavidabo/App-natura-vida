@@ -44,6 +44,7 @@
 
       { id: 'finanzas', category: 'finanzas', icon: '📒', title: 'Finanzas y egresos', subtitle: 'Gastos, ingresos y balance básico', tab: 'egresos', anyPermissions: ['finance:operate'], adminAlso: true },
       { id: 'cobros-finanzas', category: 'finanzas', icon: '💳', title: 'Cobranzas', subtitle: 'Estados de cuenta y documentos de cobro', tab: 'por-cobrar', permission: 'receivables:manage' },
+      { id: 'rendicion-caja', category: 'finanzas', icon: '💵', title: AppState.session?.commercialRole==='field_seller'?'Mi rendición de caja':'Rendiciones de vendedores', subtitle: 'Efectivo bajo custodia, cobros digitales y entrega de dinero', tab: 'rendicion-caja', customVisible: () => AppState.session?.commercialRole==='field_seller' || isAdminUser || (window.canManageTeamV800&&canManageTeamV800()) },
 
       { id: 'perfil', category: 'administracion', icon: '👤', title: 'Mi perfil, función y QR', subtitle: 'Identidad, rol, datos comerciales y cobros', tab: 'perfil', always: true },
       { id: 'ajustes', category: 'administracion', icon: '⚙️', title: 'Configuración del negocio', subtitle: 'Marca, contacto y parámetros', tab: 'ajustes', adminOnly: true },

@@ -1,11 +1,11 @@
-/* Natura Vida V8.2.4 — Asistente IA organizado, motor diagnosticable y acciones confirmadas.
+/* Natura Vida V8.2.6 — Asistente secretario supervisado y lectura de respuestas en altavoz.
    Acceso exclusivo para administrador central. Los cálculos críticos continúan
    siendo locales; Gemini interpreta un resumen empresarial limitado a través
    de una Supabase Edge Function y nunca recibe claves desde el navegador. */
 (function(){
   'use strict';
 
-  const VERSION='8.2.4';
+  const VERSION='8.2.6';
   const MAX_ENTRIES=40;
   const MAX_ARCHIVES=12;
   const MAX_ACTION_HISTORY=40;
@@ -20,7 +20,10 @@
   let pendingRequestId='';
   let lastQuestionAt=0;
   let answerTimer=null;
-  let engineState={mode:'checking',configured:false,migrationReady:false,model:'gemini-2.5-flash-lite',checkedAt:0,usage:null,message:'Comprobando motor IA'};
+  let fabPositionTimer=null;
+  let activeSpeechV826=null;
+  let activeSpeechButtonV826=null;
+  let engineState={mode:'checking',configured:false,migrationReady:false,model:'gemini-3.1-flash-lite',checkedAt:0,usage:null,message:'Comprobando motor IA'};
 
   function adminAllowed(){
     try { return !!(window.requireAuth && requireAuth() && window.isAdmin && isAdmin()); }
@@ -134,6 +137,63 @@
     return {critical,negative,total:products.length};
   }
   function normalizedName(v){ return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+  function clientDisplayName(c){ return c?clampText(c?.name||c?.businessName||c?.contactName||'Cliente',100):''; }
+  function clientDebtInfo(client){
+    if(!client?.id) return {totalDebt:0,pendingCount:0};
+    const rs=receivableStats();
+    const names=new Set([normalizedName(client.name),normalizedName(client.businessName),normalizedName(client.contactName)].filter(Boolean));
+    const rows=rs.open.filter(x=>String(x.clientId||'')===String(client.id)||names.has(normalizedName(x.clientName||x.customerName)));
+    return {totalDebt:round2(rows.reduce((s,x)=>s+Number(x.balance||0),0)),pendingCount:rows.length,rows};
+  }
+  function round2(v){ return Math.round((Number(v)||0)*100)/100; }
+  function resolveClientFromText(query){
+    const nq=normalizedName(query);
+    const words=nq.split(/\s+/).filter(w=>w.length>=3&&!['plan','pago','pagado','pagar','cuota','cuotas','mensual','mes','recibo','cliente','deuda','bolivianos','para','hacer','genera','generar','registrar'].includes(w));
+    const clients=dataset().clients||[];
+    let best=null, bestScore=0;
+    clients.forEach(c=>{
+      const hay=normalizedName([c.name,c.businessName,c.contactName].filter(Boolean).join(' '));
+      if(!hay)return;
+      let score=0;
+      if(nq.includes(hay)&&hay.length>=4)score+=12;
+      words.forEach(w=>{if(hay===w)score+=7;else if(hay.includes(w))score+=4;else if(w.includes(hay)&&hay.length>=4)score+=3;});
+      if(score>bestScore){best=c;bestScore=score;}
+    });
+    return bestScore>=4?best:null;
+  }
+  function extractMoneyAmount(query){
+    const q=String(query||'').replace(/\s/g,'');
+    const patterns=[/(?:bs|bob|bolivianos?)\.?([0-9]+(?:[.,][0-9]{1,2})?)/i,/([0-9]+(?:[.,][0-9]{1,2})?)\s*(?:bs|bob|bolivianos?)/i,/cuota(?:de)?([0-9]+(?:[.,][0-9]{1,2})?)/i,/pago(?:de)?([0-9]+(?:[.,][0-9]{1,2})?)/i];
+    for(const re of patterns){const m=q.match(re);if(m){const n=Number(m[1].replace(',','.'));if(Number.isFinite(n)&&n>0)return n;}}
+    return 0;
+  }
+  function extractFrequency(query){
+    const q=normalizedName(query);
+    if(/semanal|cada semana/.test(q))return'weekly';
+    if(/quincenal|cada quincena/.test(q))return'biweekly';
+    return'monthly';
+  }
+  function frequencyLabel(value){return value==='weekly'?'Semanal':value==='biweekly'?'Quincenal':'Mensual';}
+  function resolveDraftActionV825(question,response={}){
+    const supplied=response?.draftAction&&typeof response.draftAction==='object'?response.draftAction:null;
+    const q=normalizedName(question);
+    const detectedClient=resolveClientFromText(`${question} ${supplied?.client_query||''}`)||focusedClientRecord();
+    const account=focusedAccountContext();
+    const client=detectedClient||((account?.clientId)?(dataset().clients||[]).find(c=>String(c.id)===String(account.clientId)):null);
+    const amount=Number(supplied?.amount||supplied?.installment_amount||extractMoneyAmount(question))||0;
+    let type=String(supplied?.type||'');
+    if(!type||type==='none'){
+      if(/plan.{0,12}(pago|cuota)|cuota.{0,12}(mes|mensual|seman|quincen)/.test(q))type='create_payment_plan';
+      else if(/(registro|registra|registrar|pago|pago de).{0,30}(recibo|deuda|cuenta)|ha pagado|pago parcial/.test(q))type='register_payment';
+      else if(/(haz|genera|generar|prepara).{0,20}recibo/.test(q))type='generate_receipt';
+      else if(/rendir|rendicion|entregar efectivo|caja de vendedor/.test(q))type='seller_settlement';
+      else type='none';
+    }
+    const missing=[];
+    if(['create_payment_plan','register_payment','generate_receipt'].includes(type)&&!client?.id)missing.push('cliente');
+    if(['create_payment_plan','register_payment','generate_receipt'].includes(type)&&!amount)missing.push(type==='create_payment_plan'?'monto de la cuota':'monto pagado');
+    return {type,clientId:client?.id||'',clientName:clientDisplayName(client),amount,installmentAmount:Number(supplied?.installment_amount)||amount,frequency:supplied?.frequency||extractFrequency(question),startDate:supplied?.start_date||new Date().toISOString().slice(0,10),note:clampText(supplied?.note||question,240),missingFields:[...new Set([...(Array.isArray(response?.missingFields)?response.missingFields:[]),...missing])],account:client?clientDebtInfo(client):account};
+  }
   function dateMs(v){ const n=Number(new Date(v||0)); return Number.isFinite(n)?n:0; }
   function daysSince(v){ const n=dateMs(v); return n?Math.max(0,Math.floor((Date.now()-n)/86400000)):9999; }
   function receivableStats(){
@@ -227,17 +287,30 @@
     const rec=(Array.isArray(a.recommendations)?a.recommendations:[]).slice(0,5).map(x=>clampText(x,240)).filter(Boolean);
     const risks=(Array.isArray(a.risks)?a.risks:[]).slice(0,4).map(x=>clampText(x,220)).filter(Boolean);
     const next=(Array.isArray(a.next_questions)?a.next_questions:[]).slice(0,4).map(x=>clampText(x,150)).filter(Boolean);
-    const tabMap={ventas:'historial',clientes:'clientes',inventario:'inventario',cobranzas:'por-cobrar','reglas-comerciales':'reglas-comerciales',territorio:'territorio',finanzas:'egresos'};
+    const tabMap={ventas:'historial',clientes:'clientes',inventario:'inventario',cobranzas:'por-cobrar','reglas-comerciales':'reglas-comerciales',territorio:'territorio',finanzas:'egresos',rendicion:'rendicion-caja'};
     const area=String(a.action_area||'none');
     const action=tabMap[area]?{label:`Abrir ${area.replace('-',' ')}`,tab:tabMap[area]}:null;
+    const missingFields=(Array.isArray(a.missing_fields)?a.missing_fields:[]).map(x=>clampText(x,80)).filter(Boolean);
+    const draftRaw=a.draft_action&&typeof a.draft_action==='object'?a.draft_action:null;
     const bodyParts=[safeHtml(a.summary||'Análisis completado con los datos disponibles.')];
-    if(facts.length) bodyParts.push(`<span class="nvAiSectionLabel">Datos verificados</span>`);
+    if(missingFields.length) bodyParts.push(`<span class="nvAiMissingV825">Para continuar necesito: ${esc(missingFields.join(', '))}.</span>`);
     return {
       title:clampText(a.title||'Análisis inteligente',100),
       body:bodyParts.join('<br>'),
       list:[...facts.map(x=>`Dato: ${x}`),...rec.map(x=>`Sugerencia: ${x}`),...risks.map(x=>`Riesgo: ${x}`)],
       suggestions:next,
       action,
+      intent:clampText(a.intent||'analysis',60),
+      missingFields,
+      draftAction:draftRaw?{
+        type:clampText(draftRaw.type||'none',60),
+        client_query:clampText(draftRaw.client_query||'',100),
+        amount:Number(draftRaw.amount)||0,
+        installment_amount:Number(draftRaw.installment_amount)||0,
+        frequency:clampText(draftRaw.frequency||'',30),
+        start_date:clampText(draftRaw.start_date||'',20),
+        note:clampText(draftRaw.note||'',240)
+      }:null,
       confidence:['alta','media','baja'].includes(String(a.confidence))?String(a.confidence):'media',
       engine:'external',
       model:clampText(data?.model||engineState.model,60),
@@ -316,25 +389,32 @@
     return `Buenas tardes, ${name}. Esperamos que se encuentre muy bien. Queríamos consultar si necesita reponer sus productos Natura Vida. Podemos prepararle una cotización y coordinar la entrega.`;
   }
   function buildActionProposals(question,response={}){
-    const q=normalizedName(question);const account=focusedAccountContext();const client=focusedClientRecord();const actions=[];
+    const q=normalizedName(question);const account=focusedAccountContext();const client=focusedClientRecord()||resolveClientFromText(question);const actions=[];
     const add=a=>{if(a&&!actions.some(x=>x.type===a.type&&String(x.clientId||'')===String(a.clientId||'')))actions.push(a);};
-    if(account?.clientId){
-      if(Number(account.totalDebt||0)>.009||/deuda|cobran|pago|estado de cuenta/.test(q)){
-        add({type:'prepare_collection_message',label:'Preparar mensaje de cobro',clientId:account.clientId,clientName:account.name,summary:`Revisar y preparar un mensaje por ${money(account.totalDebt||0)}.`});
-        add({type:'generate_collection_document',label:'Generar recibo consolidado',clientId:account.clientId,clientName:account.name,summary:'Genera el documento de cobro después de tu confirmación.'});
-        add({type:'register_payment',label:'Registrar un pago',clientId:account.clientId,clientName:account.name,summary:'Abre el formulario de pago sin registrar nada automáticamente.'});
+    const draft=resolveDraftActionV825(question,response);
+    if(draft.type!=='none'&&!draft.missingFields.length){
+      if(draft.type==='create_payment_plan')add({type:'create_payment_plan',label:'Preparar plan de pagos',clientId:draft.clientId,clientName:draft.clientName,installmentAmount:draft.installmentAmount,frequency:draft.frequency,startDate:draft.startDate,note:draft.note,totalDebt:Number(draft.account?.totalDebt||0),summary:`Crear un borrador ${frequencyLabel(draft.frequency).toLowerCase()} de ${money(draft.installmentAmount)} para revisión.`});
+      if(draft.type==='register_payment')add({type:'register_payment',label:'Preparar registro de pago',clientId:draft.clientId,clientName:draft.clientName,amount:draft.amount,note:draft.note,summary:`Abrir el formulario con ${money(draft.amount)}; el pago no se guarda hasta confirmar.`});
+      if(draft.type==='generate_receipt')add({type:'generate_receipt',label:'Preparar pago y recibo',clientId:draft.clientId,clientName:draft.clientName,amount:draft.amount,note:draft.note,summary:`Registrar ${money(draft.amount)} después de revisar y generar el recibo correspondiente.`});
+      if(draft.type==='seller_settlement')add({type:'seller_settlement',label:'Abrir rendición de caja',summary:'Revisar efectivo bajo custodia, cobros digitales y saldo a entregar.'});
+    }
+    const activeClient=client||((account?.clientId)?(dataset().clients||[]).find(c=>String(c.id)===String(account.clientId)):null);
+    const activeName=clientDisplayName(activeClient)||account?.name;
+    const activeId=activeClient?.id||account?.clientId;
+    if(activeId){
+      const debt=account||clientDebtInfo(activeClient);
+      if(Number(debt.totalDebt||0)>.009||/deuda|cobran|pago|estado de cuenta/.test(q)){
+        add({type:'prepare_collection_message',label:'Preparar mensaje de cobro',clientId:activeId,clientName:activeName,summary:`Revisar un mensaje por ${money(debt.totalDebt||0)}.`});
+        add({type:'generate_collection_document',label:'Generar recibo consolidado',clientId:activeId,clientName:activeName,summary:'Genera el documento de cobro después de tu confirmación.'});
       }
-      add({type:'create_quote',label:'Preparar cotización',clientId:account.clientId,clientName:account.name,summary:'Abre una cotización prellenada para revisión.'});
-    }else if(client?.id){
-      add({type:'prepare_followup_message',label:'Preparar seguimiento',clientId:client.id,clientName:client.name||client.businessName,summary:'Redacta un mensaje que podrás revisar antes de abrir WhatsApp.'});
-      add({type:'create_quote',label:'Preparar cotización',clientId:client.id,clientName:client.name||client.businessName,summary:'Abre una cotización prellenada para revisión.'});
+      add({type:'create_quote',label:'Preparar cotización',clientId:activeId,clientName:activeName,summary:'Abre una cotización prellenada para revisión.'});
     }
     if(response.action?.tab)add({type:'open_tab',label:response.action.label||'Abrir módulo',tab:response.action.tab,summary:'Solo cambia de pantalla; no modifica datos.'});
     if(/inventario|stock/.test(q))add({type:'open_tab',label:'Abrir inventario',tab:'inventario',summary:'Revisar existencias y movimientos.'});
-    if(/cliente|seguimiento|inactiv/.test(q)&&!client)add({type:'open_tab',label:'Abrir clientes',tab:'clientes',summary:'Revisar la cartera comercial.'});
+    if(/cliente|seguimiento|inactiv/.test(q)&&!activeClient)add({type:'open_tab',label:'Abrir clientes',tab:'clientes',summary:'Revisar la cartera comercial.'});
     if(/deuda|cobran|vencid/.test(q)&&!account)add({type:'open_tab',label:'Abrir cuentas por cobrar',tab:'por-cobrar',summary:'Revisar saldos y estados de cuenta.'});
     if(/descuento|margen|promoci/.test(q))add({type:'open_tab',label:'Abrir reglas comerciales',tab:'reglas-comerciales',summary:'Simular y revisar márgenes antes de autorizar.'});
-    return actions.slice(0,4);
+    return actions.slice(0,5);
   }
   function enrichResponse(response,question){const r=response||{};r.proposals=buildActionProposals(question,r);return r;}
   async function auditAssistantAction(action,status){
@@ -353,14 +433,62 @@
     document.getElementById('nvAiCopyDraft').onclick=async()=>{const text=document.getElementById('nvAiDraftText').value;try{await navigator.clipboard.writeText(text);window.showToast?.('Mensaje copiado.');}catch(_){document.getElementById('nvAiDraftText').select();window.showToast?.('Selecciona y copia el mensaje.');}recordAction(action,'confirmed','Mensaje preparado y copiado');await auditAssistantAction(action,'confirmed');};
     document.getElementById('nvAiOpenWhatsapp').onclick=async()=>{const text=document.getElementById('nvAiDraftText').value;const phone=normalizedPhoneForWa(client.phone||client.whatsapp||account?.phone||'');if(!phone){window.showToast?.('Este cliente no tiene un número de WhatsApp registrado.','error');document.getElementById('nvAiDraftText')?.focus();return;}recordAction(action,'confirmed','Mensaje preparado para WhatsApp');await auditAssistantAction(action,'confirmed');window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`,'_blank','noopener');};
   }
+  function actionDetailHtmlV825(action){
+    const rows=[];
+    if(action.clientName)rows.push(['Cliente',action.clientName]);
+    if(Number(action.totalDebt||0)>0)rows.push(['Deuda actual',money(action.totalDebt)]);
+    if(Number(action.amount||0)>0)rows.push(['Monto',money(action.amount)]);
+    if(Number(action.installmentAmount||0)>0)rows.push(['Cuota propuesta',money(action.installmentAmount)]);
+    if(action.frequency)rows.push(['Frecuencia',frequencyLabel(action.frequency)]);
+    if(action.startDate)rows.push(['Inicio',new Date(`${action.startDate}T12:00:00`).toLocaleDateString('es-BO')]);
+    return rows.length?`<div class="nvAiActionFactsV825">${rows.map(x=>`<span><small>${esc(x[0])}</small><b>${esc(x[1])}</b></span>`).join('')}</div>`:'';
+  }
+  function editableActionFieldsV826(action){
+    const moneyTypes=['register_payment','generate_receipt'];
+    const plan=action.type==='create_payment_plan';
+    if(!plan&&!moneyTypes.includes(action.type))return '';
+    return `<div class="nvAiActionEditorV826 hidden" id="nvAiActionEditorV826">
+      ${moneyTypes.includes(action.type)?`<div class="field"><label>Monto</label><input id="nvAiEditAmountV826" type="number" inputmode="decimal" min="0.01" step="0.01" value="${Number(action.amount||0)||''}"></div>`:''}
+      ${plan?`<div class="field-row"><div class="field"><label>Cuota</label><input id="nvAiEditInstallmentV826" type="number" inputmode="decimal" min="0.01" step="0.01" value="${Number(action.installmentAmount||0)||''}"></div><div class="field"><label>Frecuencia</label><select id="nvAiEditFrequencyV826"><option value="monthly" ${action.frequency==='monthly'?'selected':''}>Mensual</option><option value="biweekly" ${action.frequency==='biweekly'?'selected':''}>Quincenal</option><option value="weekly" ${action.frequency==='weekly'?'selected':''}>Semanal</option></select></div></div><div class="field"><label>Primera fecha</label><input id="nvAiEditStartV826" type="date" value="${esc(action.startDate||new Date().toISOString().slice(0,10))}"></div>`:''}
+      <div class="field"><label>Nota para el formulario</label><textarea id="nvAiEditNoteV826" rows="2">${esc(action.note||'')}</textarea></div>
+      <small>Los cambios se aplican únicamente al borrador. El formulario final todavía requerirá confirmación.</small>
+    </div>`;
+  }
+  function applyEditedActionV826(action){
+    const amount=document.getElementById('nvAiEditAmountV826');
+    const installment=document.getElementById('nvAiEditInstallmentV826');
+    const frequency=document.getElementById('nvAiEditFrequencyV826');
+    const start=document.getElementById('nvAiEditStartV826');
+    const note=document.getElementById('nvAiEditNoteV826');
+    if(amount){const value=Number(amount.value||0);if(!(value>0))throw new Error('Ingresa un monto válido.');action.amount=value;}
+    if(installment){const value=Number(installment.value||0);if(!(value>0))throw new Error('Ingresa una cuota válida.');action.installmentAmount=value;}
+    if(frequency)action.frequency=frequency.value;
+    if(start)action.startDate=start.value;
+    if(note)action.note=note.value.trim();
+    return action;
+  }
   function openActionReview(action){
-    if(!action||!action.type)return;if(action.type==='prepare_collection_message'||action.type==='prepare_followup_message')return openMessageReview(action);
-    closeActionSheet();document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiActionOverlay"><section class="nvAiSheet nvAiActionSheet" role="dialog" aria-modal="true"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiActionClose" type="button">×</button><div class="nvAiActionSheetHead"><div class="nvAiAvatar">${botSvg()}</div><div><h2>Revisar acción</h2><p>Nada se ejecuta hasta que confirmes.</p></div></div><div class="nvAiActionReview"><strong>${esc(action.label||'Acción propuesta')}</strong><p>${esc(action.summary||'La aplicación abrirá el flujo correspondiente para tu revisión.')}</p>${action.clientName?`<small>Cliente: ${esc(action.clientName)}</small>`:''}</div><div class="nvAiActionButtons"><button class="btn outline" id="nvAiCancelAction" type="button">Cancelar</button><button class="btn" id="nvAiConfirmAction" type="button">Confirmar</button></div></section></div>`);
-    const close=closeActionSheet;document.getElementById('nvAiActionClose').onclick=close;document.getElementById('nvAiCancelAction').onclick=close;document.getElementById('nvAiActionOverlay').onclick=e=>{if(e.target.id==='nvAiActionOverlay')close();};
-    document.getElementById('nvAiConfirmAction').onclick=async()=>{const button=document.getElementById('nvAiConfirmAction');button.disabled=true;button.textContent='Abriendo…';recordAction(action,'confirmed',action.summary||'Acción confirmada');await auditAssistantAction(action,'confirmed');close();
+    if(!action||!action.type)return;
+    if(action.type==='prepare_collection_message'||action.type==='prepare_followup_message')return openMessageReview(action);
+    action={...action};
+    closeActionSheet();
+    document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiActionOverlay"><section class="nvAiSheet nvAiActionSheet" role="dialog" aria-modal="true"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiActionClose" type="button">×</button><div class="nvAiActionSheetHead"><div class="nvAiAvatar">${botSvg()}</div><div><h2>Trabajo preparado por el asistente</h2><p>Revisa, edita, aprueba o rechaza. Nada se guarda automáticamente.</p></div></div><div class="nvAiActionReview"><strong>${esc(action.label||'Acción propuesta')}</strong><p>${esc(action.summary||'La aplicación abrirá el flujo correspondiente para tu revisión.')}</p>${actionDetailHtmlV825(action)}</div>${editableActionFieldsV826(action)}<div id="nvAiActionValidationV826" class="nv826PaymentValidation"></div><div class="nvAiActionButtons nvAiActionButtonsV826"><button class="btn outline danger" id="nvAiRejectAction" type="button">Rechazar</button><button class="btn outline" id="nvAiEditAction" type="button">Editar</button><button class="btn" id="nvAiConfirmAction" type="button">Aprobar y continuar</button></div></section></div>`);
+    const close=closeActionSheet;
+    const validation=document.getElementById('nvAiActionValidationV826');
+    document.getElementById('nvAiActionClose').onclick=close;
+    document.getElementById('nvAiActionOverlay').onclick=e=>{if(e.target.id==='nvAiActionOverlay')close();};
+    document.getElementById('nvAiRejectAction').onclick=async()=>{recordAction(action,'rejected','Acción rechazada por el administrador');await auditAssistantAction(action,'rejected');close();window.showToast?.('La propuesta fue rechazada.');};
+    document.getElementById('nvAiEditAction').onclick=()=>{const editor=document.getElementById('nvAiActionEditorV826');if(!editor)return window.showToast?.('Esta acción se edita en su formulario final.');editor.classList.toggle('hidden');document.getElementById('nvAiEditAction').textContent=editor.classList.contains('hidden')?'Editar':'Ocultar edición';};
+    document.getElementById('nvAiConfirmAction').onclick=async()=>{
+      const button=document.getElementById('nvAiConfirmAction');
+      try{applyEditedActionV826(action);}catch(err){validation.textContent=err.message||'Revisa los datos.';return;}
+      button.disabled=true;button.textContent='Preparando…';
+      recordAction(action,'confirmed',action.summary||'Acción aprobada');await auditAssistantAction(action,'confirmed');close();
       if(action.type==='open_tab')return window.navigateTo?.(action.tab||'inicio');
+      if(action.type==='seller_settlement')return window.navigateTo?.('rendicion-caja');
       if(action.type==='generate_collection_document'&&window.requestClientDocumentV820)return requestClientDocumentV820(action.clientId,'COB');
-      if(action.type==='register_payment'&&window.openPaymentFormV820)return openPaymentFormV820(action.clientId);
+      if(action.type==='create_payment_plan'&&window.openPaymentPlanFormV820)return openPaymentPlanFormV820(action.clientId,{installmentAmount:action.installmentAmount,frequency:action.frequency,startDate:action.startDate,notes:action.note||'Plan preparado por el Asistente IA',source:'ai'});
+      if((action.type==='register_payment'||action.type==='generate_receipt')&&window.openPaymentFormV820)return openPaymentFormV820(action.clientId,{amount:action.amount,note:action.note||'Pago preparado por el Asistente IA',source:'ai'});
       if(action.type==='create_quote'&&window.openQuoteForm){const client=(window.AppState?.clients||[]).find(c=>String(c.id)===String(action.clientId));if(client)return openQuoteForm({client,priceGroupId:client.priceGroupId||''});}
       window.showToast?.('La acción quedó preparada, pero el módulo no está disponible en esta sesión.','error');
     };
@@ -369,6 +497,17 @@
     const q=String(question||'').toLowerCase();
     const st=salesStats(q.includes('hoy')?1:q.includes('semana')?7:30), cs=clientStats(), ss=stockStats(), rs=receivableStats();
     const focused=focusedAccountContext();
+    const draft=resolveDraftActionV825(question,{});
+    if(draft.type==='create_payment_plan'){
+      if(draft.missingFields.length)return {title:'Completemos el plan de pagos',body:`Puedo prepararlo, pero necesito: <b>${esc(draft.missingFields.join(' y '))}</b>. Ejemplo: “Plan para Gabriela Espinoza con cuota de Bs 100 al mes”.`,suggestions:['Plan para Gabriela Espinoza con cuota de Bs 100 al mes','Abrir cuentas por cobrar'],missingFields:draft.missingFields,draftAction:draft};
+      const debt=Number(draft.account?.totalDebt||0),months=draft.installmentAmount>0?Math.ceil(debt/draft.installmentAmount):0;
+      return {title:`Plan de pagos para ${draft.clientName}`,body:`Preparé un borrador de plan <b>${frequencyLabel(draft.frequency).toLowerCase()}</b> con cuota de <b>${money(draft.installmentAmount)}</b>. ${debt>0?`La deuda actual es ${money(debt)} y requeriría aproximadamente ${months} cuota(s).`:''}`,cards:[['Deuda',money(debt)],['Cuota',money(draft.installmentAmount)],['Frecuencia',frequencyLabel(draft.frequency)],['Cuotas aprox.',months||'—']],list:['La fecha y el detalle podrán ajustarse antes de guardar.','No se registra nada hasta tu confirmación.'],draftAction:draft,suggestions:['Preparar el plan','¿Qué pasa si la cuota es mayor?']};
+    }
+    if(draft.type==='register_payment'||draft.type==='generate_receipt'){
+      if(draft.missingFields.length)return {title:'Completemos el pago',body:`Puedo preparar el registro y su recibo, pero necesito: <b>${esc(draft.missingFields.join(' y '))}</b>. Ejemplo: “Gabriela Espinoza pagó Bs 500; prepara el recibo”.`,missingFields:draft.missingFields,draftAction:draft};
+      return {title:`Pago de ${draft.clientName}`,body:`Preparé un borrador por <b>${money(draft.amount)}</b>. Al continuar se abrirá el formulario para revisar método, fecha, comprobante y aplicación a la deuda.`,cards:[['Monto',money(draft.amount)],['Cliente',draft.clientName],['Estado','Pendiente de revisión']],draftAction:draft,list:['El pago no se guarda automáticamente.','Después de confirmar, la aplicación genera el recibo correspondiente.']};
+    }
+    if(draft.type==='seller_settlement')return {title:'Rendición de caja',body:'Puedo abrir el control de efectivo del vendedor, separar cobros digitales y preparar la rendición para confirmación.',draftAction:draft};
     if(focused&&/analiza|resumen|cliente|cuenta|deuda|cobran|qué debo|que debo|prioridad/.test(q)) return {title:`Estado de cuenta de ${focused.name||'cliente'}`,body:`El cliente registra una deuda de <b>${money(focused.totalDebt||0)}</b> en ${Number(focused.pendingCount||0)} operación(es). Ha pagado ${money(focused.totalPaid||0)} de un total comprado de ${money(focused.totalBought||0)}.`,cards:[['Deuda',money(focused.totalDebt||0)],['Pagado',money(focused.totalPaid||0)],['Operaciones',Number(focused.pendingCount||0)],['Atraso',`${Number(focused.daysLate||0)} días`]],list:[focused.oldestDebtDate?`Deuda más antigua: ${new Date(Number(focused.oldestDebtDate)).toLocaleDateString('es-BO')}`:'No hay fecha de deuda antigua registrada.',focused.lastPaymentDate?`Último pago: ${new Date(Number(focused.lastPaymentDate)).toLocaleDateString('es-BO')}`:'No existe un pago posterior registrado.','Revisa el detalle antes de contactar al cliente y conserva cada operación por separado.'],suggestions:['Prepara un mensaje de cobro','Genera el recibo consolidado','¿Qué riesgo tiene esta cuenta?']};
     if (/resumen|panorama|cómo va|como va/.test(q)) return {title:'Resumen ejecutivo',body:`En el periodo analizado hay <b>${st.rows.length} ventas</b> por ${money(st.revenue)}, utilidad estimada de ${money(st.profit)} y margen de ${st.margin.toFixed(1)}%.`,cards:[['Ventas',st.rows.length],['Ingresos',money(st.revenue)],['Por cobrar',money(rs.total)],['Alertas',recommendations().length]],list:recommendations().slice(0,4).map(x=>`${x.title}: ${x.detail}`),suggestions:['¿Qué debo atender primero?','¿Qué clientes requieren seguimiento?','¿Tengo stock crítico?']};
     if (/venta|vendimos|factur/.test(q)) return {title:'Análisis de ventas',body:`Se registraron <b>${st.rows.length} operaciones</b> por ${money(st.revenue)}. La utilidad estimada es ${money(st.profit)} y el margen promedio ${st.margin.toFixed(1)}%.`,cards:[['Operaciones',st.rows.length],['Ingresos',money(st.revenue)],['Utilidad',money(st.profit)],['Margen',st.margin.toFixed(1)+'%']],suggestions:['Comparar productos','¿Qué producto deja más utilidad?','¿Cómo está mi margen?']};
@@ -448,13 +587,13 @@
     saveArchivesV824(archives); return archives[archives.length-1]||null;
   }
   function startNewConversationV824(){
-    archiveCurrentConversationV824(); clearConversation(); pendingQuestion=''; pendingRequestId=''; renderConversation(false); setDashboardCollapsedV824(false);
+    archiveCurrentConversationV824(); clearConversation(); pendingQuestion=''; pendingRequestId=''; renderConversation(false); renderThreadPanelV825(); setDashboardCollapsedV824(false);
   }
   function restoreArchiveV824(id){
     const archive=readArchivesV824().find(x=>x.id===id); if(!archive) return;
-    archiveCurrentConversationV824(); writeConversation(archive.entries||[]); document.getElementById('nvAiHistoryOverlay')?.remove(); renderConversation(false); setTimeout(()=>scrollLatestV824(true),60);
+    archiveCurrentConversationV824(); writeConversation(archive.entries||[]); document.getElementById('nvAiHistoryOverlay')?.remove(); renderConversation(false); renderThreadPanelV825(); setTimeout(()=>scrollLatestV824(true),60);
   }
-  function deleteArchiveV824(id){ saveArchivesV824(readArchivesV824().filter(x=>x.id!==id)); showConversationHistoryV824(); }
+  function deleteArchiveV824(id){ saveArchivesV824(readArchivesV824().filter(x=>x.id!==id)); renderThreadPanelV825(); showConversationHistoryV824(); }
   function dashboardCollapsedV824(){
     try{const raw=localStorage.getItem(dashboardKey());if(raw!==null)return raw==='1';}catch(_){}
     return readConversation().length>=4;
@@ -477,10 +616,52 @@
     document.getElementById('nvAiNewFromHistoryV824').onclick=()=>{startNewConversationV824();document.getElementById('nvAiHistoryOverlay')?.remove();};
   }
 
+  function renderThreadPanelV825(){
+    const panel=document.getElementById('nvAiThreadPanelV825');if(!panel)return;
+    const current=readConversation(),archives=readArchivesV824().slice().reverse();
+    panel.innerHTML=`<div class="nvAiThreadsHeadV825"><strong>Conversaciones</strong><button type="button" id="nvAiThreadNewV825">＋</button></div><button type="button" class="nvAiThreadCurrentV825 active"><span>${esc(conversationTitleV824(current)||assistantContext.label||'Conversación actual')}</span><small>${current.length} mensaje(s) · actual</small></button><div class="nvAiThreadArchiveV825">${archives.length?archives.map(a=>`<article><button type="button" data-thread-open="${esc(a.id)}"><span>${esc(a.title)}</span><small>${new Date(a.updatedAt||Date.now()).toLocaleDateString('es-BO')} · ${(a.entries||[]).length}</small></button><button class="delete" type="button" data-thread-delete="${esc(a.id)}" aria-label="Borrar conversación">×</button></article>`).join(''):'<p>Los chats anteriores aparecerán aquí.</p>'}</div><button type="button" class="nvAiThreadAllV825" id="nvAiThreadAllV825">Administrar historial</button>`;
+    panel.querySelector('#nvAiThreadNewV825').onclick=()=>{if(!window.confirm||window.confirm('¿Iniciar una conversación nueva?')){startNewConversationV824();panel.classList.remove('open');}};
+    panel.querySelector('#nvAiThreadAllV825').onclick=showConversationHistoryV824;
+    panel.querySelectorAll('[data-thread-open]').forEach(b=>b.onclick=()=>{restoreArchiveV824(b.dataset.threadOpen);panel.classList.remove('open');});
+    panel.querySelectorAll('[data-thread-delete]').forEach(b=>b.onclick=e=>{e.stopPropagation();if(!window.confirm||window.confirm('¿Borrar esta conversación?')){saveArchivesV824(readArchivesV824().filter(x=>x.id!==b.dataset.threadDelete));renderThreadPanelV825();}});
+  }
+  function toggleThreadsV825(force){const panel=document.getElementById('nvAiThreadPanelV825');if(!panel)return;panel.classList.toggle('open',typeof force==='boolean'?force:!panel.classList.contains('open'));}
+
+  function plainTextV826(value){
+    const el=document.createElement('div');el.innerHTML=String(value||'');return String(el.textContent||el.innerText||'').replace(/\s+/g,' ').trim();
+  }
+  function responseSpeechTextV826(r){
+    const parts=[r?.title,plainTextV826(r?.body)];
+    (r?.cards||[]).forEach(row=>parts.push(`${row[0]}: ${row[1]}`));
+    (r?.list||[]).forEach(item=>parts.push(item));
+    return parts.filter(Boolean).join('. ').slice(0,6000);
+  }
+  function resetSpeechButtonsV826(){
+    document.querySelectorAll('[data-ai-speak]').forEach(button=>{button.classList.remove('speaking');button.textContent='🔊 Escuchar';});
+    activeSpeechButtonV826=null;activeSpeechV826=null;
+  }
+  function stopSpeechV826(){
+    try{window.speechSynthesis?.cancel();}catch(_){}
+    resetSpeechButtonsV826();
+  }
+  function speakTextV826(text,button){
+    if(!('speechSynthesis' in window)||typeof SpeechSynthesisUtterance==='undefined'){window.showToast?.('La lectura en voz alta no está disponible en este dispositivo.','error');return;}
+    if(button?.classList.contains('speaking')){stopSpeechV826();return;}
+    stopSpeechV826();
+    const utterance=new SpeechSynthesisUtterance(String(text||''));
+    utterance.lang='es-BO';utterance.rate=.96;utterance.pitch=1;utterance.volume=1;
+    const voices=window.speechSynthesis.getVoices?.()||[];
+    utterance.voice=voices.find(v=>/^es(-|_)/i.test(v.lang)&&/boliv|latino|español/i.test(v.name))||voices.find(v=>/^es(-|_)/i.test(v.lang))||null;
+    utterance.onend=resetSpeechButtonsV826;utterance.onerror=resetSpeechButtonsV826;
+    activeSpeechV826=utterance;activeSpeechButtonV826=button;
+    if(button){button.classList.add('speaking');button.textContent='■ Detener';}
+    window.speechSynthesis.speak(utterance);
+  }
+
   function renderResponse(r,entry={}){
     const source=r.engine==='external'?`<span class="nvAiAnswerSource external">IA · ${esc(r.model||'Gemini')}</span>`:r.engine==='local-fallback'?'<span class="nvAiAnswerSource fallback">Respaldo local</span>':'<span class="nvAiAnswerSource local">Cálculo local</span>';
     const confidence=r.confidence?`<span class="nvAiConfidence">Confianza ${esc(r.confidence)}</span>`:'';
-    return `<article class="nvAiMessage assistant" data-request-id="${esc(entry.requestId||'')}"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><div class="nvAiAnswerHead"><strong>${esc(r.title)}</strong><span>${source}${confidence}</span></div><p>${r.body||''}</p>${r.cards?`<div class="nvAiMetrics">${r.cards.map(x=>`<div><small>${esc(x[0])}</small><b>${esc(x[1])}</b></div>`).join('')}</div>`:''}${r.table?`<div class="nvAiTable"><div class="head"><span>Producto</span><span>Unid.</span><span>Utilidad</span><span>Margen</span></div>${r.table.map(row=>`<div>${row.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`).join('')}</div>`:''}${r.list?.length?`<ul>${r.list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.diagnostic?`<div class="nvAiDiagnosticV824"><strong>Diagnóstico del motor</strong><br>${esc(r.diagnostic)}</div>`:''}${r.proposals?.length?`<div class="nvAiActionPanel"><span>Acciones con confirmación</span><div class="nvAiActionGrid">${r.proposals.map(a=>`<button type="button" data-ai-action="${esc(encodeURIComponent(JSON.stringify(a)))}"><b>${esc(a.label)}</b><small>${esc(a.summary||'Revisar antes de continuar')}</small></button>`).join('')}</div></div>`:''}${r.action&&!r.proposals?.some(a=>a.type==='open_tab'&&a.tab===r.action.tab)?`<button class="nvAiInlineAction" type="button" data-ai-tab="${esc(r.action.tab)}">${esc(r.action.label)}</button>`:''}${r.suggestions?.length?`<div class="nvAiSuggestions">${r.suggestions.map(x=>`<button type="button" data-ai-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}</div></article>`;
+    return `<article class="nvAiMessage assistant" data-request-id="${esc(entry.requestId||'')}"><div class="nvAiBotMini">${botSvg('mini')}</div><div class="nvAiBubble"><div class="nvAiAnswerHead"><strong>${esc(r.title)}</strong><span>${source}${confidence}</span></div><p>${r.body||''}</p>${r.cards?`<div class="nvAiMetrics">${r.cards.map(x=>`<div><small>${esc(x[0])}</small><b>${esc(x[1])}</b></div>`).join('')}</div>`:''}${r.table?`<div class="nvAiTable"><div class="head"><span>Producto</span><span>Unid.</span><span>Utilidad</span><span>Margen</span></div>${r.table.map(row=>`<div>${row.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`).join('')}</div>`:''}${r.list?.length?`<ul>${r.list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.diagnostic?`<div class="nvAiDiagnosticV824"><strong>Diagnóstico del motor</strong><br>${esc(r.diagnostic)}</div>`:''}${r.proposals?.length?`<div class="nvAiActionPanel"><span>Acciones con confirmación</span><div class="nvAiActionGrid">${r.proposals.map(a=>`<button type="button" data-ai-action="${esc(encodeURIComponent(JSON.stringify(a)))}"><b>${esc(a.label)}</b><small>${esc(a.summary||'Revisar antes de continuar')}</small></button>`).join('')}</div></div>`:''}${r.action&&!r.proposals?.some(a=>a.type==='open_tab'&&a.tab===r.action.tab)?`<button class="nvAiInlineAction" type="button" data-ai-tab="${esc(r.action.tab)}">${esc(r.action.label)}</button>`:''}${r.suggestions?.length?`<div class="nvAiSuggestions">${r.suggestions.map(x=>`<button type="button" data-ai-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}<div class="nvAiSpeechToolsV826"><button type="button" data-ai-speak="${esc(encodeURIComponent(responseSpeechTextV826(r)))}">🔊 Escuchar</button><small>Lectura local del dispositivo · sin micrófono</small></div></div></article>`;
   }
   function renderEntry(entry){
     if(entry.role==='user') return `<article class="nvAiMessage user" data-ai-entry="${esc(entry.id)}" data-request-id="${esc(entry.requestId||'')}"><div class="nvAiBubble">${esc(entry.text)}</div></article>`;
@@ -497,6 +678,7 @@
     root.querySelectorAll?.('[data-ai-tab]').forEach(b=>{ b.onclick=()=>window.navigateTo(b.dataset.aiTab); });
     root.querySelectorAll?.('[data-ai-q]').forEach(b=>{ b.onclick=()=>ask(b.dataset.aiQ); });
     root.querySelectorAll?.('[data-ai-action]').forEach(b=>{ b.onclick=()=>{try{openActionReview(JSON.parse(decodeURIComponent(b.dataset.aiAction)));}catch(_){window.showToast?.('No se pudo abrir la acción propuesta.','error');}}; });
+    root.querySelectorAll?.('[data-ai-speak]').forEach(b=>{b.onclick=()=>{try{speakTextV826(decodeURIComponent(b.dataset.aiSpeak||''),b);}catch(_){window.showToast?.('No se pudo iniciar la lectura.','error');}};});
   }
   function scrollLatestV824(force=false){
     const feed=document.getElementById('nvAiFeed'); if(!feed) return;
@@ -552,6 +734,7 @@
       }
       response=enrichResponse(response,q);
       addEntry({role:'assistant',response,requestId,at:Date.now()});
+      renderThreadPanelV825();
     }catch(error){
       addEntry({role:'assistant',requestId,response:{title:'No pude completar el análisis',body:'Ocurrió un problema al leer los datos actuales. Puedes volver a intentarlo sin perder la conversación.',diagnostic:clampText(error.message||'',180),engine:'local'},at:Date.now()});
     }finally{
@@ -579,14 +762,22 @@
   function buildAssistantPage(){
     const {st,cs,ss}=statsSnapshot();
     const main=document.getElementById('mainArea');
-    main.innerHTML=`<section class="nvAiPage">
-      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>ORGANIZADO</span></h1><p>Exclusivo del administrador central</p></div><div class="nvAiHeadActionsV824"><button id="nvAiNewV824" type="button">＋ Nueva</button><button id="nvAiHistoryV824" type="button">Historial</button></div></header><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Acciones <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='confirmed').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
-      <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Resumen empresarial sin teléfonos, direcciones ni correos · conversación guardada en este dispositivo</small></div>
-      <section class="nvAiDashboardV824 ${dashboardCollapsedV824()?'collapsed':''}" id="nvAiDashboardV824"><button type="button" class="nvAiDashboardToggleV824" id="nvAiDashboardToggleV824"><span>Panel gerencial <small id="nvAiDashboardStateV824">${dashboardCollapsedV824()?'Mostrar':'Ocultar'}</small></span><b id="nvAiDashboardArrowV824">${dashboardCollapsedV824()?'⌄':'⌃'}</b></button><div class="nvAiDashboardBodyV824"><div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div><section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div></div></section><div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div><button type="button" class="nvAiJumpLatestV824" id="nvAiJumpLatestV824" aria-label="Ir al mensaje más reciente">↓</button>
-      <div class="nvAiComposer"><textarea id="nvAiInput" rows="1" placeholder="Escribe tu consulta…" aria-label="Consulta para el asistente" data-nv-no-dirty="true"></textarea><button id="nvAiSend" type="button" aria-label="Enviar">➤</button></div>
-      <p class="nvAiDisclaimer">Motor híbrido: cálculos verificables + interpretación IA cuando esté conectada. Ninguna acción se ejecuta sin confirmación.</p>
+    main.innerHTML=`<section class="nvAiPage nvAiPageV825">
+      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Asistente IA <span>EJECUTIVO</span></h1><p>Exclusivo del administrador central</p></div><div class="nvAiHeadActionsV824"><button id="nvAiThreadsToggleV825" type="button">Chats</button><button id="nvAiNewV824" type="button">＋ Nueva</button><button id="nvAiHistoryV824" type="button">Historial</button></div></header>
+      <div class="nvAiWorkspaceV825">
+        <aside class="nvAiThreadPanelV825" id="nvAiThreadPanelV825" aria-label="Conversaciones del asistente"></aside>
+        <main class="nvAiChatColumnV825">
+          <div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Acciones <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='confirmed').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
+          <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Datos empresariales autorizados · ninguna operación se ejecuta sin revisión</small></div>
+          <section class="nvAiDashboardV824 ${dashboardCollapsedV824()?'collapsed':''}" id="nvAiDashboardV824"><button type="button" class="nvAiDashboardToggleV824" id="nvAiDashboardToggleV824"><span>Panel gerencial <small id="nvAiDashboardStateV824">${dashboardCollapsedV824()?'Mostrar':'Ocultar'}</small></span><b id="nvAiDashboardArrowV824">${dashboardCollapsedV824()?'⌄':'⌃'}</b></button><div class="nvAiDashboardBodyV824"><div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div><section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div></div></section>
+          <div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div><button type="button" class="nvAiJumpLatestV824" id="nvAiJumpLatestV824" aria-label="Ir al mensaje más reciente">↓</button>
+          <div class="nvAiComposer"><textarea id="nvAiInput" rows="1" placeholder="Escribe tu consulta…" aria-label="Consulta para el asistente" data-nv-no-dirty="true"></textarea><button id="nvAiSend" type="button" aria-label="Enviar">➤</button></div>
+          <p class="nvAiDisclaimer">Motor híbrido: cálculos verificables + análisis externo. El asistente prepara acciones; tú confirmas.</p>
+        </main>
+      </div>
     </section>`;
     document.getElementById('nvAiBack').onclick=()=>window.navigateTo(lastNonAiTab||'inicio');
+    document.getElementById('nvAiThreadsToggleV825').onclick=()=>toggleThreadsV825();
     document.getElementById('nvAiNewV824').onclick=()=>{ if(!window.confirm||window.confirm('¿Iniciar una conversación nueva? La actual quedará guardada en Historial.')) startNewConversationV824(); };
     document.getElementById('nvAiHistoryV824').onclick=showConversationHistoryV824;
     document.getElementById('nvAiDashboardToggleV824').onclick=()=>setDashboardCollapsedV824(!document.getElementById('nvAiDashboardV824').classList.contains('collapsed'));
@@ -601,6 +792,7 @@
     aiInput.addEventListener('input',()=>saveComposerDraft(aiInput.value));
     aiInput.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(); } });
     window.removeEventListener('scroll',updateJumpV824); window.addEventListener('scroll',updateJumpV824,{passive:true});
+    renderThreadPanelV825();
     renderRecommendations();
     renderConversation(false);
     updateEngineUI();
@@ -640,19 +832,41 @@
     document.querySelectorAll('[data-sheet-q]').forEach(b=>{ b.onclick=()=>openFull(b.dataset.sheetQ); });
   }
 
+  function rectOverlapArea(a,b){const w=Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left));const h=Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));return w*h;}
+  function positionFabSmartV825(){
+    const fab=document.getElementById('nvAiFab');if(!fab)return;
+    clearTimeout(fabPositionTimer);fabPositionTimer=setTimeout(()=>{
+      if(!document.body.contains(fab))return;
+      const size=56,side=14,baseBottom=94+(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom'))||0);
+      const candidates=[
+        {name:'right',left:innerWidth-side-size,top:innerHeight-baseBottom-size},
+        {name:'left',left:side,top:innerHeight-baseBottom-size},
+        {name:'right-raised',left:innerWidth-side-size,top:innerHeight-baseBottom-size-78},
+        {name:'left-raised',left:side,top:innerHeight-baseBottom-size-78}
+      ];
+      const controls=[...document.querySelectorAll('button:not(#nvAiFab),a[href],input,select,textarea,[role="button"],.btn')].filter(el=>{
+        if(el.closest('.bottomNav,.v7BottomNav,.nvAiOverlay,.nvAiFab')||el.disabled)return false;
+        const r=el.getBoundingClientRect(),cs=getComputedStyle(el);return cs.visibility!=='hidden'&&cs.display!=='none'&&r.width>20&&r.height>20&&r.bottom>0&&r.top<innerHeight;
+      }).map(el=>el.getBoundingClientRect());
+      let best=candidates[0],bestScore=Infinity;
+      candidates.forEach(c=>{const r={left:c.left-8,right:c.left+size+8,top:c.top-8,bottom:c.top+size+8};let score=0;controls.forEach(x=>score+=rectOverlapArea(r,x));if(c.top<70)score+=10000;if(score<bestScore){bestScore=score;best=c;}});
+      fab.dataset.anchor=best.name;fab.classList.toggle('left',best.name.startsWith('left'));fab.classList.toggle('raised',best.name.includes('raised'));
+    },70);
+  }
   function ensureFab(){
     let fab=document.getElementById('nvAiFab');
     const tab=String(window.AppState?.currentTab||'');
-    const blocked=!adminAllowed() || ['asistente-ia','estado-cuenta'].includes(tab) || document.querySelector('.loginShell') || document.querySelector('.nvAiOverlay');
+    const blocked=!adminAllowed() || tab==='asistente-ia' || document.querySelector('.loginShell') || document.querySelector('.nvAiOverlay');
     if(blocked){ fab?.remove(); return; }
     if(!fab){
       fab=document.createElement('button');
       fab.id='nvAiFab'; fab.className='nvAiFab'; fab.type='button';
-      fab.innerHTML=`${botSvg('fab')}<b>IA</b>`;
+      fab.innerHTML=`<span class="nvAiFabFace">${botSvg('fab')}</span><b>IA</b>`;
       fab.setAttribute('aria-label','Abrir Asistente IA');
       fab.onclick=openSheet;
       document.body.appendChild(fab);
     }
+    positionFabSmartV825();
   }
 
   function openForContext(context={},question=''){
@@ -660,7 +874,8 @@
   }
 
   function install(){
-    if(window.__NV_AI_V824_INSTALLED) return;
+    if(window.__NV_AI_V825_INSTALLED) return;
+    window.__NV_AI_V825_INSTALLED=true;
     window.__NV_AI_V824_INSTALLED=true;
     oldNavigate=window.navigateTo;
     oldRender=window.render;
@@ -677,7 +892,7 @@
         ensureFab();
         return;
       }
-      if(String(window.AppState?.currentTab)==='asistente-ia') lastNonAiTab=tab||'inicio';
+      if(String(window.AppState?.currentTab)==='asistente-ia'){ lastNonAiTab=tab||'inicio'; stopSpeechV826(); }
       return oldNavigate(tab);
     };
     window.render=function(){
@@ -687,16 +902,24 @@
     };
     const main=document.getElementById('mainArea');
     if(main){
-      const observer=new MutationObserver(()=>setTimeout(ensureFab,0));
-      observer.observe(main,{childList:true,subtree:false});
+      const observer=new MutationObserver(()=>setTimeout(()=>{ensureFab();positionFabSmartV825();},0));
+      observer.observe(main,{childList:true,subtree:true});
     }
+    window.addEventListener('resize',positionFabSmartV825,{passive:true});
+    window.addEventListener('scroll',positionFabSmartV825,{passive:true});
+    document.addEventListener('focusin',positionFabSmartV825);
+    document.addEventListener('focusout',positionFabSmartV825);
     setTimeout(ensureFab,250);
     setTimeout(()=>checkEngine(false).catch(()=>{}),700);
+    window.renderAIAssistantV826=renderAssistant;
+    window.renderAIAssistantV825=renderAssistant;
     window.renderAIAssistantV824=renderAssistant;
     window.renderAIAssistantV822=renderAssistant;
     window.renderAIAssistantV821=renderAssistant;
     window.renderAIAssistantV812=renderAssistant;
     window.renderAIAssistantV810=renderAssistant;
+    window.openAIAssistantSheetV826=openSheet;
+    window.openAIAssistantSheetV825=openSheet;
     window.openAIAssistantSheetV824=openSheet;
     window.openAIAssistantSheetV822=openSheet;
     window.openAIAssistantSheetV821=openSheet;
@@ -704,10 +927,12 @@
     window.openAIAssistantSheetV810=openSheet;
   }
 
-  window.__nvAiV824={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,get engineState(){return {...engineState};}};
-  window.__nvAiV822=window.__nvAiV824;
-  window.__nvAiV821=window.__nvAiV824;
-  window.__nvAiV812=window.__nvAiV824;
+  window.__nvAiV826={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,get engineState(){return {...engineState};}};
+  window.__nvAiV825=window.__nvAiV826;
+  window.__nvAiV824=window.__nvAiV826;
+  window.__nvAiV822=window.__nvAiV826;
+  window.__nvAiV821=window.__nvAiV826;
+  window.__nvAiV812=window.__nvAiV826;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0));
   else setTimeout(install,0);
 })();
