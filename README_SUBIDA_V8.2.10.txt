@@ -1,0 +1,1 @@
+Subir todo el contenido del paquete al repositorio y esperar el despliegue de GitHub Pages.

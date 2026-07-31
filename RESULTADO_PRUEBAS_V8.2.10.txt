@@ -1,0 +1,1 @@
+Sintaxis JavaScript verificada. Recibo clásico sin QR. Conteo de archivos dentro del límite.

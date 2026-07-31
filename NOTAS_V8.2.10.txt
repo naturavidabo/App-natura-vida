@@ -1,0 +1,1 @@
+V8.2.10: recibo clásico restaurado sin QR. No se alteró la lógica de ventas.
