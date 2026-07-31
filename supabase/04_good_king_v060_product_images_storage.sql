@@ -1,3 +1,0 @@
--- Aplicada al proyecto GOOD KING el 26/07/2026.
--- Crea el bucket product-images y políticas RLS para admin/owner.
--- Se incluye como respaldo versionado; no es necesario volver a ejecutarla.
