@@ -1,11 +1,11 @@
-/* Natura Vida V8.2.6 — Asistente secretario supervisado y lectura de respuestas en altavoz.
+/* Natura Vida V8.2.7 — Asistente secretario operativo, trabajos supervisados y robot estable.
    Acceso exclusivo para administrador central. Los cálculos críticos continúan
    siendo locales; Gemini interpreta un resumen empresarial limitado a través
    de una Supabase Edge Function y nunca recibe claves desde el navegador. */
 (function(){
   'use strict';
 
-  const VERSION='8.2.6';
+  const VERSION='8.2.7';
   const MAX_ENTRIES=40;
   const MAX_ARCHIVES=12;
   const MAX_ACTION_HISTORY=40;
@@ -61,16 +61,15 @@
     ]);
   }
   function botSvg(extraClass=''){
-    return `<svg class="nvAiBotSvg ${extraClass}" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-      <defs><linearGradient id="nvAiBotGlow" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dff8e9"/><stop offset="1" stop-color="#aee7c9"/></linearGradient><linearGradient id="nvAiBotScreen" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#064e34"/><stop offset="1" stop-color="#0b8555"/></linearGradient></defs>
-      <circle cx="32" cy="32" r="30" fill="url(#nvAiBotGlow)"/>
-      <path d="M32 10v7" stroke="#0a754b" stroke-width="3.5" stroke-linecap="round"/><circle cx="32" cy="8" r="3.5" fill="#d4ae45"/>
-      <rect x="13" y="18" width="38" height="31" rx="13" fill="#fff" stroke="#0a754b" stroke-width="2.5"/>
-      <rect x="18" y="24" width="28" height="17" rx="8.5" fill="url(#nvAiBotScreen)"/>
-      <circle cx="26" cy="32" r="2.8" fill="#dfff76"/><circle cx="38" cy="32" r="2.8" fill="#dfff76"/>
-      <path d="M27 37c3 2 7 2 10 0" fill="none" stroke="#bdf46b" stroke-width="2" stroke-linecap="round"/>
-      <path d="M13 28H9v10h4M51 28h4v10h-4" fill="#d4ae45" stroke="#0a754b" stroke-width="2" stroke-linejoin="round"/>
-      <path d="M23 50h18" stroke="#0a754b" stroke-width="3" stroke-linecap="round"/>
+    const suffix=extraClass?` ${extraClass}`:'';
+    return `<svg class="nvAiBotSvg${suffix}" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <circle class="nvAiBotHalo" cx="32" cy="32" r="29"/><circle class="nvAiBotHaloInner" cx="32" cy="32" r="24"/>
+      <path class="nvAiBotAntenna" d="M32 8v8"/><circle class="nvAiBotAntennaTip" cx="32" cy="7" r="3.4"/>
+      <path class="nvAiBotEar" d="M14 27H9v11h5M50 27h5v11h-5"/>
+      <rect class="nvAiBotHead" x="13" y="17" width="38" height="33" rx="13"/><rect class="nvAiBotScreen" x="18" y="23" width="28" height="18" rx="9"/>
+      <circle class="nvAiBotEye leftEye" cx="26" cy="32" r="2.7"/><circle class="nvAiBotEye rightEye" cx="38" cy="32" r="2.7"/>
+      <path class="nvAiBotSmile" d="M27 37c3.2 2.1 6.8 2.1 10 0"/><path class="nvAiBotBase" d="M23 51h18"/>
+      <path class="nvAiBotSpark" d="M50 12l1.5 3.5L55 17l-3.5 1.5L50 22l-1.5-3.5L45 17l3.5-1.5z"/>
     </svg>`;
   }
 
@@ -183,16 +182,22 @@
     const amount=Number(supplied?.amount||supplied?.installment_amount||extractMoneyAmount(question))||0;
     let type=String(supplied?.type||'');
     if(!type||type==='none'){
-      if(/plan.{0,12}(pago|cuota)|cuota.{0,12}(mes|mensual|seman|quincen)/.test(q))type='create_payment_plan';
+      if(/plan.{0,16}(pago|cuota)|cuota.{0,14}(mes|mensual|seman|quincen)/.test(q))type='create_payment_plan';
+      else if(/rendir|rendicion|rendición|entregar efectivo|caja de vendedor/.test(q))type='seller_settlement';
+      else if(/cotiza|cotizacion|cotización|presupuesto|oferta/.test(q))type='create_quote';
+      else if(/(venta|vende|vender|recibo).{0,45}(aceite|producto|frasco|unidad)|(?:elabora|prepara|genera).{0,25}(venta|recibo).{0,40}(aceite|producto|frasco)/.test(q))type='prepare_sale';
       else if(/(registro|registra|registrar|pago|pago de).{0,30}(recibo|deuda|cuenta)|ha pagado|pago parcial/.test(q))type='register_payment';
       else if(/(haz|genera|generar|prepara).{0,20}recibo/.test(q))type='generate_receipt';
-      else if(/rendir|rendicion|entregar efectivo|caja de vendedor/.test(q))type='seller_settlement';
       else type='none';
     }
+    const suppliedItems=Array.isArray(supplied?.items)?supplied.items:[];
+    const detectedProduct=productByQuestion(`${question} ${suppliedItems.map(x=>x?.product_query||'').join(' ')}`);
+    const items=suppliedItems.length?suppliedItems.map(it=>{const p=productByQuestion(it?.product_query||question);return {productId:p?.id||'',productName:p?.name||it?.product_query||'Producto',quantity:Math.max(1,Math.min(999,Number(it?.quantity)||1)),stock:Number(p?.stock||0),unitPrice:productPriceV827(p),unitCost:productCostV827(p)};}):(detectedProduct?[{productId:detectedProduct.id,productName:detectedProduct.name,quantity:extractQuantityV827(question),stock:Number(detectedProduct.stock||0),unitPrice:productPriceV827(detectedProduct),unitCost:productCostV827(detectedProduct)}]:[]);
     const missing=[];
     if(['create_payment_plan','register_payment','generate_receipt'].includes(type)&&!client?.id)missing.push('cliente');
     if(['create_payment_plan','register_payment','generate_receipt'].includes(type)&&!amount)missing.push(type==='create_payment_plan'?'monto de la cuota':'monto pagado');
-    return {type,clientId:client?.id||'',clientName:clientDisplayName(client),amount,installmentAmount:Number(supplied?.installment_amount)||amount,frequency:supplied?.frequency||extractFrequency(question),startDate:supplied?.start_date||new Date().toISOString().slice(0,10),note:clampText(supplied?.note||question,240),missingFields:[...new Set([...(Array.isArray(response?.missingFields)?response.missingFields:[]),...missing])],account:client?clientDebtInfo(client):account};
+    if(['prepare_sale','create_quote'].includes(type)&&!items.length)missing.push('producto');
+    return {type,clientId:client?.id||'',clientName:clientDisplayName(client),amount,installmentAmount:Number(supplied?.installment_amount)||amount,frequency:supplied?.frequency||extractFrequency(question),startDate:supplied?.start_date||new Date().toISOString().slice(0,10),note:clampText(supplied?.note||question,240),paymentMethod:supplied?.payment_method||paymentMethodFromTextV827(question),saleType:supplied?.sale_type||'',items,missingFields:[...new Set([...(Array.isArray(response?.missingFields)?response.missingFields:[]),...missing])],account:client?clientDebtInfo(client):account};
   }
   function dateMs(v){ const n=Number(new Date(v||0)); return Number.isFinite(n)?n:0; }
   function daysSince(v){ const n=dateMs(v); return n?Math.max(0,Math.floor((Date.now()-n)/86400000)):9999; }
@@ -208,10 +213,38 @@
     });
     return {open,total:open.reduce((a,x)=>a+x.balance,0),overdue:open.filter(x=>dateMs(x.dueDate||x.originalDate||x.date)<Date.now()),historical:open.filter(x=>x.historical)};
   }
+  function productPriceV827(product){
+    if(!product)return 0;
+    try{const calculated=window.unitPrice?Number(unitPrice(product)):0;if(calculated>0)return calculated;}catch(_){}
+    return Number(product.price??product.unitPrice??product.retailPrice??product.publicPrice??product.marketPrice??0)||0;
+  }
+  function productCostV827(product){
+    if(!product)return 0;
+    try{const calculated=window.grossCost?Number(grossCost(product)):0;if(calculated>0)return calculated;}catch(_){}
+    return Number(product.cost??product.unitCost??product.baseCost??product.realCost??0)||0;
+  }
   function productByQuestion(q){
     const products=dataset().products||[]; const nq=normalizedName(q);
-    return products.map(p=>({p,score:normalizedName(p.name).split(/\s+/).filter(w=>w.length>2&&nq.includes(w)).length})).sort((a,b)=>b.score-a.score)[0]?.score?products.map(p=>({p,score:normalizedName(p.name).split(/\s+/).filter(w=>w.length>2&&nq.includes(w)).length})).sort((a,b)=>b.score-a.score)[0].p:null;
+    const tokens=nq.split(/\s+/).filter(w=>w.length>1&&!['aceite','coco','frasco','unidad','unidades','venta','recibo','cotizacion','cotización','elabora','prepara'].includes(w));
+    const size=(nq.match(/\b(60|100|115|125|200|500)\s*ml\b/)||[])[1]||'';
+    const material=/\bpet\b/.test(nq)?'pet':/vidrio/.test(nq)?'vidrio':'';
+    const rows=products.map(p=>{const hay=normalizedName([p.name,p.presentation,p.packageType,p.category].filter(Boolean).join(' '));let score=0;tokens.forEach(w=>{if(hay.includes(w))score+=w.length>=3?3:1;});if(size&&hay.includes(size))score+=8;if(material&&hay.includes(material))score+=6;if(/aceite/.test(nq)&&/aceite/.test(hay))score+=3;if(/coco/.test(nq)&&/coco/.test(hay))score+=3;return {p,score};}).sort((a,b)=>b.score-a.score);
+    return rows[0]?.score>=5?rows[0].p:null;
   }
+  function wordNumberV827(word){const map={un:1,uno:1,una:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,quince:15,veinte:20,treinta:30};return map[normalizedName(word)]||0;}
+  function extractQuantityV827(query){
+    const q=normalizedName(query);
+    const explicit=q.match(/\b(\d{1,3})\s*(?:unidades?|frascos?|aceites?|productos?)\b/)||q.match(/(?:cantidad|cant\.?|x)\s*(\d{1,3})\b/);
+    if(explicit){const n=Number(explicit[1]);if(n>0&&n<=999)return n;}
+    const words=q.split(/\s+/);
+    for(let i=0;i<words.length;i++){const n=wordNumberV827(words[i]);if(n&&/(?:unidades?|frascos?|aceites?|productos?)/.test(words[i+1]||''))return n;}
+    for(const word of words){const n=wordNumberV827(word);if(n)return n;}
+    const bare=q.match(/\b(\d{1,3})\b(?!\s*ml)/);
+    if(bare){const n=Number(bare[1]);if(n>0&&n<=999&&!['60','100','115','125','200','500'].includes(bare[1]))return n;}
+    return 1;
+  }
+  function paymentMethodFromTextV827(query){const q=normalizedName(query);if(/\bqr\b|transferencia|deposito|depósito/.test(q))return'qr';if(/credito|crédito|a cuenta|por cobrar/.test(q))return'credit';if(/efectivo|contado/.test(q))return'cash';return'';}
+
   function promotionCandidates(){
     const st=salesStats(30), products=dataset().products||[];
     const sold=new Map(st.byProduct.map(x=>[normalizedName(x.name),x.qty]));
@@ -253,7 +286,7 @@
     const clients=clientCommercialRows();
     const productRows=month.byProduct.slice(0,12).map(x=>({name:clampText(x.name,90),units:Number(x.qty||0),revenue:Number(x.revenue.toFixed(2)),profit:Number((x.revenue-x.cost).toFixed(2)),margin:Number((x.revenue?((x.revenue-x.cost)/x.revenue*100):0).toFixed(1))}));
     const productMap=new Map((dataset().products||[]).map(p=>[normalizedName(p.name),p]));
-    productRows.forEach(x=>{ const p=productMap.get(normalizedName(x.name))||{}; x.stock=Number(p.stock||0); x.price=Number(p.price??p.retailPrice??0)||0; x.cost=Number(p.cost??p.baseCost??0)||0; });
+    productRows.forEach(x=>{ const p=productMap.get(normalizedName(x.name))||{}; x.stock=Number(p.stock||0); x.price=productPriceV827(p); x.cost=productCostV827(p); });
     const topClients=clients.sort((a,b)=>(b.balance-a.balance)||(b.revenue-a.revenue)).slice(0,14);
     const receivables=rs.open.slice().sort((a,b)=>Number(b.balance||0)-Number(a.balance||0)).slice(0,14).map(x=>({client:clampText(x.clientName||x.customerName||'Cliente',90),balance:Number(Number(x.balance||0).toFixed(2)),paid:Number(Number(x.paid||0).toFixed(2)),daysOverdue:Math.max(0,daysSince(x.dueDate||x.originalDate||x.date)),historical:!!x.historical}));
     const settings=dataset().settings||{};
@@ -271,7 +304,7 @@
       },
       commercialRules:{minimumMargin:Number(settings.minMargin??settings.minimumMargin??25)||25,maximumDiscount:Number(settings.maxDiscount??settings.maximumDiscount??10)||10,currency:'BOB'},
       topProducts:productRows,
-      criticalStock:ss.critical.slice(0,12).map(p=>({name:clampText(p.name||'Producto',90),stock:Number(p.stock||0),price:Number(p.price??p.retailPrice??0)||0,cost:Number(p.cost??p.baseCost??0)||0})),
+      criticalStock:ss.critical.slice(0,12).map(p=>({name:clampText(p.name||'Producto',90),stock:Number(p.stock||0),price:productPriceV827(p),cost:productCostV827(p)})),
       customersForFollowUp:topClients,
       topReceivables:receivables,
       focusedAccount:(()=>{const a=focusedAccountContext();return a?{client:clampText(a.name||'Cliente',90),totalBought:Number(Number(a.totalBought||0).toFixed(2)),totalPaid:Number(Number(a.totalPaid||0).toFixed(2)),totalDebt:Number(Number(a.totalDebt||0).toFixed(2)),pendingOperations:Number(a.pendingCount||0),daysLate:Number(a.daysLate||0),oldestDebtDate:a.oldestDebtDate?new Date(Number(a.oldestDebtDate)).toISOString().slice(0,10):null,lastPaymentDate:a.lastPaymentDate?new Date(Number(a.lastPaymentDate)).toISOString().slice(0,10):null}:null;})(),
@@ -309,7 +342,10 @@
         installment_amount:Number(draftRaw.installment_amount)||0,
         frequency:clampText(draftRaw.frequency||'',30),
         start_date:clampText(draftRaw.start_date||'',20),
-        note:clampText(draftRaw.note||'',240)
+        note:clampText(draftRaw.note||'',240),
+        payment_method:clampText(draftRaw.payment_method||'',20),
+        sale_type:clampText(draftRaw.sale_type||'',30),
+        items:Array.isArray(draftRaw.items)?draftRaw.items.slice(0,8).map(it=>({product_query:clampText(it?.product_query||'',120),quantity:Math.max(1,Math.min(999,Number(it?.quantity)||1))})):[]
       }:null,
       confidence:['alta','media','baja'].includes(String(a.confidence))?String(a.confidence):'media',
       engine:'external',
@@ -371,7 +407,7 @@
   }
 
   function discountSimulation(product,percent=5,qty=1){
-    if(!product) return null; const price=Number(product.price??product.retailPrice??product.publicPrice??0)||0; const cost=Number(product.cost??product.baseCost??0)||0; const pct=Math.max(0,Math.min(100,Number(percent)||0)); const final=price*(1-pct/100); const profit=(final-cost)*qty; const margin=final?((final-cost)/final*100):0; const settings=dataset().settings||{}; const minMargin=Number(settings.minMargin??settings.minimumMargin??25)||25; return {price,cost,pct,final,profit,margin,minMargin,allowed:margin>=minMargin};
+    if(!product) return null; const price=productPriceV827(product); const cost=productCostV827(product); const pct=Math.max(0,Math.min(100,Number(percent)||0)); const final=price*(1-pct/100); const profit=(final-cost)*qty; const margin=final?((final-cost)/final*100):0; const settings=dataset().settings||{}; const minMargin=Number(settings.minMargin??settings.minimumMargin??25)||25; return {price,cost,pct,final,profit,margin,minMargin,allowed:margin>=minMargin};
   }
 
   function readActionHistory(){
@@ -379,9 +415,9 @@
   }
   function saveActionHistory(rows){try{localStorage.setItem(actionHistoryKey(),JSON.stringify((rows||[]).slice(-MAX_ACTION_HISTORY)));}catch(_){}}
   function recordAction(action,status='confirmed',detail=''){
-    const rows=readActionHistory();rows.push({id:uid(),type:action.type,label:action.label||action.type,status,detail:clampText(detail,240),clientId:action.clientId||'',clientName:action.clientName||'',at:Date.now()});saveActionHistory(rows);updateActionCount();
+    const rows=readActionHistory();action.workId=action.workId||uid();const next={id:action.workId,type:action.type,label:action.label||action.type,status,detail:clampText(detail,240),clientId:action.clientId||'',clientName:action.clientName||'',at:Date.now()};const index=rows.findIndex(x=>String(x.id)===String(action.workId));if(index>=0)rows[index]={...rows[index],...next};else rows.push(next);saveActionHistory(rows);updateActionCount();return next;
   }
-  function updateActionCount(){const el=document.getElementById('nvAiActionCount');if(el)el.textContent=String(readActionHistory().filter(x=>x.status==='confirmed').length);}
+  function updateActionCount(){const el=document.getElementById('nvAiActionCount');if(el)el.textContent=String(readActionHistory().filter(x=>x.status==='pending').length);}
   function normalizedPhoneForWa(phone){let digits=String(phone||'').replace(/\D/g,'');if(!digits)return'';if(digits.startsWith('00'))digits=digits.slice(2);if(digits.length===8)digits='591'+digits;if(digits.startsWith('0')&&digits.length===9)digits='591'+digits.slice(1);return digits;}
   function clientMessage(kind,client,account){
     const name=client?.name||client?.businessName||account?.name||'cliente';
@@ -397,6 +433,8 @@
       if(draft.type==='register_payment')add({type:'register_payment',label:'Preparar registro de pago',clientId:draft.clientId,clientName:draft.clientName,amount:draft.amount,note:draft.note,summary:`Abrir el formulario con ${money(draft.amount)}; el pago no se guarda hasta confirmar.`});
       if(draft.type==='generate_receipt')add({type:'generate_receipt',label:'Preparar pago y recibo',clientId:draft.clientId,clientName:draft.clientName,amount:draft.amount,note:draft.note,summary:`Registrar ${money(draft.amount)} después de revisar y generar el recibo correspondiente.`});
       if(draft.type==='seller_settlement')add({type:'seller_settlement',label:'Abrir rendición de caja',summary:'Revisar efectivo bajo custodia, cobros digitales y saldo a entregar.'});
+      if(draft.type==='prepare_sale')add({type:'prepare_sale',label:'Preparar venta y recibo',clientId:draft.clientId,clientName:draft.clientName,items:draft.items,paymentMethod:draft.paymentMethod,saleType:draft.saleType,note:draft.note,summary:`Cargar ${draft.items.reduce((n,x)=>n+Number(x.quantity||0),0)} unidad(es) en Ventas para revisión.`});
+      if(draft.type==='create_quote')add({type:'create_quote',label:'Preparar cotización',clientId:draft.clientId,clientName:draft.clientName,items:draft.items,note:draft.note,summary:`Preparar una cotización con ${draft.items.length} producto(s) para revisión.`});
     }
     const activeClient=client||((account?.clientId)?(dataset().clients||[]).find(c=>String(c.id)===String(account.clientId)):null);
     const activeName=clientDisplayName(activeClient)||account?.name;
@@ -422,8 +460,8 @@
   }
   function closeActionSheet(){document.getElementById('nvAiActionOverlay')?.remove();}
   function showActionHistory(){
-    closeActionSheet();const rows=readActionHistory().slice().reverse();
-    document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiActionOverlay"><section class="nvAiSheet nvAiActionSheet" role="dialog" aria-modal="true"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiActionClose" type="button">×</button><div class="nvAiActionSheetHead"><div class="nvAiAvatar">${botSvg()}</div><div><h2>Acciones confirmadas</h2><p>Historial local de propuestas revisadas por el administrador.</p></div></div><div class="nvAiActionHistory">${rows.length?rows.map(x=>`<article><strong>${esc(x.label||x.type)}</strong><small>${esc(x.clientName||x.detail||'Acción del asistente')}</small><time>${new Date(Number(x.at)||Date.now()).toLocaleString('es-BO')}</time></article>`).join(''):'<p>Sin acciones confirmadas todavía.</p>'}</div></section></div>`);
+    closeActionSheet();const rows=readActionHistory().slice().reverse();const labels={pending:'Pendiente',confirmed:'Aprobado',rejected:'Rechazado'};
+    document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiActionOverlay"><section class="nvAiSheet nvAiActionSheet" role="dialog" aria-modal="true"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiActionClose" type="button">×</button><div class="nvAiActionSheetHead"><div class="nvAiAvatar">${botSvg()}</div><div><h2>Trabajos del asistente</h2><p>Borradores pendientes, aprobados y rechazados.</p></div></div><div class="nvAiWorkSummaryV827"><span><b>${rows.filter(x=>x.status==='pending').length}</b> pendientes</span><span><b>${rows.filter(x=>x.status==='confirmed').length}</b> aprobados</span><span><b>${rows.filter(x=>x.status==='rejected').length}</b> rechazados</span></div><div class="nvAiActionHistory nvAiWorkListV827">${rows.length?rows.map(x=>`<article class="${esc(x.status||'pending')}"><div><strong>${esc(x.label||x.type)}</strong><small>${esc(x.clientName||x.detail||'Trabajo del asistente')}</small><time>${new Date(Number(x.at)||Date.now()).toLocaleString('es-BO')}</time></div><span>${esc(labels[x.status]||x.status)}</span></article>`).join(''):'<p>Sin trabajos preparados todavía.</p>'}</div></section></div>`);
     document.getElementById('nvAiActionClose').onclick=closeActionSheet;document.getElementById('nvAiActionOverlay').onclick=e=>{if(e.target.id==='nvAiActionOverlay')closeActionSheet();};
   }
   function openMessageReview(action){
@@ -441,6 +479,8 @@
     if(Number(action.installmentAmount||0)>0)rows.push(['Cuota propuesta',money(action.installmentAmount)]);
     if(action.frequency)rows.push(['Frecuencia',frequencyLabel(action.frequency)]);
     if(action.startDate)rows.push(['Inicio',new Date(`${action.startDate}T12:00:00`).toLocaleDateString('es-BO')]);
+    if(Array.isArray(action.items)&&action.items.length){rows.push(['Productos',action.items.map(x=>`${Number(x.quantity||1)} × ${x.productName||'Producto'}`).join(' · ')]);const total=action.items.reduce((sum,x)=>sum+Number(x.quantity||0)*Number(x.unitPrice||0),0);if(total>0)rows.push(['Total estimado',money(total)]);}
+    if(action.paymentMethod)rows.push(['Forma de pago',({cash:'Efectivo',qr:'QR / transferencia',credit:'A crédito'})[action.paymentMethod]||action.paymentMethod]);
     return rows.length?`<div class="nvAiActionFactsV825">${rows.map(x=>`<span><small>${esc(x[0])}</small><b>${esc(x[1])}</b></span>`).join('')}</div>`:'';
   }
   function editableActionFieldsV826(action){
@@ -471,6 +511,7 @@
     if(!action||!action.type)return;
     if(action.type==='prepare_collection_message'||action.type==='prepare_followup_message')return openMessageReview(action);
     action={...action};
+    recordAction(action,'pending',action.summary||'Pendiente de revisión');
     closeActionSheet();
     document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiActionOverlay"><section class="nvAiSheet nvAiActionSheet" role="dialog" aria-modal="true"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiActionClose" type="button">×</button><div class="nvAiActionSheetHead"><div class="nvAiAvatar">${botSvg()}</div><div><h2>Trabajo preparado por el asistente</h2><p>Revisa, edita, aprueba o rechaza. Nada se guarda automáticamente.</p></div></div><div class="nvAiActionReview"><strong>${esc(action.label||'Acción propuesta')}</strong><p>${esc(action.summary||'La aplicación abrirá el flujo correspondiente para tu revisión.')}</p>${actionDetailHtmlV825(action)}</div>${editableActionFieldsV826(action)}<div id="nvAiActionValidationV826" class="nv826PaymentValidation"></div><div class="nvAiActionButtons nvAiActionButtonsV826"><button class="btn outline danger" id="nvAiRejectAction" type="button">Rechazar</button><button class="btn outline" id="nvAiEditAction" type="button">Editar</button><button class="btn" id="nvAiConfirmAction" type="button">Aprobar y continuar</button></div></section></div>`);
     const close=closeActionSheet;
@@ -489,7 +530,8 @@
       if(action.type==='generate_collection_document'&&window.requestClientDocumentV820)return requestClientDocumentV820(action.clientId,'COB');
       if(action.type==='create_payment_plan'&&window.openPaymentPlanFormV820)return openPaymentPlanFormV820(action.clientId,{installmentAmount:action.installmentAmount,frequency:action.frequency,startDate:action.startDate,notes:action.note||'Plan preparado por el Asistente IA',source:'ai'});
       if((action.type==='register_payment'||action.type==='generate_receipt')&&window.openPaymentFormV820)return openPaymentFormV820(action.clientId,{amount:action.amount,note:action.note||'Pago preparado por el Asistente IA',source:'ai'});
-      if(action.type==='create_quote'&&window.openQuoteForm){const client=(window.AppState?.clients||[]).find(c=>String(c.id)===String(action.clientId));if(client)return openQuoteForm({client,priceGroupId:client.priceGroupId||''});}
+      if(action.type==='prepare_sale'&&window.prepareSaleDraftV827)return window.prepareSaleDraftV827({items:action.items||[],clientId:action.clientId||'',paymentMethod:action.paymentMethod||'',saleType:action.saleType||'',note:action.note||'Venta preparada por el Asistente IA',source:'ai'});
+      if(action.type==='create_quote'&&window.openQuoteForm){const client=(window.AppState?.clients||[]).find(c=>String(c.id)===String(action.clientId));return window.openQuoteForm({client:client||null,priceGroupId:client?.priceGroupId||'',items:action.items||[],source:'ai'});}
       window.showToast?.('La acción quedó preparada, pero el módulo no está disponible en esta sesión.','error');
     };
   }
@@ -498,6 +540,11 @@
     const st=salesStats(q.includes('hoy')?1:q.includes('semana')?7:30), cs=clientStats(), ss=stockStats(), rs=receivableStats();
     const focused=focusedAccountContext();
     const draft=resolveDraftActionV825(question,{});
+    if(draft.type==='prepare_sale'||draft.type==='create_quote'){
+      if(draft.missingFields.length)return {title:draft.type==='create_quote'?'Completemos la cotización':'Completemos la venta',body:`Puedo preparar el trabajo, pero necesito: <b>${esc(draft.missingFields.join(' y '))}</b>. Indica producto, presentación y cantidad.`,missingFields:draft.missingFields,draftAction:draft};
+      const units=draft.items.reduce((n,x)=>n+Number(x.quantity||0),0);const total=draft.items.reduce((n,x)=>n+Number(x.quantity||0)*Number(x.unitPrice||0),0);const stockOk=draft.items.every(x=>Number(x.stock||0)>=Number(x.quantity||0));
+      return {title:draft.type==='create_quote'?'Cotización preparada':'Venta y recibo preparados',body:`Preparé un borrador con <b>${units} unidad(es)</b>${total>0?` por un total estimado de <b>${money(total)}</b>`:''}. ${stockOk?'El stock registrado es suficiente.':'Hay una cantidad que supera el stock disponible y debe revisarse.'}`,cards:[['Unidades',units],['Total estimado',total>0?money(total):'Revisar precio'],['Stock',stockOk?'Disponible':'Revisar'],['Estado','Pendiente de aprobación']],list:draft.items.map(x=>`${x.quantity} × ${x.productName} · stock ${x.stock} · ${money(x.unitPrice)}`),draftAction:draft,suggestions:[draft.type==='create_quote'?'Abrir cotización':'Preparar la venta','Editar cantidades']};
+    }
     if(draft.type==='create_payment_plan'){
       if(draft.missingFields.length)return {title:'Completemos el plan de pagos',body:`Puedo prepararlo, pero necesito: <b>${esc(draft.missingFields.join(' y '))}</b>. Ejemplo: “Plan para Gabriela Espinoza con cuota de Bs 100 al mes”.`,suggestions:['Plan para Gabriela Espinoza con cuota de Bs 100 al mes','Abrir cuentas por cobrar'],missingFields:draft.missingFields,draftAction:draft};
       const debt=Number(draft.account?.totalDebt||0),months=draft.installmentAmount>0?Math.ceil(debt/draft.installmentAmount):0;
@@ -518,7 +565,7 @@
     if (/qué debo|prioridad|alerta|recomienda|recomendación/.test(q)) { const rec=recommendations(); return {title:'Prioridades recomendadas',body:rec.length?'Estas recomendaciones se basan en datos y reglas locales verificables.':'No detecté alertas relevantes con los datos disponibles.',list:rec.map(x=>`${x.title} — ${x.detail}`),suggestions:rec.slice(0,3).map(x=>x.question)}; }
     if (/mensaje|whatsapp/.test(q)) return {title:'Mensaje sugerido',body:'Buenas tardes. Esperamos que se encuentre muy bien. Queríamos consultar si necesita reponer sus productos Natura Vida. Podemos prepararle su pedido y coordinar la entrega. <br><br><small>Revisa y personaliza el texto antes de enviarlo.</small>'};
     if (/descuento|promoci/.test(q)) { const product=productByQuestion(q); const pm=q.match(/(\d+(?:[.,]\d+)?)\s*%/); const pct=pm?Number(pm[1].replace(',','.')):5; const sim=discountSimulation(product,pct,1); if(sim) return {title:`Simulación: ${product.name||'Producto'}`,body:`Con ${sim.pct}% de descuento, el precio sería ${money(sim.final)}, la utilidad por unidad ${money(sim.final-sim.cost)} y el margen ${sim.margin.toFixed(1)}%. ${sim.allowed?'<b>Está dentro del margen mínimo.</b>':'<b>No cumple el margen mínimo configurado.</b>'}`,cards:[['Precio actual',money(sim.price)],['Precio final',money(sim.final)],['Margen',sim.margin.toFixed(1)+'%'],['Resultado',sim.allowed?'Permitido':'No recomendado']],action:{label:'Abrir reglas comerciales',tab:'reglas-comerciales'}}; return {title:'Simulación comercial segura',body:'Indica el nombre del producto y el porcentaje. Ejemplo: “Simula 5% de descuento para Aceite de Coco 500 ml”.',action:{label:'Abrir reglas comerciales',tab:'reglas-comerciales'}}; }
-    return {title:'Asistente comercial analítico',body:'Puedo analizar ventas, utilidad, margen, inventario, cobranzas, clientes inactivos, prioridades y descuentos. Los cálculos son locales y verificables; Ninguna acción se ejecuta automáticamente.',suggestions:['Dame un resumen','¿Qué debo atender primero?','¿Qué productos dejan mayor utilidad?','¿Qué cuentas están vencidas?']};
+    return {title:'Asistente comercial analítico',body:'Puedo analizar el negocio y preparar ventas, cotizaciones, pagos, recibos, planes de pago y rendiciones para que los revises. Ninguna operación se guarda sin tu aprobación.',suggestions:['Dame un resumen','¿Qué debo atender primero?','¿Qué productos dejan mayor utilidad?','¿Qué cuentas están vencidas?']};
   }
 
   function normalizeEntry(entry){
@@ -767,12 +814,12 @@
       <div class="nvAiWorkspaceV825">
         <aside class="nvAiThreadPanelV825" id="nvAiThreadPanelV825" aria-label="Conversaciones del asistente"></aside>
         <main class="nvAiChatColumnV825">
-          <div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Acciones <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='confirmed').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
+          <div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Trabajos <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='pending').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
           <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Datos empresariales autorizados · ninguna operación se ejecuta sin revisión</small></div>
           <section class="nvAiDashboardV824 ${dashboardCollapsedV824()?'collapsed':''}" id="nvAiDashboardV824"><button type="button" class="nvAiDashboardToggleV824" id="nvAiDashboardToggleV824"><span>Panel gerencial <small id="nvAiDashboardStateV824">${dashboardCollapsedV824()?'Mostrar':'Ocultar'}</small></span><b id="nvAiDashboardArrowV824">${dashboardCollapsedV824()?'⌄':'⌃'}</b></button><div class="nvAiDashboardBodyV824"><div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div><section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div></div></section>
           <div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div><button type="button" class="nvAiJumpLatestV824" id="nvAiJumpLatestV824" aria-label="Ir al mensaje más reciente">↓</button>
           <div class="nvAiComposer"><textarea id="nvAiInput" rows="1" placeholder="Escribe tu consulta…" aria-label="Consulta para el asistente" data-nv-no-dirty="true"></textarea><button id="nvAiSend" type="button" aria-label="Enviar">➤</button></div>
-          <p class="nvAiDisclaimer">Motor híbrido: cálculos verificables + análisis externo. El asistente prepara acciones; tú confirmas.</p>
+          <p class="nvAiDisclaimer">Motor híbrido: cálculos verificables + análisis externo. Ninguna acción se ejecuta automáticamente; el asistente prepara y tú confirmas.</p>
         </main>
       </div>
     </section>`;
@@ -833,25 +880,17 @@
   }
 
   function rectOverlapArea(a,b){const w=Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left));const h=Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));return w*h;}
-  function positionFabSmartV825(){
+  function positionFabSmartV827(){
     const fab=document.getElementById('nvAiFab');if(!fab)return;
     clearTimeout(fabPositionTimer);fabPositionTimer=setTimeout(()=>{
       if(!document.body.contains(fab))return;
-      const size=56,side=14,baseBottom=94+(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom'))||0);
-      const candidates=[
-        {name:'right',left:innerWidth-side-size,top:innerHeight-baseBottom-size},
-        {name:'left',left:side,top:innerHeight-baseBottom-size},
-        {name:'right-raised',left:innerWidth-side-size,top:innerHeight-baseBottom-size-78},
-        {name:'left-raised',left:side,top:innerHeight-baseBottom-size-78}
-      ];
-      const controls=[...document.querySelectorAll('button:not(#nvAiFab),a[href],input,select,textarea,[role="button"],.btn')].filter(el=>{
-        if(el.closest('.bottomNav,.v7BottomNav,.nvAiOverlay,.nvAiFab')||el.disabled)return false;
-        const r=el.getBoundingClientRect(),cs=getComputedStyle(el);return cs.visibility!=='hidden'&&cs.display!=='none'&&r.width>20&&r.height>20&&r.bottom>0&&r.top<innerHeight;
-      }).map(el=>el.getBoundingClientRect());
-      let best=candidates[0],bestScore=Infinity;
-      candidates.forEach(c=>{const r={left:c.left-8,right:c.left+size+8,top:c.top-8,bottom:c.top+size+8};let score=0;controls.forEach(x=>score+=rectOverlapArea(r,x));if(c.top<70)score+=10000;if(score<bestScore){bestScore=score;best=c;}});
-      fab.dataset.anchor=best.name;fab.classList.toggle('left',best.name.startsWith('left'));fab.classList.toggle('raised',best.name.includes('raised'));
-    },70);
+      const size=Math.max(52,Math.round(fab.getBoundingClientRect().width||56));const side=12;
+      const nav=document.querySelector('.bottomNav,.v7BottomNav');const navTop=nav?.getBoundingClientRect().top||innerHeight-82;const baseTop=Math.max(78,navTop-size-12);
+      const candidates=[{name:'right',left:innerWidth-side-size,top:baseTop},{name:'left',left:side,top:baseTop},{name:'right-raised',left:innerWidth-side-size,top:Math.max(82,baseTop-82)},{name:'left-raised',left:side,top:Math.max(82,baseTop-82)}];
+      const controls=[...document.querySelectorAll('button:not(#nvAiFab),a[href],input,select,textarea,[role="button"],.btn,.cartBar,#goToCheckout,.stickyActions')].filter(el=>{if(el.closest('.bottomNav,.v7BottomNav,.nvAiOverlay,#nvAiFab')||el.disabled)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);return cs.visibility!=='hidden'&&cs.display!=='none'&&r.width>24&&r.height>24&&r.bottom>0&&r.top<innerHeight;}).map(el=>el.getBoundingClientRect());
+      let best=candidates[0],bestScore=Infinity;candidates.forEach(c=>{const r={left:c.left-10,right:c.left+size+10,top:c.top-10,bottom:c.top+size+10};let score=0;controls.forEach(x=>score+=rectOverlapArea(r,x));if(score<bestScore){bestScore=score;best=c;}});
+      fab.dataset.anchor=best.name;fab.style.left=`${Math.max(8,best.left)}px`;fab.style.right='auto';fab.style.top=`${Math.max(72,best.top)}px`;fab.style.bottom='auto';
+    },90);
   }
   function ensureFab(){
     let fab=document.getElementById('nvAiFab');
@@ -861,12 +900,12 @@
     if(!fab){
       fab=document.createElement('button');
       fab.id='nvAiFab'; fab.className='nvAiFab'; fab.type='button';
-      fab.innerHTML=`<span class="nvAiFabFace">${botSvg('fab')}</span><b>IA</b>`;
+      fab.innerHTML=`<span class="nvAiFabFace">${botSvg('is-fab')}</span><span class="nvAiFabBadge">IA</span>`;
       fab.setAttribute('aria-label','Abrir Asistente IA');
       fab.onclick=openSheet;
       document.body.appendChild(fab);
     }
-    positionFabSmartV825();
+    positionFabSmartV827();
   }
 
   function openForContext(context={},question=''){
@@ -902,13 +941,13 @@
     };
     const main=document.getElementById('mainArea');
     if(main){
-      const observer=new MutationObserver(()=>setTimeout(()=>{ensureFab();positionFabSmartV825();},0));
+      const observer=new MutationObserver(()=>setTimeout(()=>{ensureFab();positionFabSmartV827();},0));
       observer.observe(main,{childList:true,subtree:true});
     }
-    window.addEventListener('resize',positionFabSmartV825,{passive:true});
-    window.addEventListener('scroll',positionFabSmartV825,{passive:true});
-    document.addEventListener('focusin',positionFabSmartV825);
-    document.addEventListener('focusout',positionFabSmartV825);
+    window.addEventListener('resize',positionFabSmartV827,{passive:true});
+    window.addEventListener('scroll',positionFabSmartV827,{passive:true});
+    document.addEventListener('focusin',positionFabSmartV827);
+    document.addEventListener('focusout',positionFabSmartV827);
     setTimeout(ensureFab,250);
     setTimeout(()=>checkEngine(false).catch(()=>{}),700);
     window.renderAIAssistantV826=renderAssistant;
@@ -927,12 +966,13 @@
     window.openAIAssistantSheetV810=openSheet;
   }
 
-  window.__nvAiV826={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,get engineState(){return {...engineState};}};
-  window.__nvAiV825=window.__nvAiV826;
-  window.__nvAiV824=window.__nvAiV826;
-  window.__nvAiV822=window.__nvAiV826;
-  window.__nvAiV821=window.__nvAiV826;
-  window.__nvAiV812=window.__nvAiV826;
+  window.__nvAiV827={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,get engineState(){return {...engineState};}};
+  window.__nvAiV826=window.__nvAiV827;
+  window.__nvAiV825=window.__nvAiV827;
+  window.__nvAiV824=window.__nvAiV827;
+  window.__nvAiV822=window.__nvAiV827;
+  window.__nvAiV821=window.__nvAiV827;
+  window.__nvAiV812=window.__nvAiV827;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0));
   else setTimeout(install,0);
 })();

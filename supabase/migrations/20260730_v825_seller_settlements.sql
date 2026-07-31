@@ -1,4 +1,4 @@
--- NATURA VIDA V8.2.5
+-- NATURA VIDA V8.2.7 — Rendiciones de caja y recarga de esquema
 -- Rendición de caja de vendedores y verificación manual de cobros digitales.
 -- Ejecutar una sola vez en SQL Editor. No modifica ventas, pagos ni inventario existentes.
 
@@ -125,5 +125,7 @@ grant select, insert, update on public.nv_payment_verifications to authenticated
 
 create index if not exists nv825_settlement_seller_date_idx on public.nv_seller_settlements(seller_user_id, created_at desc);
 create index if not exists nv825_verification_seller_date_idx on public.nv_payment_verifications(seller_user_id, created_at desc);
+
+notify pgrst, 'reload schema';
 
 commit;

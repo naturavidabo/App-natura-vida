@@ -1,0 +1,15 @@
+NATURA VIDA V8.2.7 — RESULTADO DE PRUEBAS LOCALES
+
+- Sintaxis JavaScript: 46/46 archivos correctos.
+- Sintaxis TypeScript de Edge Function: correcta mediante transpilación.
+- Auditoría de despliegue: 23/23.
+- Integración comercial: 19/19.
+- Interfaz financiera: 22/22.
+- Saneamiento y gobierno: 12/12.
+- Límite del repositorio: 99 archivos.
+- Comprobaciones específicas V8.2.7: robot sin clase .fab, ventas/cotizaciones estructuradas, bandeja de trabajos, movimientos de rendición y recarga de esquema.
+
+Pendiente de prueba en entorno productivo:
+- Respuesta real de Gemini después del despliegue de la Edge Function.
+- Políticas RLS y persistencia compartida de rendiciones después de ejecutar la migración.
+- Validación visual en los dispositivos finales.

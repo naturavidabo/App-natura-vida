@@ -1,4 +1,4 @@
-// Natura Vida V8.2.6 — Motor IA ejecutivo con borradores operativos seguros.
+// Natura Vida V8.2.7 — Asistente secretario operativo con ventas, cotizaciones y trabajos supervisados.
 // Secrets: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -80,17 +80,30 @@ const answerSchema = {
     next_questions: { type: "array", items: { type: "string" }, maxItems: 4 },
     confidence: { type: "string", enum: ["alta", "media", "baja"] },
     action_area: { type: "string", enum: ["none", "ventas", "clientes", "inventario", "cobranzas", "reglas-comerciales", "territorio", "finanzas", "rendicion"] },
-    intent: { type: "string", enum: ["analysis", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area"] },
+    intent: { type: "string", enum: ["analysis", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area", "prepare_sale", "create_quote"] },
     missing_fields: { type: "array", items: { type: "string" }, maxItems: 5 },
     draft_action: {
       type: "object", additionalProperties: false,
       properties: {
-        type: { type: "string", enum: ["none", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area"] },
+        type: { type: "string", enum: ["none", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area", "prepare_sale", "create_quote"] },
         client_query: { type: "string" }, amount: { type: "number" }, installment_amount: { type: "number" },
         frequency: { type: "string", enum: ["", "monthly", "biweekly", "weekly"] },
-        start_date: { type: "string" }, note: { type: "string" }
+        start_date: { type: "string" }, note: { type: "string" },
+        payment_method: { type: "string", enum: ["", "cash", "qr", "credit"] },
+        sale_type: { type: "string", enum: ["", "unit", "market", "representative_transfer", "reseller_unit", "reseller_wholesale"] },
+        items: {
+          type: "array", maxItems: 8,
+          items: {
+            type: "object", additionalProperties: false,
+            properties: {
+              product_query: { type: "string" },
+              quantity: { type: "number" }
+            },
+            required: ["product_query", "quantity"]
+          }
+        }
       },
-      required: ["type", "client_query", "amount", "installment_amount", "frequency", "start_date", "note"]
+      required: ["type", "client_query", "amount", "installment_amount", "frequency", "start_date", "note", "payment_method", "sale_type", "items"]
     }
   },
   required: ["title", "summary", "facts", "recommendations", "risks", "next_questions", "confidence", "action_area", "intent", "missing_fields", "draft_action"]
@@ -155,7 +168,7 @@ Deno.serve(async (req) => {
     const snapshot = compactSnapshot(body.snapshot);
     const history = Array.isArray(body.history) ? body.history.slice(-8).map((x: any) => ({ role: x?.role === "assistant" ? "assistant" : "user", text: text(x?.text, 700) })) : [];
     const contextLabel = text(body.context?.label || "Negocio general", 80);
-    const prompt = `Eres el asistente ejecutivo privado de Natura Vida Bolivia. Responde en español claro y profesional.\n\nREGLAS:\n1. Usa solo el resumen proporcionado y no inventes cifras, clientes ni pagos.\n2. Separa hechos, sugerencias y riesgos.\n3. Puedes preparar borradores de plan de pagos, registro de pago, recibo o rendición, pero nunca afirmes que los guardaste.\n4. Si el usuario pide una acción y falta cliente, monto u otro dato imprescindible, pregunta únicamente lo necesario y enumera missing_fields.\n5. Para planes: detecta cliente, monto de cuota, frecuencia y fecha inicial. Para pagos/recibos: cliente y monto pagado.\n6. draft_action solo es una propuesta; la aplicación buscará el cliente real y exigirá confirmación humana.\n7. No sugieras descuentos que violen las reglas comerciales.\n8. Sé breve y útil.\n\nContexto: ${contextLabel}\nHistorial: ${JSON.stringify(history)}\nPregunta: ${question}\nResumen: ${JSON.stringify(snapshot)}`;
+    const prompt = `Eres el asistente ejecutivo privado de Natura Vida Bolivia. Responde en español claro y profesional.\n\nREGLAS:\n1. Usa solo el resumen proporcionado y no inventes cifras, clientes ni pagos.\n2. Separa hechos, sugerencias y riesgos.\n3. Puedes preparar borradores de plan de pagos, registro de pago, recibo, rendición, venta o cotización, pero nunca afirmes que los guardaste.\n4. Si el usuario pide una acción y falta cliente, monto, producto, cantidad u otro dato imprescindible, pregunta únicamente lo necesario y enumera missing_fields.\n5. Para planes: detecta cliente, monto de cuota, frecuencia y fecha inicial. Para pagos/recibos: cliente y monto pagado. Para ventas o cotizaciones: detecta producto, presentación, cantidad, cliente si fue indicado y forma de pago si corresponde.\n6. draft_action solo es una propuesta; la aplicación buscará clientes y productos reales, comprobará precio y stock y exigirá confirmación humana.\n7. Cuando el usuario pida elaborar, preparar o generar una venta, recibo con venta o cotización, utiliza intent prepare_sale o create_quote y completa draft_action.items. No te limites a explicar que debe hacerse manualmente.\n8. No sugieras descuentos que violen las reglas comerciales. Sé breve, concreta el trabajo y entrega un borrador operable.\n\nContexto: ${contextLabel}\nHistorial: ${JSON.stringify(history)}\nPregunta: ${question}\nResumen: ${JSON.stringify(snapshot)}`;
 
     const started = Date.now();
     let result = await callGemini(apiKey, prompt, true);

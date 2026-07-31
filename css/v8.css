@@ -370,7 +370,7 @@
 @media(max-width:480px){.nv825PlanHeader{grid-template-columns:1fr}.nv825PlanHeader>div:last-child{text-align:left}.nv825Installment{grid-template-columns:1fr}.nv825Installment>div:last-child{text-align:left}}
 
 /* ======================================================================
-   NATURA VIDA V8.2.6 — PAGOS CLAROS, PRECIO MANUAL Y ASISTENTE CON VOZ
+   NATURA VIDA V8.2.7 — PAGOS CLAROS, PRECIO MANUAL Y ASISTENTE CON VOZ
    ====================================================================== */
 /* El naranja identifica únicamente el valor intervenido manualmente. */
 .v826PriceReferenceGrid>div{border-color:#d9e8df!important;background:linear-gradient(145deg,#f7fcf9,#eef7f2)!important;box-shadow:none!important}
@@ -391,3 +391,56 @@
 .nvAiSpeechToolsV826{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:8px;border-top:1px solid #e6eee9}.nvAiSpeechToolsV826 button{border:1px solid #cfe1d7;border-radius:10px;background:#f2f9f5;color:#12613f;padding:7px 9px;font-size:.68rem;font-weight:850}.nvAiSpeechToolsV826 button.speaking{background:#145f42;color:#fff;border-color:#145f42}.nvAiSpeechToolsV826 small{color:#7a8b83;font-size:.59rem}.nvAiActionEditorV826{display:grid;gap:8px;margin:10px 0;padding:11px;border:1px solid #dce9e2;border-radius:14px;background:#f7fbf8}.nvAiActionEditorV826 small{color:#71837a;line-height:1.35}.nvAiActionButtonsV826{grid-template-columns:repeat(3,minmax(0,1fr))}.nvAiActionButtonsV826 .danger{color:#a43f35;border-color:#efcbc6;background:#fff7f5}
 
 @media(max-width:560px){.nv826PaymentChoices{grid-template-columns:1fr}.nv826PaymentChoices button{grid-template-columns:32px minmax(0,1fr);justify-items:start;text-align:left}.nv826PaymentChoices button small{grid-column:2}.nv826QrStage{grid-template-columns:1fr;justify-items:center}.nv826QrStage>div:last-child{text-align:center}.nvAiActionButtonsV826{grid-template-columns:1fr 1fr}.nvAiActionButtonsV826 #nvAiConfirmAction{grid-column:1/-1}.nvAiSpeechToolsV826{align-items:flex-start;flex-direction:column}.nv826PaymentIntro{align-items:flex-start;flex-direction:column}}
+
+/* ======================================================================
+   NATURA VIDA V8.2.7 — ROBOT UNIFICADO, TRABAJOS IA Y RENDICIÓN VERIFICABLE
+   ====================================================================== */
+/* El SVG ya no usa la clase genérica .fab: toda la cabecita se mueve como un solo botón. */
+.nvAiBotSvg{overflow:visible}
+.nvAiBotHalo{fill:#e6f8ed;stroke:#7dc79e;stroke-width:1.4}
+.nvAiBotHaloInner{fill:#fafffb;stroke:#cae9d7;stroke-width:1}
+.nvAiBotAntenna,.nvAiBotSmile,.nvAiBotBase{fill:none;stroke:#0a7a4c;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.nvAiBotAntennaTip{fill:#e3b745;stroke:#fff;stroke-width:1.2}
+.nvAiBotEar{fill:none;stroke:#0d8a57;stroke-width:3;stroke-linecap:round}
+.nvAiBotHead{fill:#f8fffa;stroke:#0b8553;stroke-width:2.4}
+.nvAiBotScreen{fill:#126746;stroke:#074d34;stroke-width:1}
+.nvAiBotEye{fill:#dfff72;transform-box:fill-box;transform-origin:center}
+.nvAiBotSmile{stroke:#dfff72;stroke-width:1.8}
+.nvAiBotSpark{fill:#d8ae38;stroke:#fff;stroke-width:.8}
+.nvAiFab{position:fixed!important;right:auto;bottom:auto;width:58px;height:58px;border-radius:20px;padding:3px;overflow:visible!important;isolation:isolate;transform:none!important;transition:left .18s ease,top .18s ease,box-shadow .18s ease!important}
+.nvAiFab:active{transform:scale(.96)!important}
+.nvAiFabFace{position:relative;z-index:1;width:100%;height:100%;display:grid;place-items:center;overflow:hidden;border-radius:17px;background:linear-gradient(145deg,#fafffb,#d9f4e5)}
+.nvAiFab .nvAiBotSvg.is-fab{position:static!important;inset:auto!important;width:49px!important;height:49px!important;margin:0!important;transform:none!important}
+.nvAiFabBadge{position:absolute;z-index:3;right:-5px;top:-6px;display:grid;place-items:center;min-width:25px;height:25px;padding:0 5px;border:2px solid #fff;border-radius:14px;background:#d6ad38;color:#174832;font-size:9px;font-weight:950;line-height:1;box-shadow:0 4px 10px rgba(71,54,5,.18)}
+.nvAiFab:hover .nvAiBotSpark{animation:nvAiSparkV827 1.5s ease-in-out infinite}
+.nvAiFab .nvAiBotEye{animation:nvAiBlinkV827 4.8s ease-in-out infinite}
+@keyframes nvAiBlinkV827{0%,45%,49%,100%{transform:scaleY(1)}47%{transform:scaleY(.15)}}
+@keyframes nvAiSparkV827{0%,100%{opacity:.65;transform:scale(.9)}50%{opacity:1;transform:scale(1.08)}}
+
+/* Trabajos preparados por el secretario IA. */
+.nvAiWorkSummaryV827{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0}
+.nvAiWorkSummaryV827 span{display:grid;gap:2px;border:1px solid #dce9e2;border-radius:12px;background:#f5faf7;padding:9px;text-align:center;color:#6b7e74;font-size:.65rem}
+.nvAiWorkSummaryV827 b{color:#15543a;font-size:1rem}
+.nvAiWorkListV827 article{border-left:4px solid #d9ad3e}
+.nvAiWorkListV827 article.confirmed{border-left-color:#1b9a62;background:#f2fbf6}
+.nvAiWorkListV827 article.rejected{border-left-color:#c96759;background:#fff7f5}
+.nvAiWorkListV827 article.pending{border-left-color:#d9ad3e;background:#fffaf0}
+.nvAiWorkListV827 article>span{align-self:center;border-radius:999px;background:#eef5f1;padding:5px 8px;color:#466458;font-size:.61rem;font-weight:850}
+.nv827AiDraftNotice{margin:0 0 10px;padding:10px 12px;border:1px solid #bfe1ce;border-radius:13px;background:#edf9f2;color:#18583e;font-size:.72rem;line-height:1.4}
+
+/* Rendición: los movimientos locales permanecen visibles aunque falte la tabla remota. */
+.nv827CashMovementList{display:grid;gap:8px}
+.nv827CashMovement{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;border:1px solid #dfeae4;border-radius:13px;background:#fff;padding:10px 11px}
+.nv827CashMovement strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#194e38;font-size:.78rem}
+.nv827CashMovement b{color:#0d6d46;font-size:.82rem}
+.nv827CashMovement small{grid-column:1/-1;color:#75867e;font-size:.63rem;line-height:1.35}
+.nv827CashMovement.empty{display:block;text-align:center;color:#71847a;background:#f7fbf8}
+.nv827SetupSteps{margin:10px 0 0;padding-left:20px;color:#516b5e;font-size:.75rem;line-height:1.55}
+.nv827SetupSteps code{overflow-wrap:anywhere;border-radius:6px;background:#edf4f0;padding:2px 5px;color:#175a3d;font-size:.68rem}
+
+@media(max-width:560px){
+  .nvAiFab{width:56px;height:56px}
+  .nvAiFab .nvAiBotSvg.is-fab{width:47px!important;height:47px!important}
+  .nvAiWorkSummaryV827{grid-template-columns:1fr 1fr 1fr}
+  .nv827CashMovement{padding:9px}
+}

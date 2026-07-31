@@ -51,4 +51,4 @@ if (!twoNamesState.autoExpand) throw new Error('Dos nombres deben habilitar las 
 const source = fs.readFileSync('js/clients.js', 'utf8');
 if (!source.includes('clientSuggestionPeekV824') || !source.includes('data-use-id') || !source.includes('visibleLimit')) throw new Error('Falta la interfaz compacta con selección explícita.');
 
-console.log('Autocompletado de clientes V8.2.6: 8/8 controles OK');
+console.log('Autocompletado de clientes V8.2.7: 8/8 controles OK');

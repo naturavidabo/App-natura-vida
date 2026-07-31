@@ -1,14 +1,15 @@
 /* sales.js — Venta con precios flexibles por producto.
-   V7.2.3: precio normal, precio por grupo y precio manual por línea. */
+   V8.2.7: admite borradores supervisados preparados por el Asistente IA. */
 
 let _saleType = 'unit';
 let _saleSelectedGroup = null;
 let _saleSearch = '';
 let _cart = {};       // { productId: qty }
 let _cartPrices = {}; // { productId: manual pricing entry }
+let _saleDraftV827 = null; // Borrador preparado por IA; nunca se guarda automáticamente.
 
 
-/* V8.2.6 — Selector compacto de forma de pago y preparación para verificación bancaria. */
+/* V8.2.7 — Selector compacto de forma de pago y preparación para verificación bancaria. */
 function paymentMethodLabelV826(method) {
   return ({ cash: 'Efectivo', qr: 'QR / transferencia', credit: 'A crédito' })[String(method || '')] || 'Sin definir';
 }
@@ -618,7 +619,10 @@ function openCheckoutSheet() {
   const sellerProfit = sellerMode() ? saleItemsPreview.reduce((sum, item) => sum + Number(item.sellerProfit || 0), 0) : 0;
   const discounts = saleItemsPreview.reduce((s, i) => s + Number(i.discountAmount || 0), 0);
   const surcharges = saleItemsPreview.reduce((s, i) => s + Number(i.surchargeAmount || 0), 0);
-  const operation = { id: uid('sale'), documentNumber: '', client: null, sale: null, submitting: false };
+  const draftV827 = _saleDraftV827 || {};
+  const preClientV827 = (AppState.clients || []).find(c => String(c.id) === String(draftV827.clientId || '')) || null;
+  const initialClientV827 = preClientV827 || AppState.lastClient || null;
+  const operation = { id: uid('sale'), documentNumber: '', client: preClientV827, sale: null, submitting: false, preferredPaymentMethod: String(draftV827.paymentMethod || '') };
   const html = `
     <h2>Confirmar venta <span class="x" id="closeSheet">✕</span></h2>
     <div class="sectiontitle2"><span>Productos (${saleItemsPreview.length})</span></div>
@@ -626,10 +630,10 @@ function openCheckoutSheet() {
     ${(discounts || surcharges) ? `<div class="priceSummaryBox"><span>Rebajas: <b>${fmtMoney(discounts)}</b></span><span>Recargos: <b>${fmtMoney(surcharges)}</b></span></div>` : ''}
     ${window.getCommercialRulesV807 && getCommercialRulesV807().enabled ? `<div class="nv807PricePolicyHint"><strong>Reglas comerciales verificadas</strong>Los precios respetan el margen mínimo y el descuento autorizado para el rol actual.</div>` : ''}
     <div class="sectiontitle2"><span>Datos del cliente</span></div>
-    <div class="field"><label>Nombre del cliente</label><div class="clientAutocompleteV802"><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.name) : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><div id="ckClientSuggestionsV802" class="clientSuggestionsV802 hidden"></div></div><small>Escribe con normalidad. Las coincidencias aparecerán de forma compacta y solo se aplicarán al tocar “Usar”.</small></div>
-    <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.phone || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
+    <div class="field"><label>Nombre del cliente</label><div class="clientAutocompleteV802"><div class="clientInputRow"><input type="text" id="ck_clientname" autocomplete="off" placeholder="Ej: Juan Pérez" value="${initialClientV827 ? escapeHtml(initialClientV827.name || initialClientV827.businessName || '') : ''}"><button type="button" class="miniClientPick" id="pickClientV723">▾</button></div><div id="ckClientSuggestionsV802" class="clientSuggestionsV802 hidden"></div></div><small>Escribe con normalidad. Las coincidencias aparecerán de forma compacta y solo se aplicarán al tocar “Usar”.</small></div>
+    <div class="field"><label>Número de teléfono</label><div class="clientInputRow"><input type="tel" inputmode="tel" id="ck_clientphone" autocomplete="off" placeholder="Ej: 71234567" value="${initialClientV827 ? escapeHtml(initialClientV827.phone || initialClientV827.whatsapp || '') : ''}"><button type="button" class="waIconBtnV723" id="ckClientWaV723"><span class="waLogoV725">☎</span></button></div></div>
     ${(_saleType === 'market') ? `<button type="button" class="btn outline block" id="registerWholesaleV725">Registrar datos de mayorista</button>` : ''}
-    <section class="nv771DeliveryToggle"><label><input id="ck_requiresDeliveryV771" type="checkbox"><span><strong>Requiere entrega</strong><small>Crear una entrega pendiente para planificarla en una ruta.</small></span></label><div id="ck_deliveryFieldsV771" class="hidden"><div class="field-row"><div class="field"><label>Fecha solicitada</label><input id="ck_deliveryDateV771" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Prioridad</label><select id="ck_deliveryPriorityV771"><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div></div><div class="field"><label>Dirección de entrega</label><input id="ck_deliveryAddressV771" value="${AppState.lastClient ? escapeHtml(AppState.lastClient.address || '') : ''}" placeholder="Dirección, zona o referencia"></div><div class="field"><label>Observación de entrega</label><textarea id="ck_deliveryNotesV771" placeholder="Horario, persona de contacto o indicación especial"></textarea></div></div></section>
+    <section class="nv771DeliveryToggle"><label><input id="ck_requiresDeliveryV771" type="checkbox"><span><strong>Requiere entrega</strong><small>Crear una entrega pendiente para planificarla en una ruta.</small></span></label><div id="ck_deliveryFieldsV771" class="hidden"><div class="field-row"><div class="field"><label>Fecha solicitada</label><input id="ck_deliveryDateV771" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Prioridad</label><select id="ck_deliveryPriorityV771"><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div></div><div class="field"><label>Dirección de entrega</label><input id="ck_deliveryAddressV771" value="${initialClientV827 ? escapeHtml(initialClientV827.address || initialClientV827.locationLabel || '') : ''}" placeholder="Dirección, zona o referencia"></div><div class="field"><label>Observación de entrega</label><textarea id="ck_deliveryNotesV771" placeholder="Horario, persona de contacto o indicación especial"></textarea></div></div></section>
     <div class="totalbox"><span class="lbl">Total a cobrar</span><span class="val">${fmtMoney(total)}</span></div>
     <div id="ckPaymentSummaryV826">${paymentChoiceSummaryV826(null,total)}</div>
     <div class="v7CashNotice">Al continuar elegirás Efectivo, QR / transferencia o Crédito. El recibo ya no incorpora el QR.</div>
@@ -693,6 +697,12 @@ function openCheckoutSheet() {
       }
     };
     renderPaymentChoiceV826();
+    if (preClientV827) fillClientV723(preClientV827);
+    if (draftV827.source === 'ai') {
+      const notice = document.createElement('div'); notice.className = 'nv827AiDraftNotice';
+      notice.innerHTML = '<strong>Trabajo preparado por el Asistente IA</strong><span>Revisa cliente, cantidades, precios y forma de pago antes de confirmar.</span>';
+      overlay.querySelector('h2')?.insertAdjacentElement('afterend', notice);
+    }
     $('#ck_clientname', overlay).addEventListener('blur', () => {
       const name = $('#ck_clientname', overlay).value.trim();
       const existing = AppState.clients.find(c => normalizeSearch(c.name) === normalizeSearch(name));
@@ -706,7 +716,7 @@ function openCheckoutSheet() {
       if (!clientName) return showToast('⚠️ Ingresa el nombre del cliente', 'error');
       if (!operation.client && window.findLikelyDuplicateClientV802) { const match = findLikelyDuplicateClientV802(clientName, clientPhone); if (match && window.confirm(`Encontramos un cliente similar: “${match.client.name}”.\n\n¿Deseas usar ese registro para evitar duplicarlo?`)) operation.client = match.client; }
       if (!operation.paymentChoice) {
-        const choice = await openPaymentMethodSelectorV826({ total, clientName, qrUrl: paymentQrSourceV826() });
+        const choice = await openPaymentMethodSelectorV826({ total, clientName, qrUrl: paymentQrSourceV826(), initial: operation.preferredPaymentMethod ? { method: operation.preferredPaymentMethod } : null });
         if (!choice) return;
         operation.paymentChoice = choice;
         renderPaymentChoiceV826();
@@ -809,7 +819,7 @@ function openCheckoutSheet() {
         showToast(deliveryWarning ? `Venta guardada, pero revisa la entrega: ${deliveryWarning}` : (operation.sale.requiresDelivery ? 'Venta guardada y enviada a Entregas pendientes.' : 'Venta registrada en Supabase.'), deliveryWarning ? 'error' : undefined);
         close();
         if (window.openV7ReceiptPreview) openV7ReceiptPreview(operation.sale, 'sale'); else openReceiptPreview(operation.sale);
-        _cart = {}; _cartPrices = {}; renderVender();
+        _cart = {}; _cartPrices = {}; _saleDraftV827 = null; renderVender();
       } catch (err) {
         operation.submitting = false; btn.disabled = false; btn.textContent = 'Reintentar la misma operación';
         const message = window.messageFromError ? messageFromError(err, 'No se pudo registrar la venta.') : (err.message || 'No se pudo registrar la venta.');
@@ -821,13 +831,38 @@ function openCheckoutSheet() {
 
 function startSaleWithProduct(productId) {
   AppState.currentTab = 'vender';
+  _saleDraftV827 = null;
   _cart = { [productId]: 1 };
   render();
+}
+
+function prepareSaleDraftV827(options = {}) {
+  const requested = Array.isArray(options.items) ? options.items : [];
+  const nextCart = {};
+  requested.forEach(item => {
+    const product = (AppState.products || []).find(p => String(p.id) === String(item.productId || '')) ||
+      (AppState.products || []).find(p => normalizeSearch(p.name || '') === normalizeSearch(item.productName || ''));
+    if (!product) return;
+    const qty = Math.max(1, Math.min(Number(product.stock || 0), Math.floor(Number(item.quantity || item.qty || 1))));
+    if (qty > 0) nextCart[product.id] = qty;
+  });
+  if (!Object.keys(nextCart).length) { showToast('No se encontró un producto válido para preparar la venta.', 'error'); return false; }
+  _cart = nextCart; _cartPrices = {};
+  if (['unit','market','representative_transfer','reseller_unit','reseller_wholesale'].includes(String(options.saleType || ''))) _saleType = String(options.saleType);
+  const client = (AppState.clients || []).find(c => String(c.id) === String(options.clientId || '')) || null;
+  if (client) AppState.lastClient = client;
+  _saleDraftV827 = { clientId: client?.id || '', paymentMethod: String(options.paymentMethod || ''), note: String(options.note || ''), source: options.source || 'ai' };
+  AppState.currentTab = 'vender';
+  if (window.render) render(); else renderVender();
+  showToast('Venta preparada. Revisa los datos antes de confirmar.');
+  setTimeout(() => { if (Object.keys(_cart).length && AppState.currentTab === 'vender') openCheckoutSheet(); }, 180);
+  return true;
 }
 
 Object.assign(window, {
   renderVender,
   startSaleWithProduct,
+  prepareSaleDraftV827,
   applyPercentGroupV7: applyPercentGroup,
   buildSalePriceBreakdownV7,
   openSalePriceEditorV7,

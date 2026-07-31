@@ -9,8 +9,8 @@ shell=(root/'js/v7-shell.js').read_text(encoding='utf-8')
 sw=(root/'service-worker.js').read_text(encoding='utf-8')
 version=json.loads((root/'app-version.json').read_text(encoding='utf-8'))
 checks={
- 'versión 8.2.0': version.get('version')=='8.2.6',
- 'script versionado': 'v8-ai-assistant.js?v=8.2.6' in html,
+ 'versión 8.2.0': version.get('version')=='8.2.7',
+ 'script versionado': 'v8-ai-assistant.js?v=8.2.7' in html,
  'acceso propio en administración': "id: 'asistente-ia'" in center and "category: 'administracion'" in center,
  'navegación robusta': "case 'asistente-ia'" in shell and 'renderAIAssistantV812' in shell,
  'conversación estructurada': 'readConversation' in js and 'writeConversation' in js and "role:'assistant',response" in js,
@@ -19,7 +19,7 @@ checks={
  'bot mejorado': 'nvAiBotSvg' in js and '.nvAiBotSvg' in css,
  'motor supervisado sin ejecución automática': 'Nada se guarda automáticamente' in js and 'Aprobar y continuar' in js and 'Rechazar' in js,
  'asistente incluido en caché': "'./js/v8-ai-assistant.js'" in sw,
- 'caché V826': "nv-app-shell-v826" in sw,
+ 'caché V827': "nv-app-shell-v827" in sw,
  'css balanceado': css.count('{')==css.count('}'),
 }
 for k,v in checks.items(): print(('OK' if v else 'FAIL'),k)

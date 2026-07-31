@@ -1,8 +1,8 @@
 {
-  "version": "8.2.6",
-  "build": "2026-07-30-v826-pagos-claros-asistente-secretario-altavoz",
-  "releasedAt": "2026-07-30T12:41:00-04:00",
+  "version": "8.2.7",
+  "build": "2026-07-31-v827-secretario-operativo-ventas-rendicion-robot-estable",
+  "releasedAt": "2026-07-31T00:52:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.2.6 - Pagos claros, asistente secretario y lectura en altavoz",
-  "createdAt": "2026-07-30T12:41:00-04:00"
+  "label": "Natura Vida V8.2.7 - Asistente secretario operativo, ventas preparadas y rendición verificable",
+  "createdAt": "2026-07-31T00:52:00-04:00"
 }

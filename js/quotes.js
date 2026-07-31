@@ -1,4 +1,4 @@
-/* quotes.js — Cotizaciones: cliente, productos, vigencia con calendario, activas vs vencidas. */
+/* quotes.js — Cotizaciones. V8.2.7 admite borradores preparados por el Asistente IA. */
 
 function isExpired(quote) {
   if (!quote.expiryDate) return false;
@@ -65,10 +65,16 @@ async function confirmDeleteQuote(id) {
 function openQuoteForm(prefill = {}) {
   const prefClient = prefill.client || null;
   const prefGroupId = prefill.priceGroupId || (prefClient && prefClient.priceGroupId) || '';
-  let items = [{ productId: '', name: '', price: 0, qty: 1 }];
+  const suppliedItems = Array.isArray(prefill.items) ? prefill.items : [];
+  let items = suppliedItems.map(it => {
+    const product = (AppState.products || []).find(p => String(p.id) === String(it.productId || '')) || (AppState.products || []).find(p => normalizeSearch(p.name || '') === normalizeSearch(it.productName || ''));
+    return product ? { productId: product.id, name: product.name, price: Number(it.unitPrice || 0) > 0 ? Number(it.unitPrice) : (prefGroupId ? priceForGroup(product, prefGroupId) : unitPrice(product)), qty: Math.max(1, Number(it.quantity || it.qty || 1)) } : null;
+  }).filter(Boolean);
+  if (!items.length) items = [{ productId: '', name: '', price: 0, qty: 1 }];
 
   const html = `
     <h2>Precios / cotización <span class="x" id="closeSheet">✕</span></h2>
+    ${prefill.source === 'ai' ? '<div class="nv827AiDraftNotice"><strong>Trabajo preparado por el Asistente IA</strong><span>Revisa cliente, productos, cantidades y precios antes de guardar.</span></div>' : ''}
 
     <div class="field">
       <label>Nombre del cliente / posible cliente</label>
