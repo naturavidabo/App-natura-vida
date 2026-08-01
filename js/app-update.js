@@ -1,7 +1,7 @@
 /* app-update.js — actualización visible y controlada para GitHub Pages/PWA. */
 
 (() => {
-  const CURRENT_VERSION = '8.3.0';
+  const CURRENT_VERSION = '8.3.1';
   const BUILD_ID = '2026-07-31-v830-director-administrativo-inteligente';
   let registration = null;
   let updateAvailable = false;
@@ -69,7 +69,7 @@
 
   async function installAppUpdateManager() {
     if (!('serviceWorker' in navigator)) return { ok: false, unsupported: true };
-    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.3.0', { updateViaCache: 'none' });
+    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.3.1', { updateViaCache: 'none' });
     watchRegistration(registration);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!updateRequested) return;

@@ -1,4 +1,4 @@
-// Natura Vida V8.3.0 — Director Administrativo Inteligente: interpretación estructurada y operaciones supervisadas.
+// Natura Vida V8.3.1 — Director Administrativo Inteligente: interpretación estructurada y operaciones supervisadas.
 // Secrets: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 

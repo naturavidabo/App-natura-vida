@@ -1,16 +1,17 @@
-/* Natura Vida V8.3.0 — Director Administrativo Inteligente con núcleo operativo verificable.
+/* Natura Vida V8.3.1 — Director Administrativo Inteligente con núcleo operativo verificable.
    Acceso exclusivo para administrador central. Ninguna acción se ejecuta automáticamente. Los cálculos críticos continúan
    siendo locales; Gemini interpreta un resumen empresarial limitado a través
    de una Supabase Edge Function y nunca recibe claves desde el navegador. */
 (function(){
   'use strict';
 
-  const VERSION='8.3.0';
+  const VERSION='8.3.1';
   const MAX_ENTRIES=40;
   const MAX_ARCHIVES=12;
   const MAX_ACTION_HISTORY=40;
   const AI_FUNCTION_NAME='nv-ai-assistant';
-  const ENGINE_TIMEOUT_MS=28000;
+  const ENGINE_TIMEOUT_MS=16000;
+  const REQUEST_WATCHDOG_MS=22000;
   const ENGINE_HEALTH_TTL=5*60*1000;
   let oldNavigate=null;
   let oldRender=null;
@@ -860,55 +861,73 @@
     updateJumpV824();
   }
 
+  function setComposerBusyV831(busy,label=''){
+    const send=document.getElementById('nvAiSend');
+    const input=document.getElementById('nvAiInput');
+    if(send){send.disabled=!!busy;send.classList.toggle('busy',!!busy);send.textContent=busy?'…':'➤';send.setAttribute('aria-label',busy?(label||'Procesando'):'Enviar');}
+    if(input) input.disabled=!!busy;
+  }
+  function resetPendingV831(message=''){
+    clearTimeout(answerTimer);
+    pendingQuestion=''; pendingRequestId='';
+    setComposerBusyV831(false);
+    if(String(window.AppState?.currentTab)==='asistente-ia') renderConversation(true);
+    if(message) window.showToast?.(message,'error');
+  }
+  function autoGrowComposerV831(input){
+    if(!input)return;input.style.height='auto';input.style.height=`${Math.min(124,Math.max(46,input.scrollHeight))}px`;
+  }
   async function ask(question){
     const input=document.getElementById('nvAiInput');
     const q=String(question||input?.value||'').trim();
     const now=Date.now();
-    if(!q||pendingQuestion) return;
+    if(!q) return;
+    if(pendingQuestion){window.showToast?.('La consulta anterior sigue procesándose. Espera unos segundos o usa Recuperar asistente.','error');return;}
     const last=readConversation().slice(-1)[0];
-    if(last?.role==='user'&&normalizedName(last.text)===normalizedName(q)&&now-last.at<2500) return;
-    if(now-lastQuestionAt<450) return;
+    if(last?.role==='user'&&normalizedName(last.text)===normalizedName(q)&&now-last.at<1800) return;
+    if(now-lastQuestionAt<300) return;
     lastQuestionAt=now;
-    if(input) input.value='';
+    if(input){input.value='';autoGrowComposerV831(input);}
     clearComposerDraft();
     const requestId=uid();
-    addEntry({role:'user',text:q,requestId,at:now});
+    try{addEntry({role:'user',text:q,requestId,at:now});}
+    catch(error){window.showToast?.('No se pudo guardar la consulta localmente.','error');return;}
     pendingQuestion=q; pendingRequestId=requestId;
+    setComposerBusyV831(true,'Procesando consulta');
     renderConversation(true);
     clearTimeout(answerTimer);
+    answerTimer=setTimeout(()=>{
+      if(pendingRequestId!==requestId)return;
+      addEntry({role:'assistant',requestId,response:{title:'El asistente fue recuperado',body:'La consulta excedió el tiempo permitido y fue cancelada para evitar que la pantalla quede bloqueada. Puedes volver a enviarla.',diagnostic:'Tiempo máximo de espera superado.',engine:'local'},at:Date.now()});
+      resetPendingV831('El asistente fue liberado automáticamente.');
+    },REQUEST_WATCHDOG_MS);
     try{
       let response;
       const mode=effectiveDirectorModeV830(q);
       const deterministic=mode==='operate'?directorOperationalResponseV830(q):null;
       if(deterministic){
+        // Las operaciones se preparan de inmediato con datos locales verificables. Gemini no puede bloquear el flujo.
         response=deterministic;
+      } else if(mode==='analyze'){
+        const local=answerLocal(q); local.engine='local'; response=local;
         if(navigator.onLine){
-          try{ const external=await answerWithEngine(q); response=mergeDirectorWithExternalV830(q,external); }
-          catch(error){ response.diagnostic=clampText(error.message||'Motor externo no disponible',220); }
-        }
-      } else if(navigator.onLine){
-        try { response=await answerWithEngine(q); }
-        catch(error){
-          response=answerLocal(q);
-          response.engine='local-fallback';
-          response.diagnostic=clampText(error.message||'Motor externo no disponible',220);
-          response.body=`${response.body||''}<br><small>Se utilizó el cálculo local para conservar la consulta. Puedes revisar el diagnóstico o volver a intentar después de actualizar la función externa.</small>`;
-          engineState={...engineState,mode:'local-fallback',message:response.diagnostic,checkedAt:Date.now()};
-          updateEngineUI();
+          try{ response=await withTimeout(answerWithEngine(q),12000); }
+          catch(error){response=local;response.engine='local-fallback';response.diagnostic=clampText(error.message||'Motor externo no disponible',220);}
         }
       } else {
-        response=answerLocal(q); response.engine='local';
+        response=answerLocal(q);response.engine='local';
       }
+      if(pendingRequestId!==requestId)return;
       response=enrichResponse(response,q);
       response.directorMode=mode;
       addEntry({role:'assistant',response,requestId,at:Date.now()});
       renderThreadPanelV825();
-      const primaryWork=response.operationalReady&&response.proposals?.[0]?response.proposals[0]:null;if(primaryWork)setTimeout(()=>openActionReview(primaryWork),520);
+      const primaryWork=response.operationalReady&&response.proposals?.[0]?response.proposals[0]:null;
+      if(primaryWork)setTimeout(()=>{if(String(window.AppState?.currentTab)==='asistente-ia')openActionReview(primaryWork);},240);
     }catch(error){
-      addEntry({role:'assistant',requestId,response:{title:'No pude completar el análisis',body:'Ocurrió un problema al leer los datos actuales. Puedes volver a intentarlo sin perder la conversación.',diagnostic:clampText(error.message||'',180),engine:'local'},at:Date.now()});
+      if(pendingRequestId===requestId)addEntry({role:'assistant',requestId,response:{title:'No pude completar la consulta',body:'La operación fue detenida sin guardar cambios. El asistente ya está disponible para volver a intentar.',diagnostic:clampText(error.message||'',220),engine:'local'},at:Date.now()});
     }finally{
-      pendingQuestion=''; pendingRequestId='';
-      if(String(window.AppState?.currentTab)==='asistente-ia') renderConversation(true);
+      if(pendingRequestId===requestId)resetPendingV831();
     }
   }
 
@@ -936,7 +955,7 @@
       <div class="nvAiWorkspaceV825">
         <aside class="nvAiThreadPanelV825" id="nvAiThreadPanelV825" aria-label="Conversaciones del asistente"></aside>
         <main class="nvAiChatColumnV825">
-          <div class="nvAiDirectorModesV830"><span>Modo</span><button type="button" data-ai-mode-v830="auto">Automático</button><button type="button" data-ai-mode-v830="operate">Preparar operación</button><button type="button" data-ai-mode-v830="analyze">Analizar</button><small id="nvAiModeLabelV830">Automático</small></div><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Trabajos <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='pending').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button></div>
+          <div class="nvAiDirectorModesV830"><span>Modo</span><button type="button" data-ai-mode-v830="auto">Automático</button><button type="button" data-ai-mode-v830="operate">Preparar operación</button><button type="button" data-ai-mode-v830="analyze">Analizar</button><small id="nvAiModeLabelV830">Automático</small></div><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Trabajos <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='pending').length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button><button type="button" id="nvAiRecoverV831">Recuperar</button></div>
           <div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Datos empresariales autorizados · ninguna operación se ejecuta sin revisión</small></div>
           <section class="nvAiDashboardV824 ${dashboardCollapsedV824()?'collapsed':''}" id="nvAiDashboardV824"><button type="button" class="nvAiDashboardToggleV824" id="nvAiDashboardToggleV824"><span>Panel gerencial <small id="nvAiDashboardStateV824">${dashboardCollapsedV824()?'Mostrar':'Ocultar'}</small></span><b id="nvAiDashboardArrowV824">${dashboardCollapsedV824()?'⌄':'⌃'}</b></button><div class="nvAiDashboardBodyV824"><div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div></div><section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div></div></section>
           <div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div><button type="button" class="nvAiJumpLatestV824" id="nvAiJumpLatestV824" aria-label="Ir al mensaje más reciente">↓</button>
@@ -957,9 +976,11 @@
     document.getElementById('nvAiOpenActions').onclick=showActionHistory;
     document.getElementById('nvAiCheckEngine').onclick=async()=>{ await checkEngine(true); if(window.showToast) showToast(engineState.message||engineLabel()); };
     document.getElementById('nvAiEngineBadge').onclick=()=>document.getElementById('nvAiCheckEngine')?.click();
+    document.getElementById('nvAiRecoverV831').onclick=()=>{resetPendingV831();window.showToast?.('Asistente recuperado y listo para una nueva consulta.');};
     const aiInput=document.getElementById('nvAiInput');
     aiInput.value=readComposerDraft();
-    aiInput.addEventListener('input',()=>saveComposerDraft(aiInput.value));
+    aiInput.addEventListener('input',()=>{saveComposerDraft(aiInput.value);autoGrowComposerV831(aiInput);});
+    autoGrowComposerV831(aiInput);
     aiInput.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(); } });
     window.removeEventListener('scroll',updateJumpV824); window.addEventListener('scroll',updateJumpV824,{passive:true});
     renderThreadPanelV825();
@@ -1093,7 +1114,7 @@
     window.openAIAssistantSheetV810=openSheet;
   }
 
-  window.__nvAiV830={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}}; window.__nvAiV829=window.__nvAiV830;
+  window.__nvAiV830={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}}; window.__nvAiV829=window.__nvAiV830;
   window.__nvAiV827=window.__nvAiV829;
   window.__nvAiV826=window.__nvAiV829;
   window.__nvAiV825=window.__nvAiV827;

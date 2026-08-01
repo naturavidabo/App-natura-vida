@@ -1,9 +1,14 @@
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 js=(ROOT/'js/v8-ai-assistant.js').read_text(encoding='utf-8')
-assert "const VERSION='8.3.0'" in js
+assert "const VERSION='8.3.1'" in js
 assert 'directorOperationalResponseV830' in js
 assert 'data-ai-mode-v830="operate"' in js
 assert 'Núcleo operativo verificable' in js
 assert len([p for p in ROOT.rglob('*') if p.is_file()]) <= 100
-print('V8.3.0 OK')
+print('V8.3.1 OK')
+
+assert 'REQUEST_WATCHDOG_MS=22000' in js
+assert 'resetPendingV831' in js
+assert "response=deterministic;" in js
+assert "await answerWithEngine(q); response=mergeDirectorWithExternalV830" not in js

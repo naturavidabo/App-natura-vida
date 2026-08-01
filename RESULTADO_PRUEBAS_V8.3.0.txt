@@ -1,4 +1,4 @@
-RESULTADO DE PRUEBAS V8.3.0
+RESULTADO DE PRUEBAS V8.3.1
 - Sintaxis JavaScript: pendiente de validación automática incluida en entrega.
 - Límite de archivos: 99.
 - Modos de Director: Automático / Preparar operación / Analizar.

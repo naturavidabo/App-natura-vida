@@ -514,7 +514,7 @@
 
 
 /* ======================================================================
-   NATURA VIDA V8.3.0 — DIRECTOR ADMINISTRATIVO INTELIGENTE
+   NATURA VIDA V8.3.1 — DIRECTOR ADMINISTRATIVO INTELIGENTE
    ====================================================================== */
 .nvAiDirectorModesV830{display:grid;grid-template-columns:auto repeat(3,minmax(0,1fr)) auto;gap:7px;align-items:center;margin:10px 0;padding:8px;border:1px solid #d6e8de;border-radius:16px;background:linear-gradient(145deg,#f6fbf8,#edf7f2)}
 .nvAiDirectorModesV830>span{padding-left:4px;color:#5e7569;font-size:.64rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
@@ -525,3 +525,16 @@
 .nvAiDirectorStampV830{display:inline-block;margin:0 0 8px;padding:5px 8px;border-radius:999px;background:#e8f8ee;color:#0a7449;font-size:.62rem;font-weight:900;letter-spacing:.02em}
 .nvAiActionPanel.readyV829:has(.primaryV829){outline:2px solid rgba(13,134,83,.08)}
 @media(max-width:640px){.nvAiDirectorModesV830{grid-template-columns:repeat(3,minmax(0,1fr));}.nvAiDirectorModesV830>span,.nvAiDirectorModesV830 small{grid-column:1/-1;text-align:left}.nvAiDirectorModesV830>span{display:none}.nvAiDirectorModesV830 small{padding-left:4px}.nvAiDirectorModesV830 button{font-size:.63rem;padding:0 5px}}
+
+/* V8.3.1 — saneamiento del compositor y recuperación del Director IA */
+.nvAiPageV825{padding-bottom:104px}
+.nvAiChatColumnV825{min-width:0;display:flex;flex-direction:column}
+.nvAiFeed{min-width:0;padding-bottom:18px;overflow-wrap:anywhere}
+.nvAiComposer{position:relative!important;bottom:auto!important;z-index:6;margin-top:4px;padding:10px;background:#f8fcf9;border-top:1px solid #dce9e2;border-radius:18px;box-shadow:0 -8px 24px rgba(17,75,52,.06)}
+.nvAiComposer textarea{box-sizing:border-box;display:block;line-height:1.35;overflow-y:auto}
+.nvAiComposer button:disabled{opacity:.65;cursor:wait}
+.nvAiComposer button.busy{animation:nvAiSendPulseV831 1s ease-in-out infinite}
+#nvAiRecoverV831{border-color:#e0b76a;background:#fff9ed;color:#79520a}
+.nvAiMessage.user .nvAiBubble{white-space:pre-wrap;word-break:break-word}
+@keyframes nvAiSendPulseV831{0%,100%{transform:scale(1)}50%{transform:scale(.94)}}
+@media(max-width:640px){.nvAiPageV825{padding-left:10px;padding-right:10px}.nvAiDirectorModesV830{overflow-x:auto}.nvAiEngineBar{flex-wrap:wrap}.nvAiComposer{margin-left:0;margin-right:0}.nvAiBubble{max-width:91%}}

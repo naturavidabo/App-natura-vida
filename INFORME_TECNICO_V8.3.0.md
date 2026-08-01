@@ -1,4 +1,4 @@
-# Natura Vida V8.3.0 — Director Administrativo Inteligente
+# Natura Vida V8.3.1 — Director Administrativo Inteligente
 
 ## Objetivo
 Convertir el asistente en un núcleo operativo supervisado. Gemini interpreta la intención; Natura Vida resuelve clientes, productos, precios, existencias, deudas y cálculos con datos reales.
