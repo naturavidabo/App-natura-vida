@@ -24,14 +24,14 @@ version=json.loads(read('app-version.json')); manifest=json.loads(read('manifest
 
 # Paquete y despliegue
 require(index.lstrip().startswith('<!DOCTYPE html>'),'index.html no inicia como HTML')
-require(version.get('version')=='8.2.9','app-version no indica 8.2.9')
-require("CURRENT_VERSION = '8.2.9'" in update,'app-update no indica 8.1.2')
-require('service-worker.js?v=8.2.9' in update,'registro del service worker no usa 8.2.9')
-require('natura-vida-v8-2-9' in sw.lower(),'service worker no corresponde a V8.2.9')
-require('V8.2.9' in manifest.get('name',''),'manifest no identifica V8.2.9')
-require('css/v8.css?v=8.2.9' in index,'index no carga CSS V8.2.9')
+require(version.get('version')=='8.3.0','app-version no indica 8.3.0')
+require("CURRENT_VERSION = '8.3.0'" in update,'app-update no indica 8.3.0')
+require('service-worker.js?v=8.3.0' in update,'registro del service worker no usa 8.3.0')
+require('natura-vida-v8-3-0' in sw.lower(),'service worker no corresponde a V8.3.0')
+require('V8.3.0' in manifest.get('name',''),'manifest no identifica V8.3.0')
+require('css/v8.css?v=8.3.0' in index,'index no carga CSS V8.3.0')
 for script in ['clients.js','sales.js','v7-documents.js','v7-management-center.js','v8-territory.js','v7-shell.js']:
-    require(f'js/{script}?v=8.2.9' in index,f'index no carga {script} con versión correcta')
+    require(f'js/{script}?v=8.3.0' in index,f'index no carga {script} con versión correcta')
 require(index.index('clients.js') < index.index('sales.js'),'clientes debe cargarse antes de ventas')
 require(index.index('v8-stability.js') < index.index('v7-commercial-center.js'),'estabilidad se carga después de módulos comerciales')
 
@@ -89,7 +89,7 @@ require('v802PriceEditable' in sales and 'v802PriceEditable' in inv,'listas de v
 require('.v826ManualPriceField' in css and '.v826NeutralField' in css and '.v802PriceEditable' in css,'falta lenguaje visual selectivo de edición')
 
 # Recibo
-require('FORMA DE PAGO' in docs and 'paymentMethodLabelV826' in docs,'recibo no identifica la forma de pago')
+require('Forma de pago:' in docs and 'paymentMethodLabelV826' in docs,'recibo no identifica la forma de pago')
 require('qrSource' not in docs and 'QR de pago' not in docs,'el QR todavía está incrustado en el recibo')
 require('Gracias por confiar en Natura Vida Bolivia.' in docs,'falta cierre único de marca')
 require('próximos pagos o consultas' not in docs and 'QR de cobro' not in docs,'quedan mensajes redundantes o incorrectos en el recibo')
@@ -115,7 +115,7 @@ for match in re.findall(r'(?:src|href)="((?:css|js|icons|img)/[^"?]+)', index):
     require((ROOT/match).exists(),f'recurso local inexistente: {match}')
 
 if errors:
-    print(f'Auditoría Natura Vida V8.2.9: {checks-len(errors)}/{checks} controles OK')
+    print(f'Auditoría Natura Vida V8.3.0: {checks-len(errors)}/{checks} controles OK')
     for e in errors: print('ERROR:',e)
     sys.exit(1)
-print(f'Auditoría Natura Vida V8.2.9: {checks}/{checks} controles OK')
+print(f'Auditoría Natura Vida V8.3.0: {checks}/{checks} controles OK')

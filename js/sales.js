@@ -1,5 +1,5 @@
 /* sales.js — Venta con precios flexibles por producto.
-   V8.2.9: ventas verificables, recibos recuperables y borradores supervisados por IA. */
+   V8.2.11: ventas verificables, descuentos preparados por IA y selector de pago premium. */
 
 let _saleType = 'unit';
 let _saleSelectedGroup = null;
@@ -64,6 +64,14 @@ async function openSaleReceiptSafeV829(sale) {
   }
 }
 
+function paymentIconV8211(type){
+  const icons={
+    cash:'<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="10" width="38" height="28" rx="7"/><circle cx="24" cy="24" r="7"/><path d="M10 17h5M33 31h5"/></svg>',
+    qr:'<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="13" height="13" rx="2"/><rect x="28" y="7" width="13" height="13" rx="2"/><rect x="7" y="28" width="13" height="13" rx="2"/><path d="M29 29h5v5h-5zM36 29h5M36 36h5v5M28 39h5"/></svg>',
+    credit:'<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="9" width="34" height="32" rx="7"/><path d="M7 18h34M15 6v7M33 6v7M15 27h7M27 27h7M15 34h7"/></svg>'
+  };return icons[type]||icons.cash;
+}
+
 function openPaymentMethodSelectorV826(options = {}) {
   const total = roundBs(Math.max(0, Number(options.total || 0)));
   const clientName = String(options.clientName || 'Cliente');
@@ -79,13 +87,14 @@ function openPaymentMethodSelectorV826(options = {}) {
 
   return new Promise(resolve => {
     const modal = openSheet(`
-      <h2>Seleccionar forma de pago <span class="x" id="closeSheet">✕</span></h2>
-      <div class="nv826PaymentIntro"><strong>${escapeHtml(clientName)}</strong><span>Total de la operación: <b>${fmtMoney(total)}</b></span></div>
-      <div class="nv826PaymentChoices" role="radiogroup" aria-label="Forma de pago">
-        <button type="button" data-pay-method="cash"><span>💵</span><b>Efectivo</b><small>Se suma a la rendición de caja.</small></button>
-        <button type="button" data-pay-method="qr"><span>▦</span><b>QR / transferencia</b><small>Se confirma antes de generar el recibo.</small></button>
-        <button type="button" data-pay-method="credit"><span>🗓</span><b>A crédito</b><small>Genera saldo en cuentas por cobrar.</small></button>
+      <div class="nv8211PaymentHead"><div><span>COBRO DE LA VENTA</span><h2>Forma de pago</h2><p>Selecciona cómo se recibió el dinero.</p></div><button class="x" id="closeSheet" type="button" aria-label="Cerrar">✕</button></div>
+      <div class="nv826PaymentIntro"><span><small>Cliente</small><strong>${escapeHtml(clientName)}</strong></span><span><small>Total</small><b>${fmtMoney(total)}</b></span></div>
+      <div class="nv826PaymentChoices nv8211PaymentChoices" role="radiogroup" aria-label="Forma de pago">
+        <button type="button" data-pay-method="cash"><span class="nv8211PayIcon cash">${paymentIconV8211('cash')}</span><b>Efectivo</b></button>
+        <button type="button" data-pay-method="qr"><span class="nv8211PayIcon qr">${paymentIconV8211('qr')}</span><b>QR</b></button>
+        <button type="button" data-pay-method="credit"><span class="nv8211PayIcon credit">${paymentIconV8211('credit')}</span><b>Crédito</b></button>
       </div>
+      <div class="nv8211PaymentHint" id="nv8211PaymentHint"></div>
       <section id="nv826CashPanel" class="nv826PaymentPanel">
         <div class="field"><label>Monto recibido en efectivo</label><input id="nv826CashAmount" type="number" inputmode="decimal" min="0" max="${total}" step="0.01" value="${initial?.method === 'cash' ? Number(initial.amountPaid || total) : total}"></div>
         <small>Si es menor al total, la diferencia quedará como saldo pendiente.</small>
@@ -127,6 +136,7 @@ function openPaymentMethodSelectorV826(options = {}) {
         selected = method;
         buttons.forEach(button => button.classList.toggle('active', button.dataset.payMethod === method));
         Object.entries(panels).forEach(([name, panel]) => panel.classList.toggle('hidden', name !== method));
+        const hint=overlay.querySelector('#nv8211PaymentHint');if(hint)hint.textContent=({cash:'El efectivo se sumará a la rendición del vendedor.',qr:'El pago digital debe confirmarse antes del recibo.',credit:'El saldo pendiente quedará en cuentas por cobrar.'})[method]||'';
         validation.textContent = '';
       };
       buttons.forEach(button => button.onclick = () => choose(button.dataset.payMethod));
@@ -917,6 +927,7 @@ function prepareSaleDraftV827(options = {}) {
   if (!Object.keys(nextCart).length) { showToast('No se encontró un producto válido para preparar la venta.', 'error'); return false; }
   _cart = nextCart; _cartPrices = {};
   if (['unit','market','representative_transfer','reseller_unit','reseller_wholesale'].includes(String(options.saleType || ''))) _saleType = String(options.saleType);
+  requested.forEach(item=>{const product=(AppState.products||[]).find(p=>String(p.id)===String(item.productId||''));if(!product)return;const base=Number(item.unitPrice||0)||Number(window.unitPrice?unitPrice(product):product.price||0);const manual=Number(item.manualPrice||0);if(manual>0&&Math.abs(manual-base)>.009){_cartPrices[product.id]={manualPrice:roundBs(manual),mode:item.adjustmentMode||'final',rawValue:item.adjustmentValue??null,reason:String(item.adjustmentReason||options.note||'Precio preparado por el Asistente IA'),basePrice:base,createdAt:Date.now()};}});
   const client = (AppState.clients || []).find(c => String(c.id) === String(options.clientId || '')) || null;
   if (client) AppState.lastClient = client;
   _saleDraftV827 = { clientId: client?.id || '', paymentMethod: String(options.paymentMethod || ''), note: String(options.note || ''), source: options.source || 'ai' };

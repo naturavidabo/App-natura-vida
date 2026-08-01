@@ -1,4 +1,4 @@
-/* Natura Vida V8.0.7 — saneamiento, diagnóstico y calidad de datos.
+/* Natura Vida V8.2.11 — saneamiento, diagnóstico y calidad de datos.
    Funciona con la información autorizada ya cargada desde Supabase.
    No elimina ni corrige datos automáticamente. */
 (function(){

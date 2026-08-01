@@ -1,12 +1,13 @@
 /* app-update.js — actualización visible y controlada para GitHub Pages/PWA. */
 
 (() => {
-  const CURRENT_VERSION = '8.2.10';
-  const BUILD_ID = '2026-07-31-v829-asistente-operativo-contraste-saneamiento-funcional';
+  const CURRENT_VERSION = '8.3.0';
+  const BUILD_ID = '2026-07-31-v830-director-administrativo-inteligente';
   let registration = null;
   let updateAvailable = false;
   let updateRequested = false;
   let lastRemoteInfo = null;
+  let updateBusy = false;
 
   function versionParts(value) {
     return String(value || '0').split('.').map(n => Number.parseInt(n, 10) || 0);
@@ -36,11 +37,13 @@
   }
 
   async function fetchRemoteVersion() {
-    const response = await fetch(`./app-version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const url = new URL('./app-version.json', window.location.href);
+    url.searchParams.set('nv-check', Date.now().toString());
+    const response = await fetch(url.toString(), { cache: 'reload', headers: { 'Cache-Control': 'no-cache, no-store, max-age=0' } });
     if (!response.ok) throw new Error('No se pudo leer la versión publicada.');
     const info = await response.json();
     lastRemoteInfo = info || null;
-    if (info && compareVersions(info.version, CURRENT_VERSION) > 0) updateAvailable = true;
+    updateAvailable = !!(info && compareVersions(info.version, CURRENT_VERSION) > 0) || !!(registration && registration.waiting);
     emitUpdateState();
     return info;
   }
@@ -66,7 +69,7 @@
 
   async function installAppUpdateManager() {
     if (!('serviceWorker' in navigator)) return { ok: false, unsupported: true };
-    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.2.10', { updateViaCache: 'none' });
+    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.3.0', { updateViaCache: 'none' });
     watchRegistration(registration);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!updateRequested) return;
@@ -104,17 +107,19 @@
   }
 
   async function activateAppUpdate() {
+    if (updateBusy) return;
     if (!navigator.onLine) return showToast('Se necesita internet para actualizar.', 'error');
-    updateRequested = true;
-    const waiting = registration && registration.waiting;
-    if (waiting) {
-      waiting.postMessage({ type: 'SKIP_WAITING' });
-      return;
-    }
-    await clearAppCaches().catch(() => {});
-    const url = new URL(window.location.href);
-    url.searchParams.set('nv-update', Date.now().toString());
-    window.location.replace(url.toString());
+    updateBusy = true; updateRequested = true; emitUpdateState();
+    try {
+      if (!registration && 'serviceWorker' in navigator) registration = await navigator.serviceWorker.getRegistration();
+      if (registration) { await registration.update().catch(() => {}); await new Promise(resolve => setTimeout(resolve, 700)); }
+      const waiting = registration && registration.waiting;
+      if (waiting) { waiting.postMessage({ type: 'SKIP_WAITING' }); setTimeout(() => window.location.reload(), 2500); return; }
+      await clearAppCaches().catch(() => {});
+      if ('serviceWorker' in navigator) { const regs=await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(reg=>reg.unregister().catch(()=>false))); }
+      const url = new URL(window.location.href); url.searchParams.set('nv-update', Date.now().toString()); url.searchParams.set('v', lastRemoteInfo?.version || CURRENT_VERSION);
+      window.location.replace(url.toString());
+    } catch (error) { updateBusy=false; emitUpdateState(); showToast(error.message || 'No se pudo iniciar la actualización.', 'error'); }
   }
 
   function openUpdateCenter() {
@@ -141,7 +146,7 @@
         const install = $('#installUpdateNow', overlay);
         if (status) status.textContent = updateStatusText();
         if (remote) remote.textContent = lastRemoteInfo && lastRemoteInfo.version ? lastRemoteInfo.version : 'No comprobada';
-        if (install) install.disabled = !(updateAvailable || (registration && registration.waiting));
+        if (install) { install.disabled = updateBusy || !(updateAvailable || (registration && registration.waiting)); install.textContent = updateBusy ? 'Actualizando…' : 'Actualizar ahora'; }
       };
       $('#closeSheet', overlay).addEventListener('click', close);
       $('#checkUpdateNow', overlay).addEventListener('click', async event => {
@@ -152,8 +157,8 @@
         refreshUi();
       });
       $('#installUpdateNow', overlay).addEventListener('click', activateAppUpdate);
-      $('#forceReloadNow', overlay).addEventListener('click', activateAppUpdate);
-      window.addEventListener('nv:update-state', refreshUi, { once: true });
+      $('#forceReloadNow', overlay).addEventListener('click', async event => { const btn=event.currentTarget;btn.disabled=true;btn.textContent='Recargando…';await clearAppCaches().catch(()=>{});const url=new URL(window.location.href);url.searchParams.set('nv-reload',Date.now().toString());window.location.replace(url.toString()); });
+      const updateListener=()=>refreshUi();window.addEventListener('nv:update-state',updateListener);const originalClose=close;close=()=>{window.removeEventListener('nv:update-state',updateListener);originalClose();};
       checkForAppUpdate({ interactive: false }).then(refreshUi);
     });
   }

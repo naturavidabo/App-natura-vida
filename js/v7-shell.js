@@ -285,7 +285,7 @@
       </section>
 
       <section class="v7Panel v7NaturePanel v802NaturePanel">
-        <div><span class="v7Eyebrow">Natura Vida V8.0.7</span><h2>Información clara. Operación segura.</h2><p>Una sola base oficial, actualización silenciosa y controles diseñados para trabajar más rápido.</p></div>
+        <div><span class="v7Eyebrow">Natura Vida V8.2.11</span><h2>Información clara. Operación segura.</h2><p>Una sola base oficial, actualización silenciosa y controles diseñados para trabajar más rápido.</p></div>
         <div class="v7NatureMark">NV</div>
       </section>
     `;

@@ -30,7 +30,7 @@ const sandbox={
         {id:'p200',name:'Aceite de coco 200ml',stock:19,cost:30,price:60,status:'active'},
         {id:'p500',name:'Aceite de Coco (500 ml / Frasco PET)',stock:11,cost:47.25,price:115,status:'active'}
       ],
-      clients:[{id:'c-alexia',name:'DRA ALEXIA BIOMUJER',businessName:'Alexia Bio mujer',customerType:'wholesale'}],
+      clients:[{id:'c-alexia',name:'DRA ALEXIA BIOMUJER',businessName:'Alexia Bio mujer',customerType:'wholesale'},{id:'c-cosio',name:'COSÍO',businessName:'Tienda Cosío',customerType:'retail'},{id:'c-villanueva',name:'VILLANUEVA',businessName:'Comercial Villanueva',customerType:'retail'}],
       settings:{minMargin:25,maxDiscount:10}
     },
     requireAuth:()=>true,
@@ -53,7 +53,7 @@ Object.assign(sandbox,sandbox.window);
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/v8-ai-assistant.js'),'utf8'),sandbox);
 const api=sandbox.window.__nvAiV829;
-if(!api) throw new Error('API interna V8.2.9 no disponible');
+if(!api) throw new Error('API interna V8.2.11 no disponible');
 
 api.clearConversation();
 api.addEntry({role:'user',text:'¿Cómo van las ventas hoy?',at:1});
@@ -83,4 +83,8 @@ const quantities=Object.fromEntries(draft.items.map(x=>[String(x.productName).ma
 if(quantities['200']!==3||quantities['100']!==1||quantities['500']!==2) throw new Error(`Cantidades incorrectas: ${JSON.stringify(quantities)}`);
 const proposals=api.buildActionProposals(question,{...engineResponse,draftAction:draft});
 if(!proposals.some(x=>x.type==='prepare_sale')) throw new Error('No se generó el trabajo de venta preparado');
-console.log('OK V8.2.9: persistencia y venta multítem operativa verificadas');
+const preciseQuestion='Haz una venta nueva de un aceite de 100 ML cliente Cosío con una rebaja de 5 bolivianos';
+const preciseDraft=api.resolveDraftActionV829(preciseQuestion,{draftAction:{type:'prepare_sale',client_query:'VILLANUEVA',items:[{product_query:'Aceite de coco 100 ml PET',quantity:1}],payment_method:'',sale_type:''},missingFields:[]});
+if(preciseDraft.clientId!=='c-cosio') throw new Error(`El nombre explícito no tuvo prioridad: ${preciseDraft.clientName}`);
+if(Number(preciseDraft.items[0].manualPrice)!==30) throw new Error(`La rebaja no se aplicó: ${JSON.stringify(preciseDraft.items[0])}`);
+console.log('OK V8.2.11: persistencia, cliente preciso, rebaja y venta multítem verificadas');

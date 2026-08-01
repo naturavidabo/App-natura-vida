@@ -1,8 +1,8 @@
-// NATURA VIDA V8.2.10 — asistente operativo, contraste accesible y saneamiento funcional.
-const VERSION = 'natura-vida-v8-2-9-recibos-recuperables-diagnostico-ventas';
-const APP_CACHE = 'nv-app-shell-v829';
+// NATURA VIDA V8.3.0 — cliente preciso, descuentos aplicables y actualización estable.
+const VERSION = 'natura-vida-v8-3-0-director-administrativo-inteligente';
+const APP_CACHE = 'nv-app-shell-v830';
 const IMAGE_CACHE = 'nv-images-v3';
-const RUNTIME_CACHE = 'nv-runtime-v829';
+const RUNTIME_CACHE = 'nv-runtime-v830';
 const IMAGE_CACHE_LIMIT = 120;
 const APP_SHELL = [
   './app-version.json',
@@ -130,12 +130,19 @@ async function runtimeResponse(request) {
 }
 
 function offlinePage() {
-  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.2.10</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.3.0</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
+
+  if (url.origin === self.location.origin && (url.pathname.endsWith('/app-version.json') || url.pathname.endsWith('/service-worker.js'))) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }).catch(async () => {
+      const cache=await caches.open(APP_CACHE);return (await cache.match(event.request,{ignoreSearch:true}))||new Response('',{status:503});
+    }));
+    return;
+  }
 
   if (MAP_HOSTS.has(url.hostname) || url.hostname.endsWith('.basemaps.cartocdn.com')) {
     event.respondWith(fetch(event.request, { cache: 'no-store' }).catch(() => new Response('', { status: 503, headers: { 'Cache-Control': 'no-store' } })));

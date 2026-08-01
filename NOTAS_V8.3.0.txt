@@ -1,0 +1,3 @@
+Natura Vida V8.3.0
+Director Administrativo Inteligente.
+Modo operativo determinista, modo analítico y selección automática.

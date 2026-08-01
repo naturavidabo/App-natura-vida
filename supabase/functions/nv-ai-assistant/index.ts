@@ -1,4 +1,4 @@
-// Natura Vida V8.2.8 — Asistente operativo real con borradores ejecutables y respuestas compactas.
+// Natura Vida V8.3.0 — Director Administrativo Inteligente: interpretación estructurada y operaciones supervisadas.
 // Secrets: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -98,9 +98,12 @@ const answerSchema = {
             type: "object", additionalProperties: false,
             properties: {
               product_query: { type: "string" },
-              quantity: { type: "number" }
+              quantity: { type: "number" },
+              discount_amount: { type: "number" },
+              discount_percent: { type: "number" },
+              final_unit_price: { type: "number" }
             },
-            required: ["product_query", "quantity"]
+            required: ["product_query", "quantity", "discount_amount", "discount_percent", "final_unit_price"]
           }
         }
       },
@@ -183,6 +186,8 @@ REGLAS:
 9. Para create_quote usa el mismo criterio, pero intent create_quote.
 10. draft_action es una propuesta: la aplicación volverá a buscar cliente y productos reales, calculará precio/stock y exigirá aprobación humana.
 11. No sugieras descuentos que violen las reglas comerciales. Si la operación está lista, title y summary deben indicar claramente “lista para revisar”.
+12. Copia client_query literalmente desde el nombre escrito por el usuario. No lo reemplaces por otro cliente parecido ni por uno del historial. Si hay duda, conserva el texto literal y deja que la aplicación muestre las coincidencias.
+13. Si el usuario pide una rebaja/descuento/precio final y la venta contiene un solo producto, completa en ese item discount_amount, discount_percent o final_unit_price. Los otros dos campos deben ser 0. Si hay varios productos y no aclara a cuál aplica, indícalo en missing_fields como producto de la rebaja.
 
 Contexto: ${contextLabel}
 Historial: ${JSON.stringify(history)}
