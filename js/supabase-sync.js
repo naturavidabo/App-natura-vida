@@ -15,6 +15,264 @@ let _authObserverSubscription = null;
 const NV801_PROFILE_CACHE_PREFIX = 'nv801-profile-cache:';
 
 
+// V8.4.0 — almacenamiento de autenticación persistente.
+// Supabase continúa siendo el único gestor de tokens, pero utiliza un adaptador
+// que mantiene una copia sincronizada en IndexedDB y localStorage. Esto protege
+// la sesión frente a recargas, cambios de Service Worker y cierres normales de
+// la PWA, sin copiar credenciales en archivos ni enviarlas a otro servicio.
+const NV840_AUTH_STORAGE_KEY = 'nv7-auth';
+const NV840_AUTH_DB_NAME = 'natura-vida-auth-v840';
+const NV840_AUTH_STORE_NAME = 'auth';
+const NV840_AUTH_REMOVED_PREFIX = 'nv840-auth-removed:';
+const NV840_AUTH_RECOVERY_PREFIX = 'nv840-auth-recovery:';
+const NV840_AUTH_EXPLICIT_UNTIL_KEY = 'nv840-auth-explicit-until';
+const NV840_AUTH_RECOVERY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const NV840_AUTH_MAX_RECOVERY_ATTEMPTS = 2;
+let _nv840AuthDbPromise = null;
+let _nv840AuthStorageReadyPromise = null;
+const AuthStorageDiagnosticsV840 = {
+  backend: 'initializing',
+  indexedDbAvailable: typeof indexedDB !== 'undefined',
+  localCopy: false,
+  indexedDbCopy: false,
+  persistentStorage: null,
+  lastMirrorAt: 0,
+  lastError: ''
+};
+
+function openAuthDbV840() {
+  if (_nv840AuthDbPromise) return _nv840AuthDbPromise;
+  _nv840AuthDbPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB no disponible'));
+    const request = indexedDB.open(NV840_AUTH_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(NV840_AUTH_STORE_NAME)) db.createObjectStore(NV840_AUTH_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('No se pudo abrir IndexedDB'));
+    request.onblocked = () => reject(new Error('IndexedDB está bloqueado por otra ventana'));
+  }).catch(error => {
+    AuthStorageDiagnosticsV840.indexedDbAvailable = false;
+    AuthStorageDiagnosticsV840.lastError = String(error?.message || error || 'IndexedDB no disponible');
+    throw error;
+  });
+  return _nv840AuthDbPromise;
+}
+
+async function authIdbGetV840(key) {
+  const db = await openAuthDbV840();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(NV840_AUTH_STORE_NAME, 'readonly');
+    const request = tx.objectStore(NV840_AUTH_STORE_NAME).get(key);
+    request.onsuccess = () => resolve(request.result ?? null);
+    request.onerror = () => reject(request.error || new Error('No se pudo leer IndexedDB'));
+  });
+}
+async function authIdbSetV840(key, value) {
+  const db = await openAuthDbV840();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(NV840_AUTH_STORE_NAME, 'readwrite');
+    tx.objectStore(NV840_AUTH_STORE_NAME).put(value, key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error('No se pudo guardar IndexedDB'));
+    tx.onabort = () => reject(tx.error || new Error('IndexedDB canceló el guardado'));
+  });
+}
+async function authIdbRemoveV840(key) {
+  const db = await openAuthDbV840();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(NV840_AUTH_STORE_NAME, 'readwrite');
+    tx.objectStore(NV840_AUTH_STORE_NAME).delete(key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error('No se pudo limpiar IndexedDB'));
+    tx.onabort = () => reject(tx.error || new Error('IndexedDB canceló la limpieza'));
+  });
+}
+function authRemovalKeyV840(key) { return `${NV840_AUTH_REMOVED_PREFIX}${key}`; }
+function authRecoveryKeyV840(key) { return `${NV840_AUTH_RECOVERY_PREFIX}${key}`; }
+function readLocalStorageV840(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+function writeLocalStorageV840(key, value) { try { localStorage.setItem(key, value); return true; } catch (_) { return false; } }
+function removeLocalStorageV840(key) { try { localStorage.removeItem(key); return true; } catch (_) { return false; } }
+function authRawFreshnessV840(raw) {
+  try {
+    const value = JSON.parse(String(raw || 'null')) || {};
+    return Number(value.expires_at || value.expiresAt || value.currentSession?.expires_at || value.currentSession?.expiresAt || 0);
+  } catch (_) { return 0; }
+}
+function authRawLooksRecoverableV840(raw) {
+  try {
+    const value = JSON.parse(String(raw || 'null')) || {};
+    const candidate = value.currentSession || value;
+    return !!(candidate && candidate.refresh_token && (candidate.user?.id || candidate.user));
+  } catch (_) { return false; }
+}
+function explicitAuthRemovalV840() {
+  let explicit = false;
+  try { explicit = !!_explicitLogoutRequestedV833; } catch (_) {}
+  try { explicit = explicit || !!sessionStorage.getItem(NV833_EXPLICIT_LOGOUT_KEY); } catch (_) {}
+  const until = Number(readLocalStorageV840(NV840_AUTH_EXPLICIT_UNTIL_KEY) || 0);
+  return explicit || until > Date.now();
+}
+async function readAuthRecoveryEnvelopeV840(key) {
+  const recoveryKey = authRecoveryKeyV840(key);
+  let localEnvelope = null;
+  try { localEnvelope = JSON.parse(readLocalStorageV840(recoveryKey) || 'null'); } catch (_) {}
+  let idbEnvelope = null;
+  try { idbEnvelope = await authIdbGetV840(recoveryKey); } catch (_) {}
+  const localSaved = Number(localEnvelope?.savedAt || 0);
+  const idbSaved = Number(idbEnvelope?.savedAt || 0);
+  return idbSaved > localSaved ? idbEnvelope : localEnvelope;
+}
+async function writeAuthRecoveryEnvelopeV840(key, raw, attempts = 1, reason = 'interrupción inesperada') {
+  if (!authRawLooksRecoverableV840(raw)) return false;
+  const envelope = { value: raw, savedAt: Date.now(), attempts: Math.max(1, Number(attempts || 1)), reason };
+  writeLocalStorageV840(authRecoveryKeyV840(key), JSON.stringify(envelope));
+  try { await authIdbSetV840(authRecoveryKeyV840(key), envelope); } catch (_) {}
+  return true;
+}
+async function clearAuthRecoveryV840(key) {
+  removeLocalStorageV840(authRecoveryKeyV840(key));
+  try { await authIdbRemoveV840(authRecoveryKeyV840(key)); } catch (_) {}
+}
+
+const AuthStorageV840 = {
+  async getItem(key) {
+    let localValue = readLocalStorageV840(key);
+    const removalMarker = readLocalStorageV840(authRemovalKeyV840(key));
+    let idbEnvelope = null;
+    try { idbEnvelope = await authIdbGetV840(key); }
+    catch (_) { /* fallback local */ }
+    let idbValue = typeof idbEnvelope === 'string' ? idbEnvelope : idbEnvelope?.value || null;
+    const idbSavedAt = Number(idbEnvelope?.savedAt || 0);
+    const removedAt = Number(removalMarker || 0);
+
+    // Un cierre voluntario deja una marca. En ese caso jamás se resucita una
+    // copia antigua. En una interrupción técnica sí se permite restaurar una
+    // copia de recuperación limitada y auditada.
+    if (!localValue && removedAt && removedAt >= idbSavedAt) {
+      AuthStorageDiagnosticsV840.backend = 'signed-out';
+      return null;
+    }
+    if (!localValue && !idbValue && !explicitAuthRemovalV840()) {
+      const recovery = await readAuthRecoveryEnvelopeV840(key);
+      const age = Date.now() - Number(recovery?.savedAt || 0);
+      const attempts = Number(recovery?.attempts || 0);
+      if (recovery?.value && age >= 0 && age <= NV840_AUTH_RECOVERY_TTL_MS && attempts <= NV840_AUTH_MAX_RECOVERY_ATTEMPTS && authRawLooksRecoverableV840(recovery.value)) {
+        localValue = recovery.value;
+        idbValue = recovery.value;
+        writeLocalStorageV840(key, recovery.value);
+        try { await authIdbSetV840(key, { value: recovery.value, savedAt: Date.now(), restoredFromRecovery: true }); } catch (_) {}
+        AuthStorageDiagnosticsV840.recoveredFromBackup = true;
+        AuthStorageDiagnosticsV840.recoveryAttempts = attempts;
+      }
+    }
+
+    let chosen = localValue || idbValue || null;
+    if (localValue && idbValue) {
+      chosen = authRawFreshnessV840(idbValue) > authRawFreshnessV840(localValue) ? idbValue : localValue;
+    }
+    if (chosen) {
+      if (localValue !== chosen) writeLocalStorageV840(key, chosen);
+      try { await authIdbSetV840(key, { value: chosen, savedAt: Date.now() }); } catch (_) {}
+      removeLocalStorageV840(authRemovalKeyV840(key));
+    }
+    AuthStorageDiagnosticsV840.localCopy = !!readLocalStorageV840(key);
+    AuthStorageDiagnosticsV840.indexedDbCopy = !!chosen;
+    AuthStorageDiagnosticsV840.backend = chosen ? (idbValue ? 'indexeddb + localStorage' : 'localStorage migrado') : 'sin sesión';
+    AuthStorageDiagnosticsV840.lastMirrorAt = Date.now();
+    return chosen;
+  },
+  async setItem(key, value) {
+    removeLocalStorageV840(authRemovalKeyV840(key));
+    removeLocalStorageV840(NV840_AUTH_EXPLICIT_UNTIL_KEY);
+    const localOk = writeLocalStorageV840(key, value);
+    let idbOk = false;
+    try { idbOk = await authIdbSetV840(key, { value, savedAt: Date.now() }); }
+    catch (error) { AuthStorageDiagnosticsV840.lastError = String(error?.message || error || 'No se pudo guardar la copia persistente'); }
+    // Cada token renovado reemplaza también la copia de recuperación. Así la
+    // reserva nunca queda más antigua que la sesión válida administrada por Auth.
+    await writeAuthRecoveryEnvelopeV840(key, value, 1, 'copia sincronizada').catch(() => false);
+    AuthStorageDiagnosticsV840.localCopy = localOk;
+    AuthStorageDiagnosticsV840.indexedDbCopy = idbOk;
+    AuthStorageDiagnosticsV840.backend = idbOk ? 'indexeddb + localStorage' : 'localStorage';
+    AuthStorageDiagnosticsV840.lastMirrorAt = Date.now();
+    AuthStorageDiagnosticsV840.recoveredFromBackup = false;
+  },
+  async removeItem(key) {
+    const removedAt = Date.now();
+    const explicit = explicitAuthRemovalV840();
+    const localValue = readLocalStorageV840(key);
+    let idbEnvelope = null;
+    try { idbEnvelope = await authIdbGetV840(key); } catch (_) {}
+    const currentValue = localValue || (typeof idbEnvelope === 'string' ? idbEnvelope : idbEnvelope?.value) || null;
+
+    if (explicit) {
+      removeLocalStorageV840(key);
+      writeLocalStorageV840(authRemovalKeyV840(key), String(removedAt));
+      await clearAuthRecoveryV840(key);
+      try { await authIdbRemoveV840(key); } catch (_) {}
+      try { await authIdbSetV840(authRemovalKeyV840(key), { removedAt, savedAt: removedAt }); } catch (_) {}
+      AuthStorageDiagnosticsV840.backend = 'signed-out';
+    } else {
+      const previous = await readAuthRecoveryEnvelopeV840(key).catch(() => null);
+      const attempts = Math.min(NV840_AUTH_MAX_RECOVERY_ATTEMPTS + 1, Number(previous?.attempts || 0) + 1);
+      if (currentValue) await writeAuthRecoveryEnvelopeV840(key, currentValue, attempts, 'Supabase retiró temporalmente la sesión').catch(() => false);
+      removeLocalStorageV840(key);
+      removeLocalStorageV840(authRemovalKeyV840(key));
+      try { await authIdbRemoveV840(key); } catch (_) {}
+      AuthStorageDiagnosticsV840.backend = currentValue ? 'sesión en recuperación' : 'sin sesión';
+      AuthStorageDiagnosticsV840.recoveryAttempts = attempts;
+    }
+    AuthStorageDiagnosticsV840.localCopy = false;
+    AuthStorageDiagnosticsV840.indexedDbCopy = false;
+    AuthStorageDiagnosticsV840.lastMirrorAt = removedAt;
+  }
+};
+
+async function waitForAuthStorageV840() {
+  if (!_nv840AuthStorageReadyPromise) {
+    _nv840AuthStorageReadyPromise = AuthStorageV840.getItem(NV840_AUTH_STORAGE_KEY)
+      .catch(() => readLocalStorageV840(NV840_AUTH_STORAGE_KEY))
+      .then(value => ({ ok: true, hasSession: !!value }));
+  }
+  return _nv840AuthStorageReadyPromise;
+}
+async function mirrorAuthStorageV840() {
+  const value = await AuthStorageV840.getItem(NV840_AUTH_STORAGE_KEY);
+  if (value) await AuthStorageV840.setItem(NV840_AUTH_STORAGE_KEY, value);
+  return { ok: !!value, hasSession: !!value };
+}
+async function requestPersistentStorageV840() {
+  try {
+    if (!navigator.storage?.persist) return false;
+    const granted = await navigator.storage.persist();
+    AuthStorageDiagnosticsV840.persistentStorage = !!granted;
+    recordSessionContinuityV833({ persistentStorage: !!granted });
+    return !!granted;
+  } catch (error) {
+    AuthStorageDiagnosticsV840.lastError = String(error?.message || error || 'No se pudo solicitar almacenamiento persistente');
+    return false;
+  }
+}
+async function getAuthStorageDiagnosticsV840() {
+  const localValue = readLocalStorageV840(NV840_AUTH_STORAGE_KEY);
+  let idbValue = null;
+  try { idbValue = await authIdbGetV840(NV840_AUTH_STORAGE_KEY); } catch (_) {}
+  let persisted = AuthStorageDiagnosticsV840.persistentStorage;
+  try { if (navigator.storage?.persisted) persisted = await navigator.storage.persisted(); } catch (_) {}
+  const recovery = await readAuthRecoveryEnvelopeV840(NV840_AUTH_STORAGE_KEY).catch(() => null);
+  return Object.assign({}, AuthStorageDiagnosticsV840, {
+    localCopy: !!localValue,
+    indexedDbCopy: !!(typeof idbValue === 'string' ? idbValue : idbValue?.value),
+    recoveryCopy: !!recovery?.value,
+    recoveryAttempts: Number(recovery?.attempts || AuthStorageDiagnosticsV840.recoveryAttempts || 0),
+    persistentStorage: persisted,
+    storageKey: NV840_AUTH_STORAGE_KEY
+  });
+}
+
+
 // V8.3.3 — continuidad de sesión. Solo conserva metadatos no sensibles;
 // los tokens continúan administrados exclusivamente por Supabase Auth.
 const NV833_SESSION_MARKER_KEY = 'nv833-session-marker';
@@ -78,8 +336,13 @@ function rememberSessionPresenceV833(user, event = 'SESSION_PRESENT') {
 function markExplicitLogoutV833(value = true) {
   _explicitLogoutRequestedV833 = !!value;
   try {
-    if (value) sessionStorage.setItem(NV833_EXPLICIT_LOGOUT_KEY, String(Date.now()));
-    else sessionStorage.removeItem(NV833_EXPLICIT_LOGOUT_KEY);
+    if (value) {
+      sessionStorage.setItem(NV833_EXPLICIT_LOGOUT_KEY, String(Date.now()));
+      localStorage.setItem(NV840_AUTH_EXPLICIT_UNTIL_KEY, String(Date.now() + 30000));
+    } else {
+      sessionStorage.removeItem(NV833_EXPLICIT_LOGOUT_KEY);
+      localStorage.removeItem(NV840_AUTH_EXPLICIT_UNTIL_KEY);
+    }
   } catch (_) {}
   recordSessionContinuityV833({ explicitLogout: !!value, state: value ? 'signing_out' : SessionContinuityV833.state });
 }
@@ -91,9 +354,9 @@ function clearSessionMarkerV833() {
   recordSessionContinuityV833({ state: 'signed_out', explicitLogout: true, lastRecoveryResult: 'Cierre voluntario en este dispositivo' });
   setTimeout(() => {
     _explicitLogoutRequestedV833 = false;
-    try { sessionStorage.removeItem(NV833_EXPLICIT_LOGOUT_KEY); } catch (_) {}
+    try { sessionStorage.removeItem(NV833_EXPLICIT_LOGOUT_KEY); localStorage.removeItem(NV840_AUTH_EXPLICIT_UNTIL_KEY); } catch (_) {}
     recordSessionContinuityV833({ explicitLogout: false });
-  }, 15000);
+  }, 30000);
 }
 function getSessionContinuityDiagnosticsV833() {
   const persisted = readJsonStorageV833(NV833_SESSION_DIAGNOSTICS_KEY, {});
@@ -230,6 +493,9 @@ function installSessionLifecycleV833() {
 }
 
 async function prepareSessionForUpdateV833() {
+  await waitForAuthStorageV840().catch(() => null);
+  await mirrorAuthStorageV840().catch(() => null);
+  requestPersistentStorageV840().catch(() => {});
   const result = await verifySessionV833({ interactive: false, verifyServer: false });
   if (result.ok && result.user) rememberSessionPresenceV833(result.user, 'UPDATE_HANDOFF');
   try { sessionStorage.setItem('nv833-update-handoff', JSON.stringify({ at: Date.now(), userId: result.user?.id || sessionMarkerV833()?.userId || '' })); } catch (_) {}
@@ -318,7 +584,8 @@ function getSupabaseClient() {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storageKey: 'nv7-auth'
+      storageKey: NV840_AUTH_STORAGE_KEY,
+      storage: AuthStorageV840
     },
     realtime: { params: { eventsPerSecond: 10 } }
   });
@@ -391,6 +658,7 @@ async function onlineSignIn(email, password) {
       return { ok: false, message: 'Esta cuenta está bloqueada. Contacta al administrador.' };
     }
     rememberSessionPresenceV833(data.user, 'SIGNED_IN');
+    requestPersistentStorageV840().catch(() => {});
     setCloudConnectionState('online', 'Sesión autenticada');
     return { ok: true, user: data.user, profile };
   } catch (error) {
@@ -1500,6 +1768,11 @@ Object.assign(window, {
   clearSessionMarkerV833,
   isSessionWriteReadyV833,
   installSessionLifecycleV833,
+  AuthStorageV840,
+  waitForAuthStorageV840,
+  mirrorAuthStorageV840,
+  requestPersistentStorageV840,
+  getAuthStorageDiagnosticsV840,
   upsertCloudProfileForUser,
   signUpEmailAccount,
   sendPasswordRecoveryEmail,

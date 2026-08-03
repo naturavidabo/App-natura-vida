@@ -1,0 +1,29 @@
+NATURA VIDA V8.4.0 — RESULTADO DE VERIFICACIONES LOCALES
+
+Auditoría integral: 132/132 controles OK
+Auditoría de despliegue: 23/23 controles OK
+Autocompletado de clientes: 8/8 controles OK
+Regresión territorial: 9/9 controles OK
+Saneamiento y gobierno: 12/12 controles OK
+Continuidad segura: 12/12 controles OK
+Control administrativo: 16/16 controles OK
+Núcleo de calidad: 5/5 grupos de prueba OK
+Reglas comerciales: 6/6 grupos de prueba OK
+Integración comercial: 19/19 controles OK
+Cápsula de conexión: 9/9 controles OK
+Asistente analítico: 8/8 controles OK
+Interfaz financiera: 22/22 controles OK
+Prueba de lanzamiento V8.4.0: OK
+Persistencia del asistente y venta multítem: OK
+Caso financiero de Gabriela: OK
+JavaScript: sintaxis correcta en 46 archivos
+Service Worker: sintaxis correcta
+Repositorio: 99 archivos
+
+SIMULACIÓN ESPECÍFICA DE SESIÓN
+- Espejo localStorage + IndexedDB: OK
+- Recuperación después de retiro técnico de la sesión: OK
+- No recuperación después de cierre voluntario: OK
+
+ALCANCE
+Estas verificaciones se realizaron sobre los archivos locales del paquete. La prueba definitiva de permanencia de sesión debe hacerse después del despliegue, en la PWA Android y contra el proyecto productivo de Supabase.

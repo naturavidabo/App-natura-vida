@@ -1,11 +1,11 @@
-/* Natura Vida V8.3.5 — Director Ejecutivo Proactivo, alertas priorizadas y agenda accionable.
+/* Natura Vida V8.4.0 — Director Administrativo Inteligente consolidado.
    Acceso exclusivo para administrador central. Ninguna acción se ejecuta automáticamente. Los cálculos críticos continúan
    siendo locales; Gemini interpreta un resumen empresarial limitado a través
    de una Supabase Edge Function y nunca recibe claves desde el navegador. */
 (function(){
   'use strict';
 
-  const VERSION='8.3.5';
+  const VERSION='8.4.0';
   const MAX_ENTRIES=40;
   const MAX_ARCHIVES=12;
   const MAX_ACTION_HISTORY=40;
@@ -534,13 +534,36 @@
   function showControlReminderV834(){
     const today=new Date().toISOString().slice(0,10);if(controlReminderShownV834===today)return;controlReminderShownV834=today;showProactiveBriefV835(false);
   }
-  function updateControlIndicatorsV832(){const alerts=controlAlertsV832(),tasks=readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)),evalData=businessEvaluationV832();const count=document.getElementById('nvAiControlCountV832');if(count)count.textContent=String(alerts.length+tasks.length);const health=document.getElementById('nvAiStatHealthV832');if(health)health.textContent=`${evalData.score}/100`;const pending=document.getElementById('nvAiStatTasksV832');if(pending)pending.textContent=String(tasks.length);}
+  function updateControlIndicatorsV832(){const alerts=controlAlertsV832(),tasks=readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)),works=readActionHistory().filter(x=>x.status==='pending'),evalData=businessEvaluationV832();const count=document.getElementById('nvAiControlCountV832');if(count)count.textContent=String(alerts.length+tasks.length);const center=document.getElementById('nvAiAdminCenterCountV840');if(center)center.textContent=String(alerts.length+tasks.length+works.length);const health=document.getElementById('nvAiStatHealthV832');if(health)health.textContent=`${evalData.score}/100`;const pending=document.getElementById('nvAiStatTasksV832');if(pending)pending.textContent=String(tasks.length);}
   function snoozeAlertV832(id,days=3){const state=readAlertStateV832();state[id]={snoozeUntil:Date.now()+days*86400000,updatedAt:Date.now()};saveAlertStateV832(state);}
   function taskGroupsV835(tasks){
     const today=new Date().toISOString().slice(0,10),tomorrow=new Date(Date.now()+86400000).toISOString().slice(0,10),open=tasks.filter(x=>['pending','in_progress'].includes(x.status));
     return {overdue:open.filter(x=>x.dueDate&&x.dueDate<today),today:open.filter(x=>x.dueDate===today),upcoming:open.filter(x=>x.dueDate>today).sort((a,b)=>String(a.dueDate).localeCompare(String(b.dueDate))),completed:tasks.filter(x=>x.status==='completed'),unscheduled:open.filter(x=>!x.dueDate),tomorrow};
   }
   function controlTaskCardV835(t){const today=new Date().toISOString().slice(0,10),late=['pending','in_progress'].includes(t.status)&&t.dueDate&&t.dueDate<today;return `<article class="${esc(t.status)} ${esc(t.priority)} ${late?'overdue':''}"><div><span>${esc(t.area||'administración')} · ${t.syncStatus==='cloud'?'nube':'pendiente'}</span><strong>${esc(t.title)}</strong><p>${esc(t.detail||'Sin detalle')}</p><small>Responsable: ${esc(t.responsible||'Administrador central')} · ${esc(t.dueDate||'sin fecha')}${late?' · VENCIDA':''}</small></div><button data-task-toggle-v832="${esc(t.id)}">${t.status==='completed'?'Reabrir':'Completar'}</button></article>`;}
+  function openAdministrativeCenterV840(){
+    closeActionSheet();
+    const works=readActionHistory().filter(x=>x.status==='pending').slice().reverse();
+    const tasks=readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status));
+    const alerts=controlAlertsV832();
+    const overview=executiveOverviewV834();
+    const daily=ensureDailySummaryV832();
+    const critical=alerts.filter(x=>['urgent','high'].includes(x.priority));
+    document.body.insertAdjacentHTML('beforeend',`<div class="nvAiOverlay" id="nvAiAdminCenterOverlayV840"><section class="nvAiSheet nvAiAdminCenterV840" role="dialog" aria-modal="true" aria-labelledby="nvAiAdminCenterTitleV840"><div class="nvAiHandle"></div><button class="nvAiClose" id="nvAiAdminCenterCloseV840" type="button">×</button><div class="nvAiActionSheetHead"><div class="nvAiAvatar">${botSvg()}</div><div><h2 id="nvAiAdminCenterTitleV840">Centro Administrativo Inteligente</h2><p>Operaciones, prioridades, tareas y control en una sola vista.</p></div></div><div class="nvAiAdminPriorityV840 ${esc(overview.priority?.priority||'normal')}"><span>Prioridad actual</span><strong>${esc(overview.title)}</strong><p>${esc(overview.detail)}</p></div><div class="nvAiAdminMetricsV840"><button data-admin-v840="works"><b>${works.length}</b><span>Trabajos por aprobar</span></button><button data-admin-v840="tasks"><b>${tasks.length}</b><span>Tareas abiertas</span></button><button data-admin-v840="alerts"><b>${critical.length}</b><span>Alertas prioritarias</span></button><button data-admin-v840="evaluation"><b>${overview.evaluation.score}</b><span>Salud /100</span></button></div><article class="nvAiAdminSummaryV840"><span>Resumen automático</span><strong>${esc(daily.title)}</strong><p>${esc(daily.body)}</p><button type="button" data-admin-v840="summary">Ver resumen completo</button></article><section class="nvAiAdminWorkPreviewV840"><div><strong>Operaciones preparadas</strong><small>Ninguna se ejecuta sin tu aprobación.</small></div>${works.length?works.slice(0,4).map(x=>`<article><div><b>${esc(x.label||x.type)}</b><small>${esc(x.clientName||x.detail||'Pendiente de revisión')}</small></div><span>Pendiente</span></article>`).join(''):'<p>No hay operaciones pendientes de aprobación.</p>'}<button class="btn block" type="button" data-admin-v840="works">Abrir trabajos del asistente</button></section></section></div>`);
+    const overlay=document.getElementById('nvAiAdminCenterOverlayV840');
+    const close=()=>overlay?.remove();
+    document.getElementById('nvAiAdminCenterCloseV840')?.addEventListener('click',close);
+    overlay?.addEventListener('click',event=>{if(event.target===overlay)close();});
+    overlay?.querySelectorAll('[data-admin-v840]').forEach(button=>button.addEventListener('click',()=>{
+      const target=button.dataset.adminV840;close();
+      if(target==='works')return showActionHistory();
+      if(target==='tasks')return openControlCenterV832('tasks');
+      if(target==='alerts')return openControlCenterV832('alerts');
+      if(target==='evaluation')return openControlCenterV832('evaluation');
+      if(target==='summary')return openControlCenterV832('summary');
+    }));
+  }
+
   function openControlCenterV832(initial='overview'){
     closeActionSheet();let tab=initial;
     const render=()=>{
@@ -1200,12 +1223,12 @@
     const {st,cs,ss}=statsSnapshot();
     const main=document.getElementById('mainArea');
     main.innerHTML=`<section class="nvAiPage nvAiPageV825">
-      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Director Ejecutivo <span>IA</span></h1><p>Detecta, prioriza, prepara y controla el negocio bajo tu aprobación</p></div><div class="nvAiHeadActionsV824"><button id="nvAiThreadsToggleV825" type="button">Chats</button><button id="nvAiNewV824" type="button">＋ Nueva</button><button id="nvAiHistoryV824" type="button">Historial</button></div></header>
+      <header class="nvAiHead"><button id="nvAiBack" type="button" aria-label="Volver">‹</button><div class="nvAiAvatar">${botSvg()}</div><div><h1>Director Administrativo <span>IA</span></h1><p>Consulta, prepara, organiza y controla operaciones bajo tu aprobación</p></div><div class="nvAiHeadActionsV824"><button id="nvAiThreadsToggleV825" type="button">Chats</button><button id="nvAiNewV824" type="button">＋ Nueva</button><button id="nvAiHistoryV824" type="button">Historial</button></div></header>
       <div class="nvAiWorkspaceV825">
         <aside class="nvAiThreadPanelV825" id="nvAiThreadPanelV825" aria-label="Conversaciones del asistente"></aside>
         <main class="nvAiChatColumnV825">
-          <div class="nvAiDirectorModesV830"><span>Modo</span><button type="button" data-ai-mode-v830="auto">Automático</button><button type="button" data-ai-mode-v830="operate">Preparar operación</button><button type="button" data-ai-mode-v830="analyze">Analizar</button><small id="nvAiModeLabelV830">Automático</small></div><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiOpenActions">Trabajos <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='pending').length}</b></button><button type="button" id="nvAiControlV832">Control <b id="nvAiControlCountV832">${controlAlertsV832().length+readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button><button type="button" id="nvAiRecoverV831">Recuperar</button></div>
-          <div class="nvAiExecutiveStripV834"><span>Director Proactivo</span><strong>${esc(executiveOverviewV834().title)}</strong><button type="button" id="nvAiExecutiveOpenV834">Ver prioridades</button></div><div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Datos empresariales autorizados · ninguna operación se ejecuta sin revisión</small></div>
+          <div class="nvAiDirectorModesV830"><span>Modo</span><button type="button" data-ai-mode-v830="auto">Automático</button><button type="button" data-ai-mode-v830="operate">Preparar operación</button><button type="button" data-ai-mode-v830="analyze">Analizar</button><small id="nvAiModeLabelV830">Automático</small></div><div class="nvAiEngineBar"><button type="button" id="nvAiEngineBadge" class="nvAiEngineBadge ${engineClass()}"><i></i><span>${esc(engineLabel())}</span></button><small id="nvAiUsage">${engineState.usage?`${engineState.usage.used}/${engineState.usage.limit} consultas hoy`:'Modo local seguro'}</small><button type="button" id="nvAiAdminCenterV840" class="nvAiAdminCenterButtonV840">Centro <b id="nvAiAdminCenterCountV840">${readActionHistory().filter(x=>x.status==='pending').length+controlAlertsV832().length+readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).length}</b></button><button type="button" id="nvAiOpenActions">Trabajos <b id="nvAiActionCount">${readActionHistory().filter(x=>x.status==='pending').length}</b></button><button type="button" id="nvAiControlV832">Control <b id="nvAiControlCountV832">${controlAlertsV832().length+readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).length}</b></button><button type="button" id="nvAiCheckEngine">Comprobar</button><button type="button" id="nvAiRecoverV831">Recuperar</button></div>
+          <div class="nvAiExecutiveStripV834"><span>Centro administrativo</span><strong>${esc(executiveOverviewV834().title)}</strong><button type="button" id="nvAiExecutiveOpenV834">Ver prioridades</button></div><div class="nvAiContext"><span>Analizando</span><strong id="nvAiContextLabel">${esc(assistantContext.label)}</strong><small>Datos empresariales autorizados · ninguna operación se ejecuta sin revisión</small></div>
           <section class="nvAiDashboardV824 ${dashboardCollapsedV824()?'collapsed':''}" id="nvAiDashboardV824"><button type="button" class="nvAiDashboardToggleV824" id="nvAiDashboardToggleV824"><span>Panel gerencial <small id="nvAiDashboardStateV824">${dashboardCollapsedV824()?'Mostrar':'Ocultar'}</small></span><b id="nvAiDashboardArrowV824">${dashboardCollapsedV824()?'⌄':'⌃'}</b></button><div class="nvAiDashboardBodyV824"><div class="nvAiQuickStats"><div><small>Ventas 30 días</small><b id="nvAiStatSales">${money(st.revenue)}</b></div><div><small>Utilidad estimada</small><b id="nvAiStatProfit">${money(st.profit)}</b></div><div><small>Stock crítico</small><b id="nvAiStatStock">${ss.critical.length}</b></div><div><small>Seguimientos</small><b id="nvAiStatFollow">${cs.inactive.length}</b></div><div><small>Salud operativa</small><b id="nvAiStatHealthV832">${businessEvaluationV832().score}/100</b></div><div><small>Tareas pendientes</small><b id="nvAiStatTasksV832">${readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).length}</b></div></div><section class="nvAiRecPanel"><div class="nvAiRecHead"><strong>Recomendaciones de hoy</strong><button id="nvAiRefreshRec" type="button">Actualizar</button></div><div id="nvAiRecommendations" class="nvAiRecommendations"></div></section><div class="nvAiTopicTabs" id="nvAiTopicTabs"></div></div></section>
           <div class="nvAiFeed" id="nvAiFeed" aria-live="polite"></div><button type="button" class="nvAiJumpLatestV824" id="nvAiJumpLatestV824" aria-label="Ir al mensaje más reciente">↓</button>
           <div class="nvAiComposer"><textarea id="nvAiInput" rows="1" placeholder="Escribe una orden o consulta…" aria-label="Consulta para el asistente" data-nv-no-dirty="true"></textarea><button id="nvAiSend" type="button" aria-label="Enviar">➤</button></div>
@@ -1222,6 +1245,7 @@
     document.getElementById('nvAiJumpLatestV824').onclick=()=>scrollLatestV824(true);
     document.getElementById('nvAiSend').onclick=()=>ask();
     document.getElementById('nvAiRefreshRec').onclick=renderRecommendations;
+    document.getElementById('nvAiAdminCenterV840').onclick=openAdministrativeCenterV840;
     document.getElementById('nvAiOpenActions').onclick=showActionHistory;
     document.getElementById('nvAiControlV832').onclick=()=>openControlCenterV832();
     document.getElementById('nvAiExecutiveOpenV834').onclick=()=>openControlCenterV832('overview');
@@ -1370,7 +1394,7 @@
     window.openAIAssistantSheetV810=openSheet;
   }
 
-  window.__nvAiV835={VERSION,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,openControlCenterV832,readControlTasksV832,controlAlertsV832,businessEvaluationV832,dailySummaryV832,weeklySummaryV835,ensureWeeklySummaryV835,proactiveActionsV835,showProactiveBriefV835,productCommercialHealthV832,taskOverviewV834,executiveOverviewV834,syncControlCenterV834,installControlSyncV834,get controlSyncStateV834(){return {...controlSyncStateV834};},get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}}; window.__nvAiV834=window.__nvAiV835; window.__nvAiV832=window.__nvAiV835; window.__nvAiV830=window.__nvAiV835; window.__nvAiV829=window.__nvAiV835;
+  window.__nvAiV840={VERSION,openAdministrativeCenterV840,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,openControlCenterV832,readControlTasksV832,controlAlertsV832,businessEvaluationV832,dailySummaryV832,weeklySummaryV835,ensureWeeklySummaryV835,proactiveActionsV835,showProactiveBriefV835,productCommercialHealthV832,taskOverviewV834,executiveOverviewV834,syncControlCenterV834,installControlSyncV834,get controlSyncStateV834(){return {...controlSyncStateV834};},get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}}; window.__nvAiV835=window.__nvAiV840; window.__nvAiV834=window.__nvAiV840; window.__nvAiV832=window.__nvAiV840; window.__nvAiV830=window.__nvAiV840; window.__nvAiV829=window.__nvAiV840;
   window.__nvAiV827=window.__nvAiV829;
   window.__nvAiV826=window.__nvAiV829;
   window.__nvAiV825=window.__nvAiV827;

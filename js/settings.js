@@ -82,6 +82,7 @@ function renderSettings() {
       <div class="costline">Una falla de red, Gemini o la actualización no debe enviarte al acceso. Natura Vida verifica y recupera la sesión antes de mostrar el inicio de sesión.</div>
       <div class="cloudRule"><span>Estado</span><strong id="nv833SessionStateSettings">${escapeHtml(sessionStateLabel)}</strong></div>
       <div class="cloudRule"><span>Cuenta</span><strong>${escapeHtml(AppState.session?.email || sessionDiag.rememberedEmail || 'No identificada')}</strong></div>
+      <div class="cloudRule"><span>Almacenamiento de sesión</span><strong id="nv840AuthStorageSettings">Comprobando…</strong></div>
       <div class="cloudRule"><span>Última renovación</span><strong>${escapeHtml(lastRefreshLabel)}</strong></div>
       <div class="cloudRule"><span>Service Worker</span><strong>${escapeHtml(updateDiag.workerState || 'Sin comprobar')}</strong></div>
       <div class="field-row"><button class="btn outline block" id="checkSessionV833Btn">Comprobar sesión</button><button class="btn outline block" id="openUpdateCenterV833Btn">Actualizaciones</button></div>
@@ -111,10 +112,21 @@ function renderSettings() {
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V${escapeHtml(window.NATURA_APP_VERSION || '8.3.5')} · Supabase + Realtime + IA operativa supervisada</div>
+      <div class="costline">NATURA VIDA — V${escapeHtml(window.NATURA_APP_VERSION || '8.4.0')} · Supabase + Realtime + IA operativa supervisada</div>
       <div class="costline">Sin cola offline automática. Incluye continuidad segura, control financiero, auditoría, reglas comerciales y motor IA protegido por Edge Function.</div>
     </div>
   `;
+
+  if (window.getAuthStorageDiagnosticsV840) {
+    getAuthStorageDiagnosticsV840().then(diag => {
+      const el = $('#nv840AuthStorageSettings');
+      if (!el) return;
+      if (diag.indexedDbCopy && diag.localCopy) el.textContent = diag.persistentStorage ? 'Persistente reforzada' : 'Doble copia local';
+      else if (diag.localCopy) el.textContent = 'Copia local';
+      else if (diag.recoveryCopy) el.textContent = 'Reserva de recuperación';
+      else el.textContent = 'Sin copia detectada';
+    }).catch(() => { const el=$('#nv840AuthStorageSettings'); if(el) el.textContent='No se pudo comprobar'; });
+  }
 
   let newLogo = AppState.settings.logo;
   $('#logoInput').addEventListener('change', async (e) => {

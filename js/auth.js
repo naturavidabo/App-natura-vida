@@ -134,6 +134,7 @@ function clearSession() {
 async function restoreSession() {
   try {
     if (!window.isOnlineConfigured || !isOnlineConfigured()) return { status: 'signed_out' };
+    if (window.waitForAuthStorageV840) await waitForAuthStorageV840().catch(() => null);
     if (window.installAuthObserverV801) installAuthObserverV801();
     const online = await getOnlineSessionProfile().catch(error => ({ status: 'profile_unavailable', reason: error?.message }));
     if (!online || !online.user) {

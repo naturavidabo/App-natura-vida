@@ -204,11 +204,51 @@
       : 'Esta operación requiere internet. No se realizó ningún cambio.', 'error');
   }
 
+  function isIgnoredDirtyFieldV840(el) {
+    if (!el?.matches?.('input, textarea, select')) return true;
+    if (['password','file','hidden','search'].includes(String(el.type || '').toLowerCase())) return true;
+    if (el.closest?.('[data-nv-no-dirty="true"], .nvAiPage, .nvAiOverlay, .loginShell, .v7UpdateHero, .nv833SessionCard')) return true;
+    const identity = `${el.id || ''} ${el.name || ''} ${el.placeholder || ''} ${el.getAttribute?.('aria-label') || ''}`.toLowerCase();
+    return /buscar|busqueda|búsqueda|filtro|filtrar|consulta|mensaje|chat|quick|search|nvai|version|actualiz/.test(identity);
+  }
+
+  function dirtyScopeHasCommitActionV840(el) {
+    const scope = el.closest?.('form, .overlay, .sheet, #mainArea');
+    if (!scope) return false;
+    const formId = String(scope.id || '').toLowerCase();
+    if (/login|register|recover|sessionrecovery/.test(formId)) return false;
+    if (scope.matches?.('form') && !scope.closest?.('.loginShell')) return true;
+    const actionText = [...scope.querySelectorAll?.('button, input[type="submit"]') || []]
+      .map(button => `${button.textContent || ''} ${button.value || ''} ${button.id || ''}`.toLowerCase()).join(' ');
+    return /guardar|registrar|confirmar|crear|aprobar|finalizar|actualizar datos|rendir|generar venta|continuar venta/.test(actionText);
+  }
+
+  function shouldTrackDirtyFieldV840(el) {
+    if (isIgnoredDirtyFieldV840(el)) return false;
+    if (el.closest?.('[data-nv-dirty-scope="true"], form[data-nv-transactional="true"], .nvTransactionalForm')) return true;
+    return dirtyScopeHasCommitActionV840(el);
+  }
+
+  function clearMeaningfulDirtyV840(reason = '') {
+    document.querySelectorAll?.('[data-nv-dirty-changed="true"]').forEach(el => el.removeAttribute('data-nv-dirty-changed'));
+    window.V7_FORM_DIRTY = false;
+    window.dispatchEvent(new CustomEvent('nv:dirty-cleared', { detail: { reason } }));
+  }
+
+  function hasMeaningfulDirtyFormV840() {
+    const fields = [...document.querySelectorAll?.('[data-nv-dirty-changed="true"]') || []]
+      .filter(el => el.isConnected && shouldTrackDirtyFieldV840(el));
+    if (!fields.length) {
+      window.V7_FORM_DIRTY = false;
+      return false;
+    }
+    return true;
+  }
+
   function trackEditing(event) {
     const el = event.target;
-    if (!el.matches?.('input, textarea, select') || el.type === 'password' || el.type === 'file') return;
-    // El chat IA, buscadores y controles marcados como no transaccionales no son formularios pendientes.
-    if (el.closest?.('.nvAiPage, [data-nv-no-dirty="true"]')) return;
+    if (!shouldTrackDirtyFieldV840(el)) return;
+    el.setAttribute('data-nv-dirty-changed', 'true');
     window.V7_FORM_DIRTY = true;
     clearTimeout(inputTimer);
     inputTimer = setTimeout(() => {
@@ -278,7 +318,7 @@
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('nv:connection', updateFromCloud);
-    window.addEventListener('nv:form-saved', () => { clearDraft(); window.V7_FORM_DIRTY = false; });
+    window.addEventListener('nv:form-saved', () => { clearDraft(); clearMeaningfulDirtyV840('form-saved'); });
     setInterval(() => {
       if (navigator.onLine && window.CloudConnection?.state === 'online') makeReadonlySnapshot();
     }, 90000);
@@ -288,9 +328,11 @@
     NV805OfflineContinuity: {
       init, readDraft, saveCurrentDraft, clearDraft, applyDraftToVisibleForm,
       openDraftReview, openContinuityCenter, readSnapshot, makeReadonlySnapshot,
-      getLastSync, setLastSync
+      getLastSync, setLastSync, shouldTrackDirtyFieldV840, hasMeaningfulDirtyFormV840, clearMeaningfulDirtyV840
     },
-    openOfflineContinuityCenterV805: openContinuityCenter
+    openOfflineContinuityCenterV805: openContinuityCenter,
+    hasMeaningfulDirtyFormV840,
+    clearMeaningfulDirtyV840
   });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

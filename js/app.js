@@ -697,6 +697,7 @@ async function initApp() {
     renderPasswordResetScreen();
     return;
   }
+  if (window.waitForAuthStorageV840) await waitForAuthStorageV840().catch(() => null);
   const restored = await restoreSession();
   if ((restored?.status === 'ready' || restored?.status === 'recovering') && requireAuth()) {
     if (AppState.session && AppState.session.pendingApproval) {

@@ -159,11 +159,13 @@
     if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
     if (!canAccessV7(tab)) return;
     if (tab === 'ajustes' && !isAdmin()) tab = 'perfil';
-    if (window.V7_FORM_DIRTY && tab !== AppState.currentTab) {
-      const leave = window.confirm('Hay cambios sin guardar en esta pantalla. ¿Salir y descartarlos?');
+    const hasDirty = window.hasMeaningfulDirtyFormV840 ? hasMeaningfulDirtyFormV840() : !!window.V7_FORM_DIRTY;
+    if (hasDirty && tab !== AppState.currentTab) {
+      const leave = window.confirm('Hay cambios reales sin guardar en esta pantalla. ¿Salir y descartarlos?');
       if (!leave) return;
     }
-    window.V7_FORM_DIRTY = false;
+    if (window.clearMeaningfulDirtyV840) clearMeaningfulDirtyV840('navigation');
+    else window.V7_FORM_DIRTY = false;
     AppState.currentTab = tab;
     highlightActiveV7();
     renderV7();

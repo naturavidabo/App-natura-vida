@@ -1,8 +1,8 @@
-/* app-update.js — V8.3.5: actualización segura sin cerrar la sesión. */
+/* app-update.js — V8.4.0: actualización segura con sesión persistente. */
 
 (() => {
-  const CURRENT_VERSION = '8.3.5';
-  const BUILD_ID = '2026-08-01-v835-director-ejecutivo-proactivo';
+  const CURRENT_VERSION = '8.4.0';
+  const BUILD_ID = '2026-08-02-v840-director-administrativo-sesion-persistente';
   const UPDATE_DIAG_KEY = 'nv833-update-diagnostics';
   const RELOAD_GUARD_KEY = 'nv833-controller-reload';
   let registration = null;
@@ -31,10 +31,16 @@
   }
   function workerState() {
     if (!registration) return 'No registrado';
-    if (registration.waiting) return 'Nueva versión esperando';
-    if (registration.installing) return `Instalando (${registration.installing.state})`;
-    if (registration.active) return `Activo (${registration.active.state})`;
+    if (registration.waiting) return 'Nueva versión lista';
+    if (registration.installing) return 'Instalando archivos';
+    if (registration.active) return registration.active.state === 'activated' ? 'Activo' : 'Activándose';
     return 'Registrado';
+  }
+  function sessionStateLabelV840(state) {
+    return state === 'active' ? 'Activa y protegida' :
+      state === 'recovering' ? 'Recuperándose' :
+      state === 'signed_out' ? 'Cerrada voluntariamente' :
+      state === 'signing_out' ? 'Cerrando sesión' : 'Sin comprobar';
   }
   function updateStatusText() {
     if (!navigator.onLine) return 'Sin internet: no se puede comprobar ahora.';
@@ -68,11 +74,23 @@
     recordUpdate({ lastCheckAt: Date.now(), lastRemoteVersion: info?.version || '', lastStatus: updateAvailable ? 'available' : 'current' });
     return info;
   }
+  function canReloadSafelyV840() {
+    const dirty = window.hasMeaningfulDirtyFormV840 ? hasMeaningfulDirtyFormV840() : !!window.V7_FORM_DIRTY;
+    if (dirty) {
+      window.showToast?.('Guarda o descarta primero el formulario que estás editando. La sesión no se cerrará.', 'error');
+      return false;
+    }
+    if (window.clearMeaningfulDirtyV840) clearMeaningfulDirtyV840('safe-reload');
+    else window.V7_FORM_DIRTY = false;
+    return true;
+  }
   function safeReload(reason = 'reload') {
+    if (!canReloadSafelyV840()) return false;
     recordUpdate({ lastReloadAt: Date.now(), lastStatus: reason });
     const url = new URL(window.location.href);
     url.searchParams.set('nv-safe-reload', Date.now().toString());
     window.location.replace(url.toString());
+    return true;
   }
   function waitForWaitingWorker(reg, timeout = 12000) {
     return new Promise(resolve => {
@@ -113,7 +131,7 @@
   }
   async function installAppUpdateManager() {
     if (!('serviceWorker' in navigator)) return { ok: false, unsupported: true };
-    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.3.5', { updateViaCache: 'none' });
+    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.4.0', { updateViaCache: 'none' });
     watchRegistration(registration);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!updateRequested || controllerReloaded) return;
@@ -151,6 +169,8 @@
     }
   }
   async function protectSessionBeforeUpdate() {
+    if (window.mirrorAuthStorageV840) await mirrorAuthStorageV840().catch(() => null);
+    if (window.requestPersistentStorageV840) requestPersistentStorageV840().catch(() => {});
     if (window.prepareSessionForUpdateV833) return prepareSessionForUpdateV833();
     return { ok: !!window.AppState?.session?.isAuthenticated };
   }
@@ -160,9 +180,10 @@
     updateBusy = true; updateRequested = true; emitUpdateState();
     try {
       recordUpdate({ lastAttemptAt: Date.now(), lastStatus: 'protecting-session', lastError: '' });
-      await protectSessionBeforeUpdate();
+      const protectedSession = await protectSessionBeforeUpdate();
+      if (window.AppState?.session?.isAuthenticated && !protectedSession?.ok) throw new Error('No se confirmó la copia persistente de la sesión. La actualización fue detenida para evitar cerrar tu cuenta.');
       if (!registration && 'serviceWorker' in navigator) {
-        registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register('./service-worker.js?v=8.3.5', { updateViaCache: 'none' });
+        registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register('./service-worker.js?v=8.4.0', { updateViaCache: 'none' });
         watchRegistration(registration);
       }
       recordUpdate({ lastStatus: 'checking-worker' });
@@ -177,10 +198,19 @@
         }, 7000);
         return;
       }
-      // Si no apareció un worker en espera, se recarga de forma segura para
-      // tomar archivos publicados. No se borran cachés ni se desregistra la PWA.
+      // Si la versión publicada es la misma, no se recarga innecesariamente.
+      // Una recarga repetida era molesta y podía coincidir con la renovación del token.
+      const remoteIsNewer = !!(lastRemoteInfo && compareVersions(lastRemoteInfo.version, CURRENT_VERSION) > 0);
+      if (!remoteIsNewer) {
+        updateBusy = false; updateRequested = false; updateAvailable = false;
+        recordUpdate({ lastStatus: 'already-current' }); emitUpdateState();
+        window.showToast?.('Ya tienes la versión más reciente. No fue necesario reiniciar.');
+        return;
+      }
       recordUpdate({ lastStatus: 'safe-reload-no-waiting-worker' });
-      safeReload('safe-update-reload');
+      if (!safeReload('safe-update-reload')) {
+        updateBusy = false; updateRequested = false; emitUpdateState();
+      }
     } catch (error) {
       updateBusy = false; updateRequested = false;
       recordUpdate({ lastStatus: 'update-error', lastError: error.message || String(error) });
@@ -205,12 +235,10 @@
       await protectSessionBeforeUpdate();
       recordUpdate({ lastAttemptAt: Date.now(), lastStatus: 'repairing' });
       await clearOwnedCaches();
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.filter(reg => new URL(reg.scope).pathname.startsWith(new URL('./', window.location.href).pathname)).map(reg => reg.unregister().catch(() => false)));
-      registration = await navigator.serviceWorker.register(`./service-worker.js?v=8.3.5&repair=${Date.now()}`, { updateViaCache: 'none' });
+      registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register(`./service-worker.js?v=8.4.0&repair=${Date.now()}`, { updateViaCache: 'none' });
       await registration.update().catch(() => {});
       recordUpdate({ lastStatus: 'repair-complete' });
-      safeReload('repair-complete');
+      if (!safeReload('repair-complete')) { updateBusy = false; updateRequested = false; emitUpdateState(); }
     } catch (error) {
       updateBusy = false; updateRequested = false;
       recordUpdate({ lastStatus: 'repair-error', lastError: error.message || String(error) });
@@ -233,7 +261,8 @@
       <div class="v7UpdateGrid">
         <div><span>Publicada</span><strong id="v7RemoteVersion">${escapeHtml(remoteVersion)}</strong></div>
         <div><span>Service Worker</span><strong id="v833WorkerState">${escapeHtml(workerState())}</strong></div>
-        <div><span>Sesión</span><strong id="v833SessionState">${escapeHtml(sessionDiag.state || 'Sin comprobar')}</strong></div>
+        <div><span>Sesión</span><strong id="v833SessionState">${escapeHtml(sessionStateLabelV840(sessionDiag.state))}</strong></div>
+        <div><span>Almacenamiento</span><strong id="v840AuthStorage">Comprobando…</strong></div>
         <div><span>Último intento</span><strong id="v833LastAttempt">${escapeHtml(formatDate(diag.lastAttemptAt))}</strong></div>
       </div>
       <button class="btn outline block" id="checkUpdateNow">Buscar actualización</button>
@@ -242,14 +271,19 @@
       <button class="btn outline block" id="repairUpdateNow">Reparar actualización</button>
       <div class="v7CashNotice">La actualización normal no borra cachés, no desregistra la PWA y no cierra la sesión. La reparación solo actúa sobre los archivos de Natura Vida.</div>
     `, (overlay, close) => {
-      const refreshUi = () => {
+      const refreshUi = async () => {
         const d = readDiag(); const sd = window.getSessionContinuityDiagnosticsV833?.() || {};
         const status = $('#v7UpdateStatus', overlay), remote = $('#v7RemoteVersion', overlay), install = $('#installUpdateNow', overlay);
         if (status) status.textContent = updateStatusText();
         if (remote) remote.textContent = lastRemoteInfo?.version || 'No comprobada';
         if ($('#v833WorkerState', overlay)) $('#v833WorkerState', overlay).textContent = workerState();
-        if ($('#v833SessionState', overlay)) $('#v833SessionState', overlay).textContent = sd.state || 'Sin comprobar';
+        if ($('#v833SessionState', overlay)) $('#v833SessionState', overlay).textContent = sessionStateLabelV840(sd.state);
         if ($('#v833LastAttempt', overlay)) $('#v833LastAttempt', overlay).textContent = formatDate(d.lastAttemptAt);
+        const storageEl = $('#v840AuthStorage', overlay);
+        if (storageEl && window.getAuthStorageDiagnosticsV840) {
+          const authStorage = await getAuthStorageDiagnosticsV840().catch(() => null);
+          if (authStorage) storageEl.textContent = authStorage.indexedDbCopy && authStorage.localCopy ? `Persistente${authStorage.persistentStorage ? ' reforzada' : ''}` : authStorage.localCopy ? 'Local' : authStorage.recoveryCopy ? 'Reserva de recuperación' : 'Sin copia';
+        }
         if (install) { install.disabled = updateBusy || !(updateAvailable || registration?.waiting); install.textContent = updateBusy ? 'Actualizando…' : 'Actualizar ahora'; }
       };
       const updateListener=()=>refreshUi();
@@ -257,7 +291,7 @@
       $('#closeSheet', overlay).addEventListener('click', cleanupAndClose);
       $('#checkUpdateNow', overlay).addEventListener('click', async event => { const btn=event.currentTarget;btn.disabled=true;btn.textContent='Comprobando…';await checkForAppUpdate({interactive:false});btn.disabled=false;btn.textContent='Buscar actualización';refreshUi(); });
       $('#installUpdateNow', overlay).addEventListener('click', activateAppUpdate);
-      $('#safeReloadNow', overlay).addEventListener('click', async event => { const btn=event.currentTarget;btn.disabled=true;btn.textContent='Protegiendo sesión…';await protectSessionBeforeUpdate();safeReload('manual-safe-reload'); });
+      $('#safeReloadNow', overlay).addEventListener('click', async event => { const btn=event.currentTarget;btn.disabled=true;btn.textContent='Protegiendo sesión…';const result=await protectSessionBeforeUpdate();if(window.AppState?.session?.isAuthenticated&&!result?.ok){btn.disabled=false;btn.textContent='Recargar interfaz';return window.showToast?.('No se pudo proteger la sesión. No se recargó la aplicación.','error');}if(!safeReload('manual-safe-reload')){btn.disabled=false;btn.textContent='Recargar interfaz';} });
       $('#repairUpdateNow', overlay).addEventListener('click', repairAppInstallationV833);
       window.addEventListener('nv:update-state',updateListener); window.addEventListener('nv:session-state',updateListener);
       checkForAppUpdate({interactive:false}).then(refreshUi);
@@ -271,6 +305,7 @@
     activateAppUpdate,
     repairAppInstallationV833,
     getAppUpdateDiagnosticsV833: diagnostics,
-    openUpdateCenter
+    openUpdateCenter,
+    canReloadSafelyV840
   });
 })();
