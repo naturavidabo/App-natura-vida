@@ -14,6 +14,229 @@ let _deferredRenderPending = false;
 let _authObserverSubscription = null;
 const NV801_PROFILE_CACHE_PREFIX = 'nv801-profile-cache:';
 
+
+// V8.3.3 — continuidad de sesión. Solo conserva metadatos no sensibles;
+// los tokens continúan administrados exclusivamente por Supabase Auth.
+const NV833_SESSION_MARKER_KEY = 'nv833-session-marker';
+const NV833_SESSION_DIAGNOSTICS_KEY = 'nv833-session-diagnostics';
+const NV833_EXPLICIT_LOGOUT_KEY = 'nv833-explicit-logout';
+let _explicitLogoutRequestedV833 = false;
+let _sessionRecoveryPromiseV833 = null;
+let _sessionRecoveryNoticeShownV833 = false;
+let _sessionLifecycleInstalledV833 = false;
+let _lastLifecycleCheckV833 = 0;
+const SessionContinuityV833 = {
+  state: 'initializing',
+  lastAuthEvent: '',
+  lastAuthEventAt: 0,
+  lastRefreshAt: 0,
+  lastRecoveryAt: 0,
+  lastRecoveryResult: '',
+  lastError: '',
+  explicitLogout: false
+};
+
+function readJsonStorageV833(key, fallback = null) {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
+  catch (_) { return fallback; }
+}
+function writeJsonStorageV833(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+  catch (_) { return false; }
+}
+function sessionMarkerV833() { return readJsonStorageV833(NV833_SESSION_MARKER_KEY, null); }
+function hasPriorSessionMarkerV833() {
+  const marker = sessionMarkerV833();
+  return !!(marker && marker.hadSession && !marker.explicitlySignedOut);
+}
+function recordSessionContinuityV833(patch = {}) {
+  Object.assign(SessionContinuityV833, patch, { updatedAt: Date.now() });
+  writeJsonStorageV833(NV833_SESSION_DIAGNOSTICS_KEY, SessionContinuityV833);
+  window.dispatchEvent(new CustomEvent('nv:session-state', { detail: getSessionContinuityDiagnosticsV833() }));
+  return SessionContinuityV833;
+}
+function rememberSessionPresenceV833(user, event = 'SESSION_PRESENT') {
+  if (!user || !user.id) return;
+  writeJsonStorageV833(NV833_SESSION_MARKER_KEY, {
+    hadSession: true,
+    explicitlySignedOut: false,
+    userId: String(user.id),
+    email: String(user.email || ''),
+    lastSeenAt: Date.now(),
+    lastEvent: event
+  });
+  try { sessionStorage.removeItem(NV833_EXPLICIT_LOGOUT_KEY); } catch (_) {}
+  _explicitLogoutRequestedV833 = false;
+  recordSessionContinuityV833({
+    state: 'active',
+    explicitLogout: false,
+    lastAuthEvent: event,
+    lastAuthEventAt: Date.now(),
+    lastError: ''
+  });
+}
+function markExplicitLogoutV833(value = true) {
+  _explicitLogoutRequestedV833 = !!value;
+  try {
+    if (value) sessionStorage.setItem(NV833_EXPLICIT_LOGOUT_KEY, String(Date.now()));
+    else sessionStorage.removeItem(NV833_EXPLICIT_LOGOUT_KEY);
+  } catch (_) {}
+  recordSessionContinuityV833({ explicitLogout: !!value, state: value ? 'signing_out' : SessionContinuityV833.state });
+}
+function clearSessionMarkerV833() {
+  try { localStorage.removeItem(NV833_SESSION_MARKER_KEY); } catch (_) {}
+  // Se conserva brevemente la marca de cierre voluntario para absorber un
+  // SIGNED_OUT que llegue después de que signOut() haya resuelto.
+  _explicitLogoutRequestedV833 = true;
+  recordSessionContinuityV833({ state: 'signed_out', explicitLogout: true, lastRecoveryResult: 'Cierre voluntario en este dispositivo' });
+  setTimeout(() => {
+    _explicitLogoutRequestedV833 = false;
+    try { sessionStorage.removeItem(NV833_EXPLICIT_LOGOUT_KEY); } catch (_) {}
+    recordSessionContinuityV833({ explicitLogout: false });
+  }, 15000);
+}
+function getSessionContinuityDiagnosticsV833() {
+  const persisted = readJsonStorageV833(NV833_SESSION_DIAGNOSTICS_KEY, {});
+  const marker = sessionMarkerV833();
+  return Object.assign({}, persisted, SessionContinuityV833, {
+    markerPresent: !!marker,
+    rememberedUserId: marker?.userId || '',
+    rememberedEmail: marker?.email || '',
+    markerLastSeenAt: Number(marker?.lastSeenAt || 0),
+    online: navigator.onLine,
+    authenticatedInApp: !!(window.AppState?.session?.isAuthenticated)
+  });
+}
+
+async function verifySessionV833(options = {}) {
+  const interactive = options.interactive === true;
+  const verifyServer = options.verifyServer !== false;
+  const sb = getSupabaseClient();
+  if (!sb) {
+    const result = { ok: false, status: 'unavailable', message: 'Supabase no está disponible.' };
+    recordSessionContinuityV833({ state: 'recovering', lastError: result.message, lastRecoveryResult: result.message });
+    return result;
+  }
+  try {
+    const { data, error } = await sb.auth.getSession();
+    if (error) throw error;
+    const session = data?.session || null;
+    if (!session?.user) {
+      const result = { ok: false, status: 'missing', message: 'No se encontró una sesión local activa.' };
+      recordSessionContinuityV833({ state: 'recovering', lastRecoveryAt: Date.now(), lastRecoveryResult: result.message });
+      return result;
+    }
+    rememberSessionPresenceV833(session.user, 'SESSION_VERIFIED');
+
+    // getUser valida la identidad contra Auth. Una falla de red no se interpreta
+    // como cierre de sesión; la sesión local se conserva en modo degradado.
+    if (verifyServer && navigator.onLine) {
+      const { data: userData, error: userError } = await sb.auth.getUser();
+      if (userError) {
+        const message = messageFromError(userError, 'No se pudo validar la sesión en el servidor.');
+        if (/failed to fetch|network|load failed|timeout/i.test(String(userError.message || userError))) {
+          recordSessionContinuityV833({ state: 'recovering', lastError: message, lastRecoveryResult: 'Sesión local conservada; validación remota pendiente' });
+          return { ok: true, status: 'degraded', session, user: session.user, message };
+        }
+        throw userError;
+      }
+      if (!userData?.user) throw new Error('Supabase no confirmó el usuario de la sesión.');
+    }
+
+    let current = null;
+    try { current = await getOnlineSessionProfile(); } catch (_) {}
+    if (current?.user && current?.profile && window.applyOnlineSession) {
+      applyOnlineSession(current.user, Object.assign({}, current.profile, { __degraded: !!current.degraded }));
+    }
+    recordSessionContinuityV833({
+      state: current?.degraded ? 'recovering' : 'active',
+      lastRecoveryAt: Date.now(),
+      lastRecoveryResult: current?.degraded ? 'Sesión conservada; perfil en reconexión' : 'Sesión activa y verificada',
+      lastError: ''
+    });
+    if (interactive && window.showToast) showToast(current?.degraded ? 'La sesión continúa activa. El perfil está reconectando.' : 'Sesión activa y verificada.');
+    return { ok: true, status: current?.degraded ? 'degraded' : 'active', session, user: session.user, profile: current?.profile || null };
+  } catch (error) {
+    const message = messageFromError(error, 'No se pudo verificar la sesión.');
+    recordSessionContinuityV833({ state: 'recovering', lastRecoveryAt: Date.now(), lastRecoveryResult: 'Verificación pendiente', lastError: message });
+    if (interactive && window.showToast) showToast(message, 'error');
+    return { ok: false, status: 'error', message, error };
+  }
+}
+
+async function recoverUnexpectedSignOutV833(reason = 'Interrupción de autenticación', options = {}) {
+  if (_explicitLogoutRequestedV833) return { ok: false, status: 'explicit_logout' };
+  if (_sessionRecoveryPromiseV833) return _sessionRecoveryPromiseV833;
+  _sessionRecoveryPromiseV833 = (async () => {
+    recordSessionContinuityV833({ state: 'recovering', lastRecoveryAt: Date.now(), lastRecoveryResult: reason, lastError: '' });
+    if (window.AppState?.session) AppState.session.sessionDegraded = true;
+    setCloudConnectionState(navigator.onLine ? 'connecting' : 'offline', 'Reconectando sesión · no cierres la aplicación');
+    if (!_sessionRecoveryNoticeShownV833 && window.showToast) {
+      _sessionRecoveryNoticeShownV833 = true;
+      showToast('Reconectando la sesión. No necesitas volver a ingresar tu contraseña.');
+    }
+
+    const delays = options.quick ? [0, 500, 1200] : [250, 900, 1800, 3200];
+    let last = null;
+    for (const delay of delays) {
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      last = await verifySessionV833({ interactive: false, verifyServer: navigator.onLine });
+      if (last.ok) {
+        _sessionRecoveryNoticeShownV833 = false;
+        if (window.AppState?.session) AppState.session.sessionDegraded = last.status === 'degraded';
+        setCloudConnectionState(last.status === 'degraded' ? 'connecting' : 'online', last.status === 'degraded' ? 'Sesión conservada · validación pendiente' : 'Sesión recuperada');
+        if (window.renderTopHeader) renderTopHeader();
+        return last;
+      }
+      if (!navigator.onLine) break;
+    }
+
+    // No se borra AppState ni datos temporales. Se muestra una pantalla de
+    // recuperación y el usuario decide si reintenta o cierra voluntariamente.
+    recordSessionContinuityV833({ state: 'recovering', lastRecoveryResult: 'No se confirmó la sesión; esperando recuperación manual' });
+    if (window.renderSessionRecoveryScreenV801) {
+      renderSessionRecoveryScreenV801({ reason: last?.message || 'No se pudo confirmar la sesión todavía. Tus datos no fueron eliminados.' });
+    }
+    return last || { ok: false, status: 'recovering' };
+  })().finally(() => { _sessionRecoveryPromiseV833 = null; });
+  return _sessionRecoveryPromiseV833;
+}
+
+
+function isSessionWriteReadyV833() {
+  const state = SessionContinuityV833.state;
+  return !!(window.AppState?.session?.isAuthenticated) && !['recovering','signed_out','signing_out'].includes(state);
+}
+function installSessionLifecycleV833() {
+  if (_sessionLifecycleInstalledV833) return;
+  _sessionLifecycleInstalledV833 = true;
+  const check = (reason) => {
+    if (!hasPriorSessionMarkerV833() && !window.AppState?.session?.isAuthenticated) return;
+    const now = Date.now();
+    if (now - _lastLifecycleCheckV833 < 2500) return;
+    _lastLifecycleCheckV833 = now;
+    setTimeout(async () => {
+      const result = await verifySessionV833({ interactive: false, verifyServer: navigator.onLine });
+      if (!result.ok && !_explicitLogoutRequestedV833) recoverUnexpectedSignOutV833(reason, { quick: true }).catch(() => {});
+    }, 0);
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check('La aplicación volvió del segundo plano'); });
+  window.addEventListener('pageshow', () => check('La aplicación volvió a mostrarse'));
+  window.addEventListener('focus', () => check('La aplicación recuperó el foco'));
+  window.addEventListener('online', () => {
+    if (SessionContinuityV833.state === 'recovering') recoverUnexpectedSignOutV833('Internet recuperado', { quick: true }).catch(() => {});
+    else check('Internet recuperado');
+  });
+}
+
+async function prepareSessionForUpdateV833() {
+  const result = await verifySessionV833({ interactive: false, verifyServer: false });
+  if (result.ok && result.user) rememberSessionPresenceV833(result.user, 'UPDATE_HANDOFF');
+  try { sessionStorage.setItem('nv833-update-handoff', JSON.stringify({ at: Date.now(), userId: result.user?.id || sessionMarkerV833()?.userId || '' })); } catch (_) {}
+  recordSessionContinuityV833({ lastRecoveryResult: result.ok ? 'Sesión protegida antes de actualizar' : 'Actualización iniciada con sesión pendiente de recuperación' });
+  return result;
+}
+
 const CloudConnection = {
   state: navigator.onLine ? 'connecting' : 'offline',
   detail: '',
@@ -162,9 +385,12 @@ async function onlineSignIn(email, password) {
     if (profile) cacheOnlineProfileV801(data.user.id, profile);
     if (!profile) return { ok: false, message: 'La cuenta existe, pero su perfil no fue creado. Ejecuta la migración SQL de Natura Vida V7.' };
     if (String(profile.status).toLowerCase() === 'bloqueado') {
-      await sb.auth.signOut();
+      markExplicitLogoutV833(true);
+      await sb.auth.signOut({ scope: 'local' });
+      clearSessionMarkerV833();
       return { ok: false, message: 'Esta cuenta está bloqueada. Contacta al administrador.' };
     }
+    rememberSessionPresenceV833(data.user, 'SIGNED_IN');
     setCloudConnectionState('online', 'Sesión autenticada');
     return { ok: true, user: data.user, profile };
   } catch (error) {
@@ -173,12 +399,17 @@ async function onlineSignIn(email, password) {
   }
 }
 
-async function onlineSignOut() {
+async function onlineSignOut(options = {}) {
   stopRealtimeSubscriptions();
+  const explicit = options.explicit !== false;
+  const scope = options.scope || 'local';
+  if (explicit) markExplicitLogoutV833(true);
   const sb = getSupabaseClient();
-  if (sb) await sb.auth.signOut().catch(() => {});
-  setCloudConnectionState(navigator.onLine ? 'connecting' : 'offline', 'Sesión cerrada');
+  if (sb) await sb.auth.signOut({ scope }).catch(() => {});
+  if (explicit) clearSessionMarkerV833();
+  setCloudConnectionState(navigator.onLine ? 'connecting' : 'offline', explicit ? 'Sesión cerrada en este dispositivo' : 'Sesión en reconexión');
 }
+
 
 function profileCacheKeyV801(userId) { return `${NV801_PROFILE_CACHE_PREFIX}${userId}`; }
 function cacheOnlineProfileV801(userId, profile) {
@@ -229,22 +460,40 @@ async function getOnlineSessionProfile() {
 
 function installAuthObserverV801() {
   const sb = getSupabaseClient();
+  installSessionLifecycleV833();
   if (!sb || _authObserverSubscription) return;
   const listener = sb.auth.onAuthStateChange((event, session) => {
+    recordSessionContinuityV833({
+      lastAuthEvent: event,
+      lastAuthEventAt: Date.now(),
+      lastRefreshAt: event === 'TOKEN_REFRESHED' ? Date.now() : SessionContinuityV833.lastRefreshAt
+    });
+
+    // El callback se mantiene síncrono. Las verificaciones asíncronas se
+    // programan fuera del evento para evitar bloquear el cliente de Auth.
     if (event === 'SIGNED_OUT') {
-      if (window.clearSession) clearSession();
-      if (window.renderLoginScreen) renderLoginScreen();
+      const explicit = _explicitLogoutRequestedV833 || (() => { try { return !!sessionStorage.getItem(NV833_EXPLICIT_LOGOUT_KEY); } catch (_) { return false; } })();
+      if (explicit) {
+        clearSessionMarkerV833();
+        return;
+      }
+      setTimeout(() => recoverUnexpectedSignOutV833('Supabase emitió SIGNED_OUT sin cierre voluntario').catch(() => {}), 0);
       return;
     }
-    if (session && session.user && ['SIGNED_IN','TOKEN_REFRESHED','USER_UPDATED'].includes(event)) {
+
+    if (session?.user) rememberSessionPresenceV833(session.user, event);
+    if (session && session.user && ['INITIAL_SESSION','SIGNED_IN','TOKEN_REFRESHED','USER_UPDATED'].includes(event)) {
       setCloudConnectionState('connecting', event === 'TOKEN_REFRESHED' ? 'Sesión renovada' : 'Verificando perfil');
-      getOnlineSessionProfile().then(current => {
-        if (current && current.user && current.profile && window.applyOnlineSession) {
-          applyOnlineSession(current.user, current.profile);
-          if (window.renderTopHeader) renderTopHeader();
-          setCloudConnectionState(current.degraded ? 'connecting' : 'online', current.degraded ? 'Perfil en reconexión' : 'Sesión activa');
-        }
-      }).catch(() => {});
+      setTimeout(() => {
+        getOnlineSessionProfile().then(current => {
+          if (current && current.user && current.profile && window.applyOnlineSession) {
+            applyOnlineSession(current.user, Object.assign({}, current.profile, { __degraded: !!current.degraded }));
+            if (window.renderTopHeader) renderTopHeader();
+            setCloudConnectionState(current.degraded ? 'connecting' : 'online', current.degraded ? 'Perfil en reconexión' : 'Sesión activa');
+            recordSessionContinuityV833({ state: current.degraded ? 'recovering' : 'active', lastRecoveryResult: current.degraded ? 'Perfil en reconexión' : 'Sesión activa' });
+          }
+        }).catch(() => {});
+      }, 0);
     }
   });
   _authObserverSubscription = listener && listener.data && listener.data.subscription;
@@ -1227,6 +1476,7 @@ async function openSafeCloudSyncSheet() { showToast('La actualización es autom�
 
 Object.assign(window, {
   CloudConnection,
+  SessionContinuityV833,
   shouldDeferCloudRender,
   renderAfterCloudRefresh,
   flushDeferredCloudRender,
@@ -1240,6 +1490,16 @@ Object.assign(window, {
   onlineSignIn,
   onlineSignOut,
   getOnlineSessionProfile,
+  verifySessionV833,
+  recoverUnexpectedSignOutV833,
+  prepareSessionForUpdateV833,
+  getSessionContinuityDiagnosticsV833,
+  hasPriorSessionMarkerV833,
+  rememberSessionPresenceV833,
+  markExplicitLogoutV833,
+  clearSessionMarkerV833,
+  isSessionWriteReadyV833,
+  installSessionLifecycleV833,
   upsertCloudProfileForUser,
   signUpEmailAccount,
   sendPasswordRecoveryEmail,

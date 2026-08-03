@@ -1,8 +1,8 @@
-// NATURA VIDA V8.3.1 — cliente preciso, descuentos aplicables y actualización estable.
-const VERSION = 'natura-vida-v8-3-1-director-administrativo-inteligente';
-const APP_CACHE = 'nv-app-shell-v830';
+// NATURA VIDA V8.3.5 — Director Ejecutivo Proactivo, centro sincronizado y sesión blindada.
+const VERSION = 'natura-vida-v8-3-5-director-ejecutivo-proactivo';
+const APP_CACHE = 'nv-app-shell-v835';
 const IMAGE_CACHE = 'nv-images-v3';
-const RUNTIME_CACHE = 'nv-runtime-v830';
+const RUNTIME_CACHE = 'nv-runtime-v835';
 const IMAGE_CACHE_LIMIT = 120;
 const APP_SHELL = [
   './app-version.json',
@@ -69,18 +69,19 @@ const APP_SHELL = [
 const MAP_HOSTS = new Set(['tile.openstreetmap.org','a.basemaps.cartocdn.com','b.basemaps.cartocdn.com','c.basemaps.cartocdn.com','d.basemaps.cartocdn.com','nominatim.openstreetmap.org']);
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(APP_CACHE).then(cache => Promise.allSettled(APP_SHELL.map(url => cache.add(url)))));
+  event.waitUntil(caches.open(APP_CACHE).then(cache => cache.addAll(APP_SHELL)));
   // La activación continúa controlada desde “Actualizar ahora”.
 });
 
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) event.ports[0].postMessage({ version: VERSION, appCache: APP_CACHE });
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(key => ![APP_CACHE, IMAGE_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key))))
+      .then(keys => Promise.all(keys.filter(key => /^(nv-|natura-vida)/i.test(key) && ![APP_CACHE, IMAGE_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -130,7 +131,7 @@ async function runtimeResponse(request) {
 }
 
 function offlinePage() {
-  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.3.1</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V8.3.5</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 self.addEventListener('fetch', event => {

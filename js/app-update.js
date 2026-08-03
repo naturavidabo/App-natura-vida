@@ -1,18 +1,25 @@
-/* app-update.js — actualización visible y controlada para GitHub Pages/PWA. */
+/* app-update.js — V8.3.5: actualización segura sin cerrar la sesión. */
 
 (() => {
-  const CURRENT_VERSION = '8.3.1';
-  const BUILD_ID = '2026-07-31-v830-director-administrativo-inteligente';
+  const CURRENT_VERSION = '8.3.5';
+  const BUILD_ID = '2026-08-01-v835-director-ejecutivo-proactivo';
+  const UPDATE_DIAG_KEY = 'nv833-update-diagnostics';
+  const RELOAD_GUARD_KEY = 'nv833-controller-reload';
   let registration = null;
   let updateAvailable = false;
   let updateRequested = false;
   let lastRemoteInfo = null;
   let updateBusy = false;
+  let controllerReloaded = false;
 
-  function versionParts(value) {
-    return String(value || '0').split('.').map(n => Number.parseInt(n, 10) || 0);
+  function readDiag() { try { return JSON.parse(localStorage.getItem(UPDATE_DIAG_KEY) || '{}'); } catch (_) { return {}; } }
+  function recordUpdate(patch = {}) {
+    const next = Object.assign({}, readDiag(), patch, { updatedAt: Date.now() });
+    try { localStorage.setItem(UPDATE_DIAG_KEY, JSON.stringify(next)); } catch (_) {}
+    emitUpdateState();
+    return next;
   }
-
+  function versionParts(value) { return String(value || '0').split('.').map(n => Number.parseInt(n, 10) || 0); }
   function compareVersions(a, b) {
     const aa = versionParts(a), bb = versionParts(b);
     for (let i = 0; i < Math.max(aa.length, bb.length); i += 1) {
@@ -22,153 +29,248 @@
     }
     return 0;
   }
-
+  function workerState() {
+    if (!registration) return 'No registrado';
+    if (registration.waiting) return 'Nueva versión esperando';
+    if (registration.installing) return `Instalando (${registration.installing.state})`;
+    if (registration.active) return `Activo (${registration.active.state})`;
+    return 'Registrado';
+  }
   function updateStatusText() {
     if (!navigator.onLine) return 'Sin internet: no se puede comprobar ahora.';
-    if (updateAvailable || (registration && registration.waiting)) return 'Hay una versión nueva lista para instalar.';
+    if (updateBusy) return 'Protegiendo la sesión e instalando la actualización…';
+    if (updateAvailable || registration?.waiting) return 'Hay una versión nueva lista para instalar.';
     if (lastRemoteInfo && compareVersions(lastRemoteInfo.version, CURRENT_VERSION) > 0) return `Versión ${lastRemoteInfo.version} detectada.`;
     return 'La aplicación está actualizada.';
   }
-
-  function emitUpdateState() {
-    window.dispatchEvent(new CustomEvent('nv:update-state', {
-      detail: { currentVersion: CURRENT_VERSION, build: BUILD_ID, updateAvailable, remote: lastRemoteInfo }
-    }));
+  function diagnostics() {
+    return {
+      currentVersion: CURRENT_VERSION,
+      build: BUILD_ID,
+      updateAvailable,
+      remote: lastRemoteInfo,
+      workerState: workerState(),
+      updateBusy,
+      last: readDiag()
+    };
   }
-
+  function emitUpdateState() {
+    window.dispatchEvent(new CustomEvent('nv:update-state', { detail: diagnostics() }));
+  }
   async function fetchRemoteVersion() {
     const url = new URL('./app-version.json', window.location.href);
     url.searchParams.set('nv-check', Date.now().toString());
-    const response = await fetch(url.toString(), { cache: 'reload', headers: { 'Cache-Control': 'no-cache, no-store, max-age=0' } });
+    const response = await fetch(url.toString(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache, no-store, max-age=0' } });
     if (!response.ok) throw new Error('No se pudo leer la versión publicada.');
     const info = await response.json();
     lastRemoteInfo = info || null;
-    updateAvailable = !!(info && compareVersions(info.version, CURRENT_VERSION) > 0) || !!(registration && registration.waiting);
-    emitUpdateState();
+    updateAvailable = !!(info && compareVersions(info.version, CURRENT_VERSION) > 0) || !!registration?.waiting;
+    recordUpdate({ lastCheckAt: Date.now(), lastRemoteVersion: info?.version || '', lastStatus: updateAvailable ? 'available' : 'current' });
     return info;
   }
-
+  function safeReload(reason = 'reload') {
+    recordUpdate({ lastReloadAt: Date.now(), lastStatus: reason });
+    const url = new URL(window.location.href);
+    url.searchParams.set('nv-safe-reload', Date.now().toString());
+    window.location.replace(url.toString());
+  }
+  function waitForWaitingWorker(reg, timeout = 12000) {
+    return new Promise(resolve => {
+      if (!reg) return resolve(null);
+      if (reg.waiting) return resolve(reg.waiting);
+      let done = false;
+      const finish = worker => { if (done) return; done = true; clearTimeout(timer); resolve(worker || null); };
+      const observe = worker => {
+        if (!worker) return;
+        worker.addEventListener('statechange', () => {
+          if (reg.waiting) finish(reg.waiting);
+          else if (worker.state === 'activated') finish(worker);
+          else if (worker.state === 'redundant') finish(null);
+        });
+      };
+      observe(reg.installing);
+      const onFound = () => observe(reg.installing);
+      reg.addEventListener('updatefound', onFound, { once: true });
+      const timer = setTimeout(() => finish(reg.waiting || null), timeout);
+    });
+  }
   function watchRegistration(reg) {
     if (!reg) return;
-    if (reg.waiting) {
-      updateAvailable = true;
-      emitUpdateState();
-    }
+    if (reg.waiting) { updateAvailable = true; emitUpdateState(); }
     reg.addEventListener('updatefound', () => {
       const worker = reg.installing;
+      recordUpdate({ lastStatus: 'installing', installStartedAt: Date.now() });
       if (!worker) return;
       worker.addEventListener('statechange', () => {
+        recordUpdate({ workerState: worker.state, lastStatus: worker.state });
         if (worker.state === 'installed' && navigator.serviceWorker.controller) {
           updateAvailable = true;
           emitUpdateState();
-          showToast('Nueva versión disponible. Ábrela desde Más → Actualizaciones.');
+          if (!updateRequested && window.showToast) showToast('Nueva versión disponible. Ábrela desde Más → Actualizaciones.');
         }
       });
     });
   }
-
   async function installAppUpdateManager() {
     if (!('serviceWorker' in navigator)) return { ok: false, unsupported: true };
-    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.3.1', { updateViaCache: 'none' });
+    registration = await navigator.serviceWorker.register('./service-worker.js?v=8.3.5', { updateViaCache: 'none' });
     watchRegistration(registration);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!updateRequested) return;
-      window.location.reload();
+      if (!updateRequested || controllerReloaded) return;
+      controllerReloaded = true;
+      try {
+        if (sessionStorage.getItem(RELOAD_GUARD_KEY)) return;
+        sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
+      } catch (_) {}
+      recordUpdate({ lastStatus: 'controller-changed', controllerChangedAt: Date.now() });
+      setTimeout(() => safeReload('updated'), 180);
     });
     setTimeout(() => registration.update().catch(() => {}), 1500);
-    setInterval(() => registration && registration.update().catch(() => {}), 30 * 60 * 1000);
+    setInterval(() => registration?.update().catch(() => {}), 30 * 60 * 1000);
+    recordUpdate({ lastStatus: 'manager-ready', workerState: workerState() });
     return { ok: true, registration };
   }
-
   async function checkForAppUpdate(options = {}) {
     const interactive = options.interactive !== false;
     if (!navigator.onLine) {
-      if (interactive) showToast('No hay internet para comprobar actualizaciones.', 'error');
+      if (interactive && window.showToast) showToast('No hay internet para comprobar actualizaciones.', 'error');
       return { ok: false, offline: true };
     }
     try {
       const info = await fetchRemoteVersion();
       if (registration) await registration.update();
-      await new Promise(resolve => setTimeout(resolve, 450));
-      if (registration && registration.waiting) updateAvailable = true;
+      await new Promise(resolve => setTimeout(resolve, 500));
+      if (registration?.waiting) updateAvailable = true;
       emitUpdateState();
-      if (interactive) showToast(updateAvailable ? `Versión ${info.version || 'nueva'} disponible.` : 'Ya tienes la última versión.');
+      if (interactive && window.showToast) showToast(updateAvailable ? `Versión ${info.version || 'nueva'} disponible.` : 'Ya tienes la última versión.');
       return { ok: true, available: updateAvailable, info };
     } catch (error) {
-      if (interactive) showToast(error.message || 'No se pudo comprobar la actualización.', 'error');
+      recordUpdate({ lastStatus: 'check-error', lastError: error.message || String(error) });
+      if (interactive && window.showToast) showToast(error.message || 'No se pudo comprobar la actualización.', 'error');
       return { ok: false, message: error.message };
     }
   }
-
-  async function clearAppCaches() {
-    if (!('caches' in window)) return;
-    const keys = await caches.keys();
-    await Promise.all(keys.map(key => caches.delete(key)));
+  async function protectSessionBeforeUpdate() {
+    if (window.prepareSessionForUpdateV833) return prepareSessionForUpdateV833();
+    return { ok: !!window.AppState?.session?.isAuthenticated };
   }
-
   async function activateAppUpdate() {
     if (updateBusy) return;
-    if (!navigator.onLine) return showToast('Se necesita internet para actualizar.', 'error');
+    if (!navigator.onLine) return window.showToast?.('Se necesita internet para actualizar.', 'error');
     updateBusy = true; updateRequested = true; emitUpdateState();
     try {
-      if (!registration && 'serviceWorker' in navigator) registration = await navigator.serviceWorker.getRegistration();
-      if (registration) { await registration.update().catch(() => {}); await new Promise(resolve => setTimeout(resolve, 700)); }
-      const waiting = registration && registration.waiting;
-      if (waiting) { waiting.postMessage({ type: 'SKIP_WAITING' }); setTimeout(() => window.location.reload(), 2500); return; }
-      await clearAppCaches().catch(() => {});
-      if ('serviceWorker' in navigator) { const regs=await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(reg=>reg.unregister().catch(()=>false))); }
-      const url = new URL(window.location.href); url.searchParams.set('nv-update', Date.now().toString()); url.searchParams.set('v', lastRemoteInfo?.version || CURRENT_VERSION);
-      window.location.replace(url.toString());
-    } catch (error) { updateBusy=false; emitUpdateState(); showToast(error.message || 'No se pudo iniciar la actualización.', 'error'); }
+      recordUpdate({ lastAttemptAt: Date.now(), lastStatus: 'protecting-session', lastError: '' });
+      await protectSessionBeforeUpdate();
+      if (!registration && 'serviceWorker' in navigator) {
+        registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register('./service-worker.js?v=8.3.5', { updateViaCache: 'none' });
+        watchRegistration(registration);
+      }
+      recordUpdate({ lastStatus: 'checking-worker' });
+      await registration?.update();
+      let waiting = registration?.waiting || await waitForWaitingWorker(registration, 12000);
+      if (registration?.waiting) waiting = registration.waiting;
+      if (waiting && waiting.state === 'installed') {
+        recordUpdate({ lastStatus: 'activating-worker' });
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+        setTimeout(() => {
+          if (!controllerReloaded) safeReload('activation-timeout-reload');
+        }, 7000);
+        return;
+      }
+      // Si no apareció un worker en espera, se recarga de forma segura para
+      // tomar archivos publicados. No se borran cachés ni se desregistra la PWA.
+      recordUpdate({ lastStatus: 'safe-reload-no-waiting-worker' });
+      safeReload('safe-update-reload');
+    } catch (error) {
+      updateBusy = false; updateRequested = false;
+      recordUpdate({ lastStatus: 'update-error', lastError: error.message || String(error) });
+      emitUpdateState();
+      window.showToast?.(error.message || 'No se pudo iniciar la actualización.', 'error');
+    }
   }
-
+  async function clearOwnedCaches() {
+    if (!('caches' in window)) return [];
+    const keys = await caches.keys();
+    const owned = keys.filter(key => /^(nv-|natura-vida)/i.test(key));
+    await Promise.all(owned.map(key => caches.delete(key)));
+    return owned;
+  }
+  async function repairAppInstallationV833() {
+    if (updateBusy) return;
+    if (!navigator.onLine) return window.showToast?.('Se necesita internet para reparar la instalación.', 'error');
+    const accepted = window.confirm ? window.confirm('Esta reparación volverá a instalar los archivos de Natura Vida. Tu sesión y tus datos de Supabase no serán eliminados. ¿Continuar?') : true;
+    if (!accepted) return;
+    updateBusy = true; updateRequested = true; emitUpdateState();
+    try {
+      await protectSessionBeforeUpdate();
+      recordUpdate({ lastAttemptAt: Date.now(), lastStatus: 'repairing' });
+      await clearOwnedCaches();
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.filter(reg => new URL(reg.scope).pathname.startsWith(new URL('./', window.location.href).pathname)).map(reg => reg.unregister().catch(() => false)));
+      registration = await navigator.serviceWorker.register(`./service-worker.js?v=8.3.5&repair=${Date.now()}`, { updateViaCache: 'none' });
+      await registration.update().catch(() => {});
+      recordUpdate({ lastStatus: 'repair-complete' });
+      safeReload('repair-complete');
+    } catch (error) {
+      updateBusy = false; updateRequested = false;
+      recordUpdate({ lastStatus: 'repair-error', lastError: error.message || String(error) });
+      emitUpdateState();
+      window.showToast?.(error.message || 'No se pudo reparar la instalación.', 'error');
+    }
+  }
+  function formatDate(value) {
+    if (!value) return 'No registrada';
+    try { return new Date(value).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' }); } catch (_) { return 'No registrada'; }
+  }
   function openUpdateCenter() {
-    const remoteVersion = lastRemoteInfo && lastRemoteInfo.version ? lastRemoteInfo.version : 'No comprobada';
+    const remoteVersion = lastRemoteInfo?.version || 'No comprobada';
+    const diag = readDiag();
+    const sessionDiag = window.getSessionContinuityDiagnosticsV833?.() || {};
     openSheet(`
-      <h2>Actualizaciones <span class="x" id="closeSheet">✕</span></h2>
-      <div class="v7UpdateHero">
-        <div class="v7UpdateMark">↻</div>
-        <div><span>Versión instalada</span><strong>V${CURRENT_VERSION}</strong><small>${escapeHtml(BUILD_ID)}</small></div>
-      </div>
+      <h2>Actualizaciones seguras <span class="x" id="closeSheet">✕</span></h2>
+      <div class="v7UpdateHero"><div class="v7UpdateMark">↻</div><div><span>Versión instalada</span><strong>V${CURRENT_VERSION}</strong><small>${escapeHtml(BUILD_ID)}</small></div></div>
       <div class="v7UpdateStatus" id="v7UpdateStatus">${escapeHtml(updateStatusText())}</div>
       <div class="v7UpdateGrid">
         <div><span>Publicada</span><strong id="v7RemoteVersion">${escapeHtml(remoteVersion)}</strong></div>
-        <div><span>Canal</span><strong>Estable</strong></div>
+        <div><span>Service Worker</span><strong id="v833WorkerState">${escapeHtml(workerState())}</strong></div>
+        <div><span>Sesión</span><strong id="v833SessionState">${escapeHtml(sessionDiag.state || 'Sin comprobar')}</strong></div>
+        <div><span>Último intento</span><strong id="v833LastAttempt">${escapeHtml(formatDate(diag.lastAttemptAt))}</strong></div>
       </div>
       <button class="btn outline block" id="checkUpdateNow">Buscar actualización</button>
-      <button class="btn block" id="installUpdateNow" ${updateAvailable || (registration && registration.waiting) ? '' : 'disabled'}>Actualizar ahora</button>
-      <button class="btn ghost block" id="forceReloadNow">Recargar archivos de la aplicación</button>
-      <div class="v7CashNotice">Esta acción actualiza los archivos de GitHub Pages. No elimina la cuenta, el inventario ni las ventas guardadas en Supabase.</div>
+      <button class="btn block" id="installUpdateNow" ${updateAvailable || registration?.waiting ? '' : 'disabled'}>Actualizar ahora</button>
+      <button class="btn ghost block" id="safeReloadNow">Recargar interfaz</button>
+      <button class="btn outline block" id="repairUpdateNow">Reparar actualización</button>
+      <div class="v7CashNotice">La actualización normal no borra cachés, no desregistra la PWA y no cierra la sesión. La reparación solo actúa sobre los archivos de Natura Vida.</div>
     `, (overlay, close) => {
       const refreshUi = () => {
-        const status = $('#v7UpdateStatus', overlay);
-        const remote = $('#v7RemoteVersion', overlay);
-        const install = $('#installUpdateNow', overlay);
+        const d = readDiag(); const sd = window.getSessionContinuityDiagnosticsV833?.() || {};
+        const status = $('#v7UpdateStatus', overlay), remote = $('#v7RemoteVersion', overlay), install = $('#installUpdateNow', overlay);
         if (status) status.textContent = updateStatusText();
-        if (remote) remote.textContent = lastRemoteInfo && lastRemoteInfo.version ? lastRemoteInfo.version : 'No comprobada';
-        if (install) { install.disabled = updateBusy || !(updateAvailable || (registration && registration.waiting)); install.textContent = updateBusy ? 'Actualizando…' : 'Actualizar ahora'; }
+        if (remote) remote.textContent = lastRemoteInfo?.version || 'No comprobada';
+        if ($('#v833WorkerState', overlay)) $('#v833WorkerState', overlay).textContent = workerState();
+        if ($('#v833SessionState', overlay)) $('#v833SessionState', overlay).textContent = sd.state || 'Sin comprobar';
+        if ($('#v833LastAttempt', overlay)) $('#v833LastAttempt', overlay).textContent = formatDate(d.lastAttemptAt);
+        if (install) { install.disabled = updateBusy || !(updateAvailable || registration?.waiting); install.textContent = updateBusy ? 'Actualizando…' : 'Actualizar ahora'; }
       };
-      $('#closeSheet', overlay).addEventListener('click', close);
-      $('#checkUpdateNow', overlay).addEventListener('click', async event => {
-        const btn = event.currentTarget;
-        btn.disabled = true; btn.textContent = 'Comprobando…';
-        await checkForAppUpdate({ interactive: false });
-        btn.disabled = false; btn.textContent = 'Buscar actualización';
-        refreshUi();
-      });
+      const updateListener=()=>refreshUi();
+      const cleanupAndClose=()=>{window.removeEventListener('nv:update-state',updateListener);window.removeEventListener('nv:session-state',updateListener);close();};
+      $('#closeSheet', overlay).addEventListener('click', cleanupAndClose);
+      $('#checkUpdateNow', overlay).addEventListener('click', async event => { const btn=event.currentTarget;btn.disabled=true;btn.textContent='Comprobando…';await checkForAppUpdate({interactive:false});btn.disabled=false;btn.textContent='Buscar actualización';refreshUi(); });
       $('#installUpdateNow', overlay).addEventListener('click', activateAppUpdate);
-      $('#forceReloadNow', overlay).addEventListener('click', async event => { const btn=event.currentTarget;btn.disabled=true;btn.textContent='Recargando…';await clearAppCaches().catch(()=>{});const url=new URL(window.location.href);url.searchParams.set('nv-reload',Date.now().toString());window.location.replace(url.toString()); });
-      const updateListener=()=>refreshUi();window.addEventListener('nv:update-state',updateListener);const originalClose=close;close=()=>{window.removeEventListener('nv:update-state',updateListener);originalClose();};
-      checkForAppUpdate({ interactive: false }).then(refreshUi);
+      $('#safeReloadNow', overlay).addEventListener('click', async event => { const btn=event.currentTarget;btn.disabled=true;btn.textContent='Protegiendo sesión…';await protectSessionBeforeUpdate();safeReload('manual-safe-reload'); });
+      $('#repairUpdateNow', overlay).addEventListener('click', repairAppInstallationV833);
+      window.addEventListener('nv:update-state',updateListener); window.addEventListener('nv:session-state',updateListener);
+      checkForAppUpdate({interactive:false}).then(refreshUi);
     });
   }
-
   Object.assign(window, {
     NATURA_APP_VERSION: CURRENT_VERSION,
     NATURA_BUILD_ID: BUILD_ID,
     installAppUpdateManager,
     checkForAppUpdate,
     activateAppUpdate,
+    repairAppInstallationV833,
+    getAppUpdateDiagnosticsV833: diagnostics,
     openUpdateCenter
   });
 })();

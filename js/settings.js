@@ -9,6 +9,10 @@ function renderSettings() {
   const connLabel = conn.state === 'online' ? 'Conectado en tiempo real' :
                     conn.state === 'offline' ? 'Sin conexión a internet' :
                     conn.state === 'error' ? 'Reconectando con Supabase' : 'Conectando con Supabase';
+  const sessionDiag = window.getSessionContinuityDiagnosticsV833?.() || {};
+  const updateDiag = window.getAppUpdateDiagnosticsV833?.() || {};
+  const sessionStateLabel = sessionDiag.state === 'active' ? 'Activa y protegida' : sessionDiag.state === 'recovering' ? 'En recuperación' : sessionDiag.state === 'signed_out' ? 'Cerrada voluntariamente' : 'Sin comprobar';
+  const lastRefreshLabel = sessionDiag.lastRefreshAt ? new Date(sessionDiag.lastRefreshAt).toLocaleString('es-BO', {dateStyle:'short',timeStyle:'short'}) : 'Sin registro';
 
   main.innerHTML = `
     <div class="sectiontitle" style="margin-top:0;">Perfil del negocio</div>
@@ -72,6 +76,18 @@ function renderSettings() {
       <button class="btn outline block" id="testOnlineBtn">Comprobar conexión ahora</button>
     </div>
 
+    <div class="sectiontitle">Continuidad de sesión</div>
+    <div class="card settingsCard nv833SessionCard">
+      <div class="name">Sesión blindada</div>
+      <div class="costline">Una falla de red, Gemini o la actualización no debe enviarte al acceso. Natura Vida verifica y recupera la sesión antes de mostrar el inicio de sesión.</div>
+      <div class="cloudRule"><span>Estado</span><strong id="nv833SessionStateSettings">${escapeHtml(sessionStateLabel)}</strong></div>
+      <div class="cloudRule"><span>Cuenta</span><strong>${escapeHtml(AppState.session?.email || sessionDiag.rememberedEmail || 'No identificada')}</strong></div>
+      <div class="cloudRule"><span>Última renovación</span><strong>${escapeHtml(lastRefreshLabel)}</strong></div>
+      <div class="cloudRule"><span>Service Worker</span><strong>${escapeHtml(updateDiag.workerState || 'Sin comprobar')}</strong></div>
+      <div class="field-row"><button class="btn outline block" id="checkSessionV833Btn">Comprobar sesión</button><button class="btn outline block" id="openUpdateCenterV833Btn">Actualizaciones</button></div>
+      <button class="btn ghost block" id="recoverSessionV833Btn">Recuperar sesión ahora</button>
+    </div>
+
     <div class="sectiontitle">Continuidad sin conexión</div>
     <div class="card settingsCard">
       <div class="name">Modo seguro de continuidad</div>
@@ -95,7 +111,7 @@ function renderSettings() {
 
     <div class="sectiontitle">Acerca de</div>
     <div class="card settingsCard">
-      <div class="costline">NATURA VIDA — V8.2.9 · Supabase + Realtime + IA operativa supervisada</div>
+      <div class="costline">NATURA VIDA — V${escapeHtml(window.NATURA_APP_VERSION || '8.3.5')} · Supabase + Realtime + IA operativa supervisada</div>
       <div class="costline">Sin cola offline automática. Incluye continuidad segura, control financiero, auditoría, reglas comerciales y motor IA protegido por Edge Function.</div>
     </div>
   `;
@@ -169,6 +185,20 @@ function renderSettings() {
     } catch (err) { showToast(err.message || 'No se pudo comprobar el motor IA.', 'error'); }
     finally { btn.disabled = false; btn.textContent = 'Comprobar motor'; }
   });
+
+  $('#checkSessionV833Btn')?.addEventListener('click', async () => {
+    const btn=$('#checkSessionV833Btn');btn.disabled=true;btn.textContent='Comprobando…';
+    const result=window.verifySessionV833 ? await verifySessionV833({interactive:false,verifyServer:true}) : {ok:false,message:'Comprobación no disponible.'};
+    showToast(result.ok ? 'La sesión está activa y protegida.' : (result.message || 'No se pudo confirmar la sesión.'), result.ok ? undefined : 'error');
+    renderSettings();
+  });
+  $('#recoverSessionV833Btn')?.addEventListener('click', async () => {
+    const btn=$('#recoverSessionV833Btn');btn.disabled=true;btn.textContent='Recuperando…';
+    const result=window.recoverUnexpectedSignOutV833 ? await recoverUnexpectedSignOutV833('Recuperación manual desde configuración',{quick:true}) : {ok:false};
+    showToast(result?.ok ? 'Sesión recuperada.' : 'La sesión continúa en recuperación.', result?.ok ? undefined : 'error');
+    renderSettings();
+  });
+  $('#openUpdateCenterV833Btn')?.addEventListener('click', () => window.openUpdateCenter?.());
 
   $('#openOfflineContinuityBtn').addEventListener('click', () => {
     if (window.openOfflineContinuityCenterV805) openOfflineContinuityCenterV805();

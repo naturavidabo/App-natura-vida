@@ -100,26 +100,37 @@ function renderEmailConfirmationScreenV801(email) {
 function renderSessionRecoveryScreenV801(details = {}) {
   $('#bottomNav').innerHTML = '';
   $('#fabAdd').classList.add('hidden');
+  const diag = window.getSessionContinuityDiagnosticsV833?.() || {};
   $('#mainArea').innerHTML = `<section class="loginShell"><div class="loginCard nv801RecoveryCard">
-    <div class="nv801ReconnectOrb"><span></span></div><h2>Restaurando tu sesión</h2>
-    <p>No necesitas volver a escribir tu contraseña. Natura Vida conserva la sesión mientras recupera tu perfil y la conexión con Supabase.</p>
-    <small id="sessionRecoveryDetailV801">${escapeHtml(details.reason || 'Reconectando de forma segura…')}</small>
-    <button class="btn block" id="retrySessionV801">Reintentar ahora</button>
-    <button class="btn outline block" id="explicitLoginV801">Usar otra cuenta</button>
+    <div class="nv801ReconnectOrb"><span></span></div><h2>Protegiendo tu sesión</h2>
+    <p>No necesitas volver a escribir tu contraseña. Natura Vida conserva tu identidad mientras recupera la conexión con Supabase.</p>
+    <small id="sessionRecoveryDetailV801">${escapeHtml(details.reason || diag.lastRecoveryResult || 'Reconectando de forma segura…')}</small>
+    <button class="btn block" id="retrySessionV801">Reintentar recuperación</button>
+    <button class="btn outline block" id="checkSessionV833Recovery">Comprobar sesión</button>
+    <button class="btn ghost block" id="explicitLoginV801">Cerrar sesión en este dispositivo</button>
   </div></section>`;
-  $('#retrySessionV801')?.addEventListener('click', async () => {
-    const btn=$('#retrySessionV801'); btn.disabled=true; btn.textContent='Reconectando…';
+  const recover = async (btn) => {
+    if (btn) { btn.disabled=true; btn.textContent='Reconectando…'; }
+    const direct = window.recoverUnexpectedSignOutV833 ? await recoverUnexpectedSignOutV833('Recuperación solicitada por el usuario', {quick:true}) : null;
     const restored=await restoreSession();
-    if ((restored?.status==='ready' || restored?.status==='recovering') && requireAuth()) {
+    if ((direct?.ok || restored?.status==='ready' || restored?.status==='recovering') && requireAuth()) {
       await afterLoginSuccess({ok:true,pendingApproval:AppState.session?.pendingApproval});
       return;
     }
-    btn.disabled=false; btn.textContent='Reintentar ahora';
-    $('#sessionRecoveryDetailV801').textContent=restored?.reason || 'La conexión todavía no está disponible.';
+    if (btn) { btn.disabled=false; btn.textContent='Reintentar recuperación'; }
+    $('#sessionRecoveryDetailV801').textContent=direct?.message || restored?.reason || 'La conexión todavía no está disponible. Tu sesión no fue eliminada.';
+  };
+  $('#retrySessionV801')?.addEventListener('click', event => recover(event.currentTarget));
+  $('#checkSessionV833Recovery')?.addEventListener('click', async event => {
+    const btn=event.currentTarget;btn.disabled=true;btn.textContent='Comprobando…';
+    const result=window.verifySessionV833 ? await verifySessionV833({interactive:false,verifyServer:true}) : {ok:false,message:'Comprobación no disponible.'};
+    $('#sessionRecoveryDetailV801').textContent=result.ok ? 'La sesión está activa. Recuperando el perfil…' : (result.message || 'Aún no se pudo confirmar la sesión.');
+    btn.disabled=false;btn.textContent='Comprobar sesión';
+    if(result.ok) await recover($('#retrySessionV801'));
   });
   $('#explicitLoginV801')?.addEventListener('click', async () => {
-    if (window.onlineSignOut) await onlineSignOut().catch(()=>{});
-    clearSession(); renderLoginScreen();
+    await logoutSession();
+    renderLoginScreen();
   });
 }
 
@@ -711,6 +722,10 @@ async function initApp() {
   });
 
   window.addEventListener('nv:connection', (event) => updateCloudStatusBadge(event.detail));
+  window.addEventListener('nv:session-state', (event) => {
+    const state=event.detail?.state || '';
+    if(state==='recovering') updateCloudStatusBadge({state:'connecting',detail:'Reconectando sesión'});
+  });
   updateCloudStatusBadge(window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' });
 
   if (window.installAppUpdateManager) {

@@ -1,4 +1,4 @@
-// Natura Vida V8.3.1 — Director Administrativo Inteligente: interpretación estructurada y operaciones supervisadas.
+// Natura Vida V8.3.5 — Director Ejecutivo Proactivo: alertas, agenda, resúmenes y acciones supervisadas.
 // Secrets: GEMINI_API_KEY. Opcionales: GEMINI_MODEL, AI_DAILY_LIMIT, AI_ALLOWED_ORIGIN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -33,7 +33,8 @@ function compactSnapshot(source: unknown) {
     customersForFollowUp: Array.isArray(s.customersForFollowUp) ? s.customersForFollowUp.slice(0, 14) : [],
     topReceivables: Array.isArray(s.topReceivables) ? s.topReceivables.slice(0, 14) : [],
     focusedAccount: s.focusedAccount && typeof s.focusedAccount === "object" ? s.focusedAccount : null,
-    alerts: Array.isArray(s.alerts) ? s.alerts.slice(0, 8) : [],
+    alerts: Array.isArray(s.alerts) ? s.alerts.slice(0, 10) : [],
+    control: s.control && typeof s.control === "object" ? s.control : {},
   };
   const serialized = JSON.stringify(compact);
   if (serialized.length > 52000) throw new Error("El resumen empresarial supera el tamaño permitido.");
@@ -80,18 +81,21 @@ const answerSchema = {
     risks: { type: "array", items: { type: "string" }, maxItems: 4 },
     next_questions: { type: "array", items: { type: "string" }, maxItems: 4 },
     confidence: { type: "string", enum: ["alta", "media", "baja"] },
-    action_area: { type: "string", enum: ["none", "ventas", "clientes", "inventario", "cobranzas", "reglas-comerciales", "territorio", "finanzas", "rendicion"] },
-    intent: { type: "string", enum: ["analysis", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area", "prepare_sale", "create_quote"] },
+    action_area: { type: "string", enum: ["none", "ventas", "clientes", "inventario", "produccion", "cobranzas", "reglas-comerciales", "territorio", "finanzas", "rendicion", "control"] },
+    intent: { type: "string", enum: ["analysis", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area", "prepare_sale", "create_quote", "prepare_promotion", "prepare_production", "create_task"] },
     missing_fields: { type: "array", items: { type: "string" }, maxItems: 5 },
     draft_action: {
       type: "object", additionalProperties: false,
       properties: {
-        type: { type: "string", enum: ["none", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area", "prepare_sale", "create_quote"] },
+        type: { type: "string", enum: ["none", "create_payment_plan", "register_payment", "generate_receipt", "seller_settlement", "open_area", "prepare_sale", "create_quote", "prepare_promotion", "prepare_production", "create_task"] },
         client_query: { type: "string" }, amount: { type: "number" }, installment_amount: { type: "number" },
         frequency: { type: "string", enum: ["", "monthly", "biweekly", "weekly"] },
         start_date: { type: "string" }, note: { type: "string" },
         payment_method: { type: "string", enum: ["", "cash", "qr", "credit"] },
         sale_type: { type: "string", enum: ["", "unit", "market", "representative_transfer", "reseller_unit", "reseller_wholesale"] },
+        discount_percent: { type: "number" }, quantity: { type: "number" },
+        priority: { type: "string", enum: ["", "urgent", "high", "normal", "low"] },
+        due_date: { type: "string" }, task_title: { type: "string" }, responsible: { type: "string" },
         items: {
           type: "array", maxItems: 8,
           items: {
@@ -107,7 +111,7 @@ const answerSchema = {
           }
         }
       },
-      required: ["type", "client_query", "amount", "installment_amount", "frequency", "start_date", "note", "payment_method", "sale_type", "items"]
+      required: ["type", "client_query", "amount", "installment_amount", "frequency", "start_date", "note", "payment_method", "sale_type", "discount_percent", "quantity", "priority", "due_date", "task_title", "responsible", "items"]
     }
   },
   required: ["title", "summary", "facts", "recommendations", "risks", "next_questions", "confidence", "action_area", "intent", "missing_fields", "draft_action"]
@@ -177,7 +181,7 @@ Deno.serve(async (req) => {
 REGLAS:
 1. Usa solo el resumen proporcionado y no inventes cifras, clientes, productos ni pagos.
 2. Cuando la solicitud sea operativa, prioriza el borrador ejecutable sobre explicaciones extensas. Máximo 3 hechos, 2 recomendaciones y 2 riesgos.
-3. Puedes preparar borradores de plan de pagos, registro de pago, recibo, rendición, venta o cotización, pero nunca afirmes que los guardaste.
+3. Puedes preparar borradores de plan de pagos, registro de pago, recibo, rendición, venta, cotización, promoción, orden de producción o tarea, pero nunca afirmes que los guardaste.
 4. Si falta un dato realmente indispensable, pregunta únicamente ese dato y enuméralo en missing_fields.
 5. Para planes: cliente y monto de cuota son indispensables. Para pagos/recibos de deuda: cliente y monto pagado son indispensables.
 6. Para ventas o cotizaciones, producto/presentación y cantidad son indispensables. El cliente solo es indispensable si el usuario lo nombró y no puede identificarse.
@@ -188,6 +192,11 @@ REGLAS:
 11. No sugieras descuentos que violen las reglas comerciales. Si la operación está lista, title y summary deben indicar claramente “lista para revisar”.
 12. Copia client_query literalmente desde el nombre escrito por el usuario. No lo reemplaces por otro cliente parecido ni por uno del historial. Si hay duda, conserva el texto literal y deja que la aplicación muestre las coincidencias.
 13. Si el usuario pide una rebaja/descuento/precio final y la venta contiene un solo producto, completa en ese item discount_amount, discount_percent o final_unit_price. Los otros dos campos deben ser 0. Si hay varios productos y no aclara a cuál aplica, indícalo en missing_fields como producto de la rebaja.
+14. Para una promoción usa intent prepare_promotion: identifica el producto en items, copia el porcentaje en draft_action.discount_percent y no la actives; la aplicación abrirá el formulario para revisión.
+15. Para producción usa intent prepare_production: identifica el producto en items y coloca la cantidad solicitada en draft_action.quantity. Si no hay cantidad explícita, usa 0 para que Natura Vida calcule una sugerencia con stock y rotación.
+16. Para tareas usa intent create_task: resume la acción en task_title, define priority solo si el usuario lo indicó y due_date solo si existe una fecha clara. Si el usuario menciona un responsable, cópialo literalmente en draft_action.responsible para que Natura Vida lo confirme. Si no existe, devuelve cadena vacía.
+17. Cuando pidan un resumen ejecutivo diario o semanal, prioriza cambios, alertas, tareas vencidas y una acción concreta; no inventes datos ni ejecutes nada.
+18. En análisis de iniciativa y control, prioriza alertas, tareas, evaluación operativa y resumen diario presentes en snapshot.control. No presentes la evaluación como auditoría financiera.
 
 Contexto: ${contextLabel}
 Historial: ${JSON.stringify(history)}

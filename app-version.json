@@ -1,8 +1,8 @@
 {
-  "version": "8.3.1",
-  "build": "2026-08-01-v831-saneamiento-asistente-operativo",
-  "releasedAt": "2026-08-01T10:55:00-04:00",
+  "version": "8.3.5",
+  "build": "2026-08-01-v835-director-ejecutivo-proactivo",
+  "releasedAt": "2026-08-01T17:45:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V8.3.1 - Asistente operativo saneado",
-  "createdAt": "2026-08-01T10:55:00-04:00"
+  "label": "Natura Vida V8.3.5 - Director Ejecutivo Proactivo, alertas priorizadas y agenda accionable",
+  "createdAt": "2026-08-01T17:45:00-04:00"
 }

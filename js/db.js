@@ -164,6 +164,7 @@ async function requireCloudWrite(storeName) {
   if (!navigator.onLine) throw new Error('Sin internet. Este registro no se guardó. Natura Vida trabaja directamente con Supabase.');
   if (!window.isOnlineConfigured || !isOnlineConfigured()) throw new Error('Supabase no está configurado.');
   if (!window.requireAuth || !requireAuth()) throw new Error('La sesión no está activa. Vuelve a iniciar sesión.');
+  if (window.isSessionWriteReadyV833 && !isSessionWriteReadyV833()) throw new Error('La sesión se está reconectando. Espera la confirmación antes de registrar cambios.');
   if (window.canOperate && !canOperate()) throw new Error('La cuenta todavía no está habilitada para operar.');
 }
 

@@ -136,10 +136,16 @@ async function restoreSession() {
     if (!window.isOnlineConfigured || !isOnlineConfigured()) return { status: 'signed_out' };
     if (window.installAuthObserverV801) installAuthObserverV801();
     const online = await getOnlineSessionProfile().catch(error => ({ status: 'profile_unavailable', reason: error?.message }));
-    if (!online || !online.user) return { status: online?.status === 'session_error' ? 'recovering' : 'signed_out', reason: online?.reason || '' };
+    if (!online || !online.user) {
+      if (window.hasPriorSessionMarkerV833 && hasPriorSessionMarkerV833()) {
+        return { status: 'recovering', reason: online?.reason || 'La sesión existía antes de la actualización y está siendo recuperada.' };
+      }
+      return { status: online?.status === 'session_error' ? 'recovering' : 'signed_out', reason: online?.reason || '' };
+    }
     if (online.profile) {
       const profile = Object.assign({}, online.profile, { __degraded: !!online.degraded });
       applyOnlineSession(online.user, profile);
+      if (window.rememberSessionPresenceV833) rememberSessionPresenceV833(online.user, 'RESTORED');
       return { status: online.degraded ? 'recovering' : 'ready', user: online.user, profile };
     }
     // Existe sesión auténtica, pero todavía no se recuperó la ficha. No se
@@ -163,15 +169,19 @@ async function clearTransientSessionData() {
 }
 
 async function logoutSession() {
+  if (window.markExplicitLogoutV833) markExplicitLogoutV833(true);
   if (window.stopRealtimeSubscriptions) stopRealtimeSubscriptions();
   if (window.stopV7Realtime) stopV7Realtime();
   if (window.isOnlineConfigured && isOnlineConfigured() && window.onlineSignOut) {
-    await onlineSignOut().catch(() => {});
+    await onlineSignOut({ explicit: true, scope: 'local' }).catch(() => {});
+  } else if (window.clearSessionMarkerV833) {
+    clearSessionMarkerV833();
   }
   await clearTransientSessionData();
   clearSession();
   if (window.render) render();
 }
+
 
 function hasPermission(action) {
   const perms = AppState.session && AppState.session.permissions || [];
