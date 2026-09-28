@@ -259,9 +259,11 @@ async function afterLoginSuccess(result) {
     $('#pendingLogout').addEventListener('click', () => logoutSession());
     return;
   }
-  showToast('Sesión iniciada. Cargando datos oficiales de Supabase…');
   renderBottomNav();
   AppState.currentTab = 'inicio';
+  // Si existe estado local válido, mostramos la aplicación inmediatamente y
+  // dejamos que Supabase la refresque detrás; evita una pantalla "vacía" al reabrir.
+  if ((AppState.products?.length || AppState.sales?.length || AppState.clients?.length) && window.render) render();
   if (window.syncAfterLogin) {
     const syncResult = await syncAfterLogin().catch(err => ({ ok: false, message: err.message }));
     if (syncResult && syncResult.ok === false) {
