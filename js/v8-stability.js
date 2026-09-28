@@ -44,6 +44,9 @@
     switch (AppState.currentTab) {
       case 'inicio':
         return window.patchInicioMetricsV9 ? patchInicioMetricsV9(context) : false;
+      case 'clientes':
+        if (context.table === 'clients' && context.incremental && window.patchClientsRealtimeV9) return patchClientsRealtimeV9(context);
+        return false;
       case 'territorio':
         return window.nv801PatchTerritoryView ? nv801PatchTerritoryView(context) : false;
       case 'regional':
