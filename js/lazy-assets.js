@@ -14,7 +14,11 @@
         const script = document.createElement('script');
         script.src = urls[index++];
         script.async = true;
-        script.onload = () => ready() ? resolve(true) : attempt();
+        script.onload = () => {
+          if (ready()) return resolve(true);
+          script.remove();
+          attempt();
+        };
         script.onerror = () => { script.remove(); attempt(); };
         document.head.appendChild(script);
       };
