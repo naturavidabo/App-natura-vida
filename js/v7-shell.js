@@ -307,6 +307,34 @@
     $all('[data-open-inbox]', main).forEach(b => b.addEventListener('click', () => openInboxPanel()));
   }
 
+  function patchInicioMetricsV9() {
+    if (AppState.currentTab !== 'inicio') return false;
+    const grid = document.querySelector('.v802MetricGrid');
+    const strip = document.querySelector('.v802StatusStrip');
+    if (!grid || !strip) return false;
+    const sales = AppState.sales || [];
+    const ownSales = sales.filter(s => window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (isAdmin() || s.sellerId === AppState.session.userId));
+    const todayKey = new Date().toDateString();
+    const todaySales = ownSales.filter(s => new Date(s.date).toDateString() === todayKey);
+    const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+    const orders = AppState.purchaseOrders || [];
+    const ownOrders = isAdmin() ? orders : orders.filter(o => o.representativeId === AppState.session.userId);
+    const openOrders = (isAdmin() ? orders : ownOrders).filter(o => !['paid','cancelled','rejected'].includes(o.status)).length;
+    const visibleMessages = (AppState.messages || []).filter(messageVisibleForCurrentUser);
+    const unread = visibleMessages.filter(m => m.status !== 'read').length;
+    const ownStock = (AppState.products || []).reduce((sum, p) => sum + Number(p.stock || 0), 0);
+    const cards = grid.querySelectorAll('.v802KpiCard');
+    if (cards[0]) { cards[0].querySelector('strong').textContent = fmtMoney(todayTotal); cards[0].querySelector('small').textContent = `${todaySales.length} operación(es)`; }
+    if (cards[1]) cards[1].querySelector('strong').textContent = openOrders;
+    if (cards[2]) cards[2].querySelector('strong').textContent = isAdmin() ? AppState.products.length : ownStock;
+    if (cards[3]) cards[3].querySelector('strong').textContent = unread;
+    const spans = strip.querySelectorAll(':scope > span');
+    if (spans[0]) spans[0].querySelector('b').textContent = todaySales.length;
+    if (spans[1]) spans[1].querySelector('b').textContent = openOrders;
+    if (spans[2]) { spans[2].querySelector('b').textContent = unread; spans[2].classList.toggle('attention', unread > 0); }
+    return true;
+  }
+
   function moreItem(id, iconName, title, subtitle = '', badge = '') {
     return `<button class="v7MoreItem" id="${id}"><span class="v7MoreIcon">${v7Icon(iconName)}</span><span><strong>${title}</strong>${subtitle ? `<small>${subtitle}</small>` : ''}</span>${badge ? `<em>${badge}</em>` : ''}<b>›</b></button>`;
   }
@@ -388,6 +416,7 @@
     navigateTo: navigateToV7,
     render: renderV7,
     renderInicio: renderInicioV7,
+    patchInicioMetricsV9,
     renderMas: renderMasV7,
     renderHistoryV7,
     canAccessTab: canAccessV7
