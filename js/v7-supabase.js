@@ -7,6 +7,9 @@
   const originalSetCloudConnectionState = window.setCloudConnectionState;
   let v7Channel = null;
   let v7RefreshTimer = null;
+  let v7ContextPromise = null;
+  let v7ContextLastSyncAt = 0;
+  const V7_CONTEXT_MIN_INTERVAL_MS = 15000;
 
   AppState.commercialProfiles = AppState.commercialProfiles || [];
   AppState.profileChangeRequests = AppState.profileChangeRequests || [];
@@ -46,7 +49,7 @@
 
   async function fetchCommercialProfilesV7() {
     const sb = await requireClient();
-    const { data, error } = await sb.from('commercial_profiles').select('*').order('updated_at', { ascending: false });
+    const { data, error } = await sb.from('commercial_profiles').select('user_id,business_name,address,location_label,latitude,longitude,receipt_message,qr_url,updated_at').order('updated_at', { ascending: false });
     if (error) return { ok: false, message: v7Error(error) };
     AppState.commercialProfiles = (data || []).map(mapCommercialProfile);
     return { ok: true, profiles: AppState.commercialProfiles };
@@ -54,7 +57,7 @@
 
   async function fetchProfileChangeRequestsV7() {
     const sb = await requireClient();
-    const { data, error } = await sb.from('profile_change_requests').select('*').order('created_at', { ascending: false }).limit(200);
+    const { data, error } = await sb.from('profile_change_requests').select('id,user_id,field_name,old_value,new_value,status,reviewed_by,review_note,created_at,reviewed_at').order('created_at', { ascending: false }).limit(200);
     if (error) return { ok: false, message: v7Error(error) };
     AppState.profileChangeRequests = (data || []).map(row => ({
       id: row.id,
@@ -78,13 +81,18 @@
     return res;
   }
 
-  async function syncV7Context() {
+  async function syncV7Context(options = {}) {
+    const force = options.force === true;
+    const now = Date.now();
+    if (!force && v7ContextPromise) return v7ContextPromise;
+    if (!force && v7ContextLastSyncAt && now - v7ContextLastSyncAt < V7_CONTEXT_MIN_INTERVAL_MS) return { ok: true, cached: true };
+    v7ContextPromise = (async () => {
     const tasks = [fetchCommercialProfilesV7(), fetchProfileChangeRequestsV7()];
     if (isAdmin()) tasks.push(fetchAllProfilesV7());
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: v7Error(error) }))));
     try {
       const sb = await requireClient();
-      const { data } = await sb.from('profiles').select('*').eq('id', AppState.session.onlineUserId).maybeSingle();
+      const { data } = await sb.from('profiles').select('id,role,status,commercial_role,representative_discount_percent,representative_price_group_id,phone,city,full_name,avatar_url,region_name,manager_user_id,supplier_user_id,role_note').eq('id', AppState.session.onlineUserId).maybeSingle();
       if (data && AppState.session) {
         AppState.session.discountPercent = Number(data.representative_discount_percent || 0);
         AppState.session.priceGroupId = data.representative_price_group_id || '';
@@ -119,7 +127,12 @@
       }
     } catch (_) {}
     const failed = results.find(r => r && r.ok === false);
-    return failed || { ok: true };
+    const result = failed || { ok: true };
+    if (!failed) v7ContextLastSyncAt = Date.now();
+    return result;
+    })();
+    try { return await v7ContextPromise; }
+    finally { v7ContextPromise = null; }
   }
 
   async function saveCommercialProfileV7(profile = {}) {
