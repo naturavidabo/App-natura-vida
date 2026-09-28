@@ -19,7 +19,7 @@ checks={
  'bot mejorado': 'nvAiBotSvg' in js and '.nvAiBotSvg' in css,
  'motor supervisado sin ejecución automática': 'Nada se guarda automáticamente' in js and 'Aprobar y continuar' in js and 'Rechazar' in js,
  'asistente incluido en caché': "'./js/v8-ai-assistant.js'" in sw,
- 'caché V832': "nv-app-shell-v840" in sw,
+ 'caché de aplicación': "nv-app-shell-v9-" in sw,
  'css balanceado': css.count('{')==css.count('}'),
 }
 for k,v in checks.items(): print(('OK' if v else 'FAIL'),k)
