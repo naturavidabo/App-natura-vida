@@ -1376,15 +1376,14 @@
       else oldRender();
       setTimeout(ensureFab,0);
     };
-    const main=document.getElementById('mainArea');
-    if(main){
-      const observer=new MutationObserver(()=>setTimeout(()=>{ensureFab();positionFabSmartV827();},0));
-      observer.observe(main,{childList:true,subtree:true});
-    }
-    window.addEventListener('resize',positionFabSmartV827,{passive:true});
-    window.addEventListener('scroll',positionFabSmartV827,{passive:true});
-    document.addEventListener('focusin',positionFabSmartV827);
-    document.addEventListener('focusout',positionFabSmartV827);
+    // V9: el FAB se mantiene desde navegación/render y cambios reales de viewport.
+    // Observar cada mutación del main y cada scroll hacía trabajar a la IA aunque no estuviera abierta.
+    let aiFabPositionRafV9=0;
+    const scheduleFabPositionV9=()=>{if(aiFabPositionRafV9)return;aiFabPositionRafV9=requestAnimationFrame(()=>{aiFabPositionRafV9=0;positionFabSmartV827();});};
+    window.addEventListener('resize',scheduleFabPositionV9,{passive:true});
+    window.addEventListener('orientationchange',scheduleFabPositionV9,{passive:true});
+    document.addEventListener('focusin',scheduleFabPositionV9);
+    document.addEventListener('focusout',scheduleFabPositionV9);
     setTimeout(ensureFab,250);
     setTimeout(()=>checkEngine(false).catch(()=>{}),700);
     setTimeout(()=>{installControlSyncV834();ensureDailySummaryV832();ensureWeeklySummaryV835();setTimeout(()=>showProactiveBriefV835(false),700);},900);
