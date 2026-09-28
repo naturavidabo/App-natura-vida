@@ -239,7 +239,7 @@
   async function fetchCloudPurchaseOrdersV7() {
     try {
       const sb = await requireClient();
-      const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(300);
+      const { data, error } = await sb.from('purchase_orders').select('id,order_number,receipt_number,source,representative_user_id,representative_name,supplier_user_id,supplier_name,region_name,regional_manager_user_id,status,payment_status,total,note,payload,created_at,updated_at,approved_at,paid_at').order('created_at', { ascending: false }).limit(300);
       if (error) return { ok: false, message: v7Error(error) };
       return { ok: true, orders: (data || []).map(mapV7OrderRow) };
     } catch (error) { return { ok: false, message: v7Error(error) }; }
