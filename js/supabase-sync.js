@@ -14,6 +14,8 @@ const FOREGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
 let _backgroundStarted = false;
 let _refreshInFlight = null;
 let _deferredRenderPending = false;
+let _realtimeRefreshTimer = null;
+const _realtimeRefreshQueue = new Map();
 let _authObserverSubscription = null;
 const NV801_PROFILE_CACHE_PREFIX = 'nv801-profile-cache:';
 
@@ -1561,6 +1563,24 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
 }
 
 async function refreshAfterEvent(table, payload = null) {
+  // V9 fase 1: agrupa ráfagas de eventos de la misma tabla. Una operación de
+  // negocio puede emitir varios cambios consecutivos; antes cada evento podía
+  // descargar de nuevo una colección completa y volver a renderizar la vista.
+  _realtimeRefreshQueue.set(table, payload);
+  clearTimeout(_realtimeRefreshTimer);
+  _realtimeRefreshTimer = setTimeout(flushRealtimeRefreshQueue, 120);
+}
+
+async function flushRealtimeRefreshQueue() {
+  const pending = Array.from(_realtimeRefreshQueue.entries());
+  _realtimeRefreshQueue.clear();
+  _realtimeRefreshTimer = null;
+  for (const [table, payload] of pending) {
+    await refreshAfterEventNow(table, payload);
+  }
+}
+
+async function refreshAfterEventNow(table, payload = null) {
   try {
     if (table === 'products' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
     else if (table === 'representative_stock') {
