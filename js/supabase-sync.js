@@ -1637,7 +1637,7 @@ function scheduleRealtimeRestart(detail = 'Reconectando Realtime') {
   if (!navigator.onLine || !requireAuth()) return;
   setCloudConnectionState('connecting', detail);
   _realtimeRestartTimer = setTimeout(() => {
-    startRealtimeSubscriptions();
+    startRealtimeSubscriptions({ force: true });
     if (!AppState.session.pendingApproval) runBackgroundSyncOnce('reconexión').catch(() => {});
   }, 2500);
 }
