@@ -153,19 +153,10 @@
     return permission ? hasPermission(permission) : false;
   }
 
+  let navigationRequestV9 = 0;
+
   async function navigateToV7(tab) {
-    // Los mapas no forman parte del arranque crítico. Leaflet se descarga
-    // únicamente cuando el usuario abre un módulo geográfico.
-    if (tab === 'territorio' || tab === 'distribucion') {
-      try {
-        if (window.ensureLeafletV9) await ensureLeafletV9();
-        if (tab === 'territorio' && window.ensureTerritoryModuleV9) await ensureTerritoryModuleV9();
-        if (tab === 'distribucion' && window.ensureDistributionModuleV9) await ensureDistributionModuleV9();
-      } catch (_) {
-        showToast('No se pudo cargar el módulo geográfico. Revisa tu conexión.', 'error');
-        return;
-      }
-    }
+    const requestId = ++navigationRequestV9;
     // Compatibilidad con botones antiguos: el módulo se llama distinto según el rol.
     if (tab === 'pedido') tab = isAdmin() ? 'pedidos' : 'compra';
     if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
@@ -175,6 +166,20 @@
     if (hasDirty && tab !== AppState.currentTab) {
       const leave = window.confirm('Hay cambios reales sin guardar en esta pantalla. ¿Salir y descartarlos?');
       if (!leave) return;
+    }
+    // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'territorio' || tab === 'distribucion') {
+      try {
+        if (window.ensureLeafletV9) await ensureLeafletV9();
+        if (tab === 'territorio' && window.ensureTerritoryModuleV9) await ensureTerritoryModuleV9();
+        if (tab === 'distribucion' && window.ensureDistributionModuleV9) await ensureDistributionModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo geográfico. Revisa tu conexión.', 'error');
+        return;
+      }
+      // Si el usuario tocó otra pestaña mientras cargaba el mapa, esta
+      // navegación antigua no puede imponerse al terminar la descarga.
+      if (requestId !== navigationRequestV9) return;
     }
     if (window.clearMeaningfulDirtyV840) clearMeaningfulDirtyV840('navigation');
     else window.V7_FORM_DIRTY = false;
