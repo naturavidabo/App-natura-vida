@@ -153,7 +153,13 @@
     return permission ? hasPermission(permission) : false;
   }
 
-  function navigateToV7(tab) {
+  async function navigateToV7(tab) {
+    // Los mapas no forman parte del arranque crítico. Leaflet se descarga
+    // únicamente cuando el usuario abre un módulo geográfico.
+    if ((tab === 'territorio' || tab === 'distribucion') && window.ensureLeafletV9) {
+      try { await ensureLeafletV9(); }
+      catch (_) { showToast('No se pudo cargar el mapa. Revisa tu conexión.', 'error'); return; }
+    }
     // Compatibilidad con botones antiguos: el módulo se llama distinto según el rol.
     if (tab === 'pedido') tab = isAdmin() ? 'pedidos' : 'compra';
     if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
