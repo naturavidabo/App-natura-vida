@@ -21,8 +21,8 @@
       const admin = isAdmin();
       const managerView = admin || (window.canManageTeamV800 && canManageTeamV800());
       const profilesPromise = managerView && window.fetchManageableProfilesV800 ? fetchManageableProfilesV800() : (admin && window.fetchAllProfilesV7 ? fetchAllProfilesV7() : Promise.resolve({ ok:true, profiles:[AppState.session] }));
-      let regionalQuery = client().from('representative_regional_profiles').select('*').order('updated_at',{ ascending:false });
-      let requestsQuery = client().from('regional_restock_requests').select('*').order('created_at',{ ascending:false }).limit(200);
+      let regionalQuery = client().from('representative_regional_profiles').select('representative_user_id,region_name,city,operational_status,monthly_goal,debt_limit,notes,updated_at').order('updated_at',{ ascending:false });
+      let requestsQuery = client().from('regional_restock_requests').select('id,representative_user_id,representative_name,request_code,status,items,created_at').order('created_at',{ ascending:false }).limit(200);
       let stockQuery = client().from('representative_stock').select('representative_user_id,product_id,stock,acquisition_cost,updated_at');
       if (!managerView) {
         regionalQuery = regionalQuery.eq('representative_user_id',userId);
