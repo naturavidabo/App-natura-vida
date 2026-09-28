@@ -7,7 +7,10 @@
 
 let _supabaseClient = null;
 let _realtimeChannel = null;
+let _realtimeChannelUserId = null;
 let _realtimeRestartTimer = null;
+let _lastForegroundSyncAt = 0;
+const FOREGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
 let _backgroundStarted = false;
 let _refreshInFlight = null;
 let _deferredRenderPending = false;
@@ -1644,16 +1647,21 @@ function stopRealtimeSubscriptions() {
   const sb = getSupabaseClient();
   if (sb && _realtimeChannel) sb.removeChannel(_realtimeChannel).catch(() => {});
   _realtimeChannel = null;
+  _realtimeChannelUserId = null;
 }
 
-function startRealtimeSubscriptions() {
+function startRealtimeSubscriptions(options = {}) {
   installAuthObserverV801();
   const sb = getSupabaseClient();
-  if (!sb || !requireAuth()) return;
+  if (!sb || !requireAuth()) return false;
+  const userId = AppState.session && AppState.session.onlineUserId;
+  if (!userId) return false;
+  const force = options.force === true;
+  if (!force && _realtimeChannel && _realtimeChannelUserId === userId) return true;
   stopRealtimeSubscriptions();
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
-  let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
+  let channel = sb.channel(`nv7-main-${userId}`);
   ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'delivery_requests', 'representative_regional_profiles', 'regional_restock_requests', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments', 'business_roles', 'territory_prospects', 'territory_visits', 'territory_events', 'stock_points', 'stock_point_balances', 'stock_point_movements', 'seller_restock_requests'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => refreshAfterEvent(table, payload));
   });
@@ -1687,6 +1695,7 @@ function startRealtimeSubscriptions() {
     } catch (error) { console.warn('Realtime profiles:', error); }
   });
 
+  _realtimeChannelUserId = userId;
   _realtimeChannel = channel.subscribe((status, error) => {
     if (status === 'SUBSCRIBED') setCloudConnectionState('online', 'Realtime conectado');
     else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
@@ -1694,6 +1703,7 @@ function startRealtimeSubscriptions() {
       scheduleRealtimeRestart(status);
     }
   });
+  return true;
 }
 
 function startBackgroundSync() {
@@ -1702,22 +1712,26 @@ function startBackgroundSync() {
   startRealtimeSubscriptions();
   window.addEventListener('online', () => {
     setCloudConnectionState('connecting', 'Internet recuperado');
-    startRealtimeSubscriptions();
+    startRealtimeSubscriptions({ force: true });
     if (requireAuth() && !AppState.session.pendingApproval) runBackgroundSyncOnce('internet recuperado').catch(() => {});
   });
   window.addEventListener('offline', () => setCloudConnectionState('offline', 'Sin internet'));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && navigator.onLine && requireAuth()) {
       startRealtimeSubscriptions();
-      if (!AppState.session.pendingApproval) runBackgroundSyncOnce('aplicación visible').catch(() => {});
+      const now = Date.now();
+      if (!AppState.session.pendingApproval && now - _lastForegroundSyncAt >= FOREGROUND_SYNC_MIN_INTERVAL_MS) {
+        _lastForegroundSyncAt = now;
+        runBackgroundSyncOnce('aplicación visible').catch(() => {});
+      }
     }
   });
 }
 
 async function syncAfterLogin() {
   startBackgroundSync();
-  startRealtimeSubscriptions();
   if (AppState.session && AppState.session.pendingApproval) return { ok: true, mode: 'restricted-realtime' };
+  _lastForegroundSyncAt = Date.now();
   return runBackgroundSyncOnce('inicio de sesión');
 }
 
