@@ -629,7 +629,7 @@ async function requireClient() {
 // ---------------------------------------------------------------------------
 async function fetchCurrentProfile(userId) {
   const sb = await requireClient();
-  const { data, error } = await sb.from('profiles').select('id,email,full_name,role,status,commercial_role,manager_user_id,region_name,city,phone,permissions,created_at,updated_at,last_login_at').eq('id', userId).maybeSingle();
+  const { data, error } = await sb.from('profiles').select('id,email,full_name,role,status,commercial_role,manager_user_id,supplier_user_id,stock_owner_user_id,stock_point_id,region_name,city,operation_city,phone,avatar_url,role_note,seller_can_collect,permissions,created_at,updated_at,last_login_at').eq('id', userId).maybeSingle();
   if (error) throw new Error(messageFromError(error));
   return data || null;
 }
