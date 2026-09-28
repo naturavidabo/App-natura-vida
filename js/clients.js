@@ -381,7 +381,11 @@ function patchClientsRealtimeV9(context = {}) {
   if (!card) return false;
   if (existing) existing.replaceWith(card);
   else list.appendChild(card);
-  // Reutiliza el binder completo sólo para los botones de la tarjeta nueva,
+  if (_clientSearch) {
+    const needle = normalizeSearch(_clientSearch);
+    card.style.display = normalizeSearch(card.dataset.search || '').includes(needle) ? '' : 'none';
+  }
+  // Conecta sólo los botones de la tarjeta nueva,
   // sin reconstruir el listado ni perder scroll/búsqueda.
   card.querySelector('.editClientBtn')?.addEventListener('click', () => openClientForm(id));
   card.querySelector('.delClientBtn')?.addEventListener('click', () => confirmDeleteClient(id));
