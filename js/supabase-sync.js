@@ -628,7 +628,7 @@ async function requireClient() {
 // ---------------------------------------------------------------------------
 async function fetchCurrentProfile(userId) {
   const sb = await requireClient();
-  const { data, error } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  const { data, error } = await sb.from('profiles').select('id,email,full_name,role,status,commercial_role,manager_user_id,region_name,city,phone,permissions,created_at,updated_at,last_login_at').eq('id', userId).maybeSingle();
   if (error) throw new Error(messageFromError(error));
   return data || null;
 }
@@ -1026,7 +1026,7 @@ async function fetchRepresentativeStockMap() {
 
 async function syncCloudProductsToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('products').select('*').eq('status', 'active').order('updated_at', { ascending: true });
+  const { data, error } = await sb.from('products').select('id,name,category,sku,description,cost,market_price,reseller_price,public_price,stock,photo_url,status,payload,updated_at').eq('status', 'active').order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   let repStockMap = null;
   let repPrefsMap = null;
@@ -1034,7 +1034,7 @@ async function syncCloudProductsToLocal() {
     repStockMap = await fetchRepresentativeStockMap();
     if (AppState.session.commercialRole !== 'field_seller') {
       const { data: prefRows, error: prefError } = await sb.from('representative_product_preferences')
-        .select('*').eq('representative_user_id', AppState.session.onlineUserId);
+        .select('product_id,additional_cost,unit_price,wholesale_price,note,updated_at').eq('representative_user_id', AppState.session.onlineUserId);
       if (prefError) return { ok: false, message: messageFromError(prefError) };
       repPrefsMap = new Map((prefRows || []).map(row => [row.product_id, {
         resellerAdditionalCost: Number(row.additional_cost || 0),
@@ -1162,7 +1162,7 @@ async function deleteCloudClient(clientId) {
 
 async function syncCloudClientsToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('clients').select('*').order('updated_at', { ascending: true });
+  const { data, error } = await sb.from('clients').select('id,owner_user_id,name,phone,price_group_id,payload,created_at,updated_at').order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   const rows = (data || []).map(mapClientFromCloud);
   await DB.clear('clients');
@@ -1196,7 +1196,7 @@ function mapSaleFromCloud(row) {
 
 async function syncCloudSalesToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('sales').select('*').order('created_at', { ascending: true });
+  const { data, error } = await sb.from('sales').select('id,seller_user_id,seller_name,client_name,client_phone,sale_type,total,seller_profit,stock_owner_user_id,stock_point_id,region_name,operation_city,payload,created_at,updated_at').order('created_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   const rows = (data || []).map(mapSaleFromCloud);
   await DB.clear('sales');
@@ -1208,7 +1208,7 @@ async function syncCloudSalesToLocal() {
 async function findCloudSaleById(saleId) {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('sales').select('*').eq('id', String(saleId)).maybeSingle();
+    const { data, error } = await sb.from('sales').select('id,seller_user_id,seller_name,client_name,client_phone,sale_type,total,seller_profit,stock_owner_user_id,stock_point_id,region_name,operation_city,payload,created_at,updated_at').eq('id', String(saleId)).maybeSingle();
     if (error) return { ok: false, message: messageFromError(error) };
     return { ok: true, sale: data || null };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
@@ -1306,7 +1306,7 @@ async function deleteGenericCloudRecord(storeName, recordId) {
 
 async function syncGenericCloudRecordsToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('app_records').select('*')
+  const { data, error } = await sb.from('app_records').select('store_name,record_id,owner_user_id,visibility,payload,updated_at')
     .in('store_name', CLOUD_GENERIC_STORES)
     .order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
@@ -1371,7 +1371,7 @@ async function insertCloudPurchaseOrder(order) {
 async function fetchCloudPurchaseOrders() {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(200);
+    const { data, error } = await sb.from('purchase_orders').select('id,representative_user_id,representative_name,status,total,note,supplier_user_id,supplier_name,region_name,regional_manager_user_id,payload,created_at,updated_at').order('created_at', { ascending: false }).limit(200);
     if (error) return { ok: false, message: messageFromError(error) };
     const orders = (data || []).map(row => Object.assign({}, row.payload || {}, {
       id: row.id,
@@ -1449,7 +1449,7 @@ async function insertCloudMessage(message) {
 async function fetchCloudInboxMessages() {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: false }).limit(100);
+    const { data, error } = await sb.from('messages').select('id,type,title,body,sender_user_id,sender_name,sender_role,recipient_role,recipient_user_id,status,payload,created_at,updated_at').order('created_at', { ascending: false }).limit(100);
     return error ? { ok: false, message: messageFromError(error) } : { ok: true, messages: (data || []).map(mapMessageFromCloud) };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
 }
@@ -1488,7 +1488,7 @@ async function fetchRepresentativeStockForAdminV725(userId) {
 async function fetchRepresentativeOrdersForAdminV725(userId) {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('purchase_orders').select('*').eq('representative_user_id', userId).order('created_at', { ascending: false }).limit(50);
+    const { data, error } = await sb.from('purchase_orders').select('id,status,total,payload,created_at').eq('representative_user_id', userId).order('created_at', { ascending: false }).limit(50);
     if (error) return { ok: false, message: messageFromError(error) };
     return { ok: true, orders: (data || []).map(row => Object.assign({}, row.payload || {}, { id: row.id, status: row.status, total: Number(row.total || 0), createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now() })) };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
