@@ -42,6 +42,8 @@
   function nv801PatchCurrentView(context = {}) {
     if (window.V7_FORM_DIRTY) return true;
     switch (AppState.currentTab) {
+      case 'inicio':
+        return window.patchInicioMetricsV9 ? patchInicioMetricsV9(context) : false;
       case 'territorio':
         return window.nv801PatchTerritoryView ? nv801PatchTerritoryView(context) : false;
       case 'regional':
