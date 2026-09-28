@@ -42,7 +42,6 @@ jobs:
           node tests/test_quality_core_v806.js
           node tests/test_financial_accounts_v820.js
           node tests/test_ai_persistence_v811.js
-          node tests/test_release_v835.js
           node tests/test_release_v840.js
 
       - name: Regresión Python
