@@ -399,10 +399,21 @@
   function readControlTasksV832(){
     try{const rows=JSON.parse(localStorage.getItem(controlTasksKeyV832())||'[]');return (Array.isArray(rows)?rows:[]).filter(Boolean).slice(-200);}catch(_){return[];}
   }
-  function setControlSyncStateV834(patch={}){
-    controlSyncStateV834={...controlSyncStateV834,...patch};
+  let controlSyncVisualTimerV9=null;
+  function paintControlSyncStateV9(){
     document.querySelectorAll('[data-control-sync-v834]').forEach(el=>{el.textContent=controlSyncStateV834.status==='online'?'Sincronizado':controlSyncStateV834.status==='syncing'?'Sincronizando…':controlSyncStateV834.status==='setup'?'Falta activar nube':'Modo local';el.dataset.state=controlSyncStateV834.status;});
     try{window.dispatchEvent(new CustomEvent('nv:ai-control-sync',{detail:{...controlSyncStateV834}}));}catch(_){}
+  }
+  function setControlSyncStateV834(patch={}){
+    controlSyncStateV834={...controlSyncStateV834,...patch};
+    clearTimeout(controlSyncVisualTimerV9);
+    controlSyncVisualTimerV9=null;
+    if(controlSyncStateV834.status==='syncing'){
+      // Una sincronización breve no necesita hacerse visible: evita "Sincronizando/Sincronizado".
+      controlSyncVisualTimerV9=setTimeout(()=>{controlSyncVisualTimerV9=null;if(controlSyncStateV834.status==='syncing')paintControlSyncStateV9();},700);
+      return;
+    }
+    paintControlSyncStateV9();
   }
   function currentControlUserIdV834(){return String(window.AppState?.session?.onlineUserId||window.AppState?.session?.userId||'');}
   function controlCloudAvailableV834(){return !!(navigator.onLine&&currentControlUserIdV834()&&getSupabaseForAI());}
