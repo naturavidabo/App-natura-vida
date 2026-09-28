@@ -15,8 +15,8 @@ assert.equal(version.version,'8.4.0');
 assert(index.includes('@supabase/supabase-js@2.111.0'),'Supabase debe estar fijado a 2.111.0');
 assert(index.includes('js/v8-ai-assistant.js?v=8.4.0'));
 assert.equal(manifest.start_url,'./index.html?v=8.4.0');
-assert(sw.includes("APP_CACHE = 'nv-app-shell-v840'"));
-assert(sw.includes("RUNTIME_CACHE = 'nv-runtime-v840'"));
+assert(/APP_CACHE = 'nv-app-shell-v9-/.test(sw),'La rama V9 debe usar una generación propia de app cache');
+assert(/RUNTIME_CACHE = 'nv-runtime-v9-/.test(sw),'La rama V9 debe usar una generación propia de runtime cache');
 
 for(const token of [
   'AuthStorageV840','natura-vida-auth-v840','indexedDB.open',
