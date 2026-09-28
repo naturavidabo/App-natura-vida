@@ -1580,6 +1580,45 @@ async function flushRealtimeRefreshQueue() {
   }
 }
 
+async function applyGenericRealtimeRecordV9(payload = null) {
+  const eventType = String(payload?.eventType || payload?.event || '').toUpperCase();
+  const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old;
+  const storeName = row?.store_name;
+  const recordId = String(row?.record_id || '');
+  if (!storeName || !recordId || !CLOUD_GENERIC_STORES.includes(storeName)) return false;
+
+  if (eventType === 'DELETE') {
+    await DB.delete(storeName, recordId, { silent: true });
+  } else {
+    if (!payload?.new?.payload) return false;
+    const mapped = Object.assign({}, payload.new.payload, {
+      _cloudOwnerUserId: payload.new.owner_user_id,
+      _cloudVisibility: payload.new.visibility
+    });
+    await DB.put(storeName, mapped, { silent: true });
+  }
+
+  // priceGroups mantiene una combinación especial entre grupos centrales y
+  // propios; hasta separar ese modelo, conserva su sincronización completa.
+  if (storeName === 'priceGroups') return false;
+
+  const stateKey = storeName;
+  if (Array.isArray(AppState[stateKey])) {
+    const list = AppState[stateKey];
+    const index = list.findIndex(item => String(item?.id || item?.key || '') === recordId);
+    if (eventType === 'DELETE') {
+      if (index >= 0) list.splice(index, 1);
+    } else {
+      const mapped = await DB.get(storeName, recordId);
+      if (mapped) {
+        if (index >= 0) list[index] = mapped;
+        else list.push(mapped);
+      }
+    }
+  }
+  return true;
+}
+
 async function applySimpleRealtimeRecordV9(table, payload = null) {
   const eventType = String(payload?.eventType || payload?.event || '').toUpperCase();
   const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old;
@@ -1620,6 +1659,11 @@ async function applySimpleRealtimeRecordV9(table, payload = null) {
 
 async function refreshAfterEventNow(table, payload = null) {
   try {
+    if (table === 'app_records' && await applyGenericRealtimeRecordV9(payload)) {
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      setCloudConnectionState('online', 'Realtime incremental: app_records');
+      return;
+    }
     if ((table === 'clients' || table === 'sales') && await applySimpleRealtimeRecordV9(table, payload)) {
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
       setCloudConnectionState('online', `Realtime incremental: ${table}`);
