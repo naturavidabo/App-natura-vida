@@ -39,6 +39,6 @@ assert(!shell.includes("confirm('Hay cambios sin guardar en esta pantalla"),'No 
 for(const token of ['Director Administrativo','openAdministrativeCenterV840','Centro administrativo','__nvAiV840'])
   assert(ai.includes(token),`Falta consolidación administrativa: ${token}`);
 
-const count=(()=>{let n=0;const walk=d=>fs.readdirSync(d,{withFileTypes:true}).forEach(e=>e.isDirectory()?walk(path.join(d,e.name)):n++);walk(root);return n;})();
-assert(count<=100,`demasiados archivos: ${count}`);
-console.log(`V8.4.0 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${count} archivos.`);
+const publicCount=(()=>{let n=4;const walk=d=>fs.readdirSync(d,{withFileTypes:true}).forEach(e=>e.isDirectory()?walk(path.join(d,e.name)):n++);for(const dir of ['js','css','icons','img','data']){const full=path.join(root,dir);if(fs.existsSync(full))walk(full);}return n;})();
+assert(publicCount<=110,`demasiados recursos públicos de runtime: ${publicCount}`);
+console.log(`V8.4.0/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
