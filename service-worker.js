@@ -1,8 +1,8 @@
 // NATURA VIDA V8.4.0 — Director Administrativo Inteligente y sesión persistente.
 const VERSION = 'natura-vida-v8-4-0-director-administrativo-sesion-persistente';
-const APP_CACHE = 'nv-app-shell-v840';
+const APP_CACHE = 'nv-app-shell-v9-saneamiento-1';
 const IMAGE_CACHE = 'nv-images-v3';
-const RUNTIME_CACHE = 'nv-runtime-v840';
+const RUNTIME_CACHE = 'nv-runtime-v9-saneamiento-1';
 const IMAGE_CACHE_LIMIT = 120;
 const APP_SHELL = [
   './app-version.json',
@@ -18,6 +18,7 @@ const APP_SHELL = [
   './icons/icon-96.png',
   './index.html',
   './js/app-update.js',
+  './js/lazy-assets.js',
   './js/app.js',
   './js/auth.js',
   './js/catalog-pdf.js',
@@ -37,7 +38,7 @@ const APP_SHELL = [
   './js/supabase-sync.js',
   './js/ui-helpers.js',
   './js/v7-commercial-center.js',
-  './js/v7-distribution.js',
+
   './js/v7-documents.js',
   './js/v7-finance.js',
   './js/v7-integration-v771.js',
@@ -59,17 +60,33 @@ const APP_SHELL = [
   './js/v8-quality-assurance.js',
   './js/v8-roles.js',
   './js/v8-stability.js',
-  './js/v8-territory.js',
+
   './js/v8-ai-assistant.js',
   './js/v8-financial-accounts.js',
   './js/v8-seller-settlement.js',
   './data/imports/gabriela-espinoza-mi-negocio.json',
   './manifest.json',
 ];
+
+const OPTIONAL_APP_ASSETS = [
+  './js/v7-distribution.js',
+  './js/v8-territory.js'
+];
+
 const MAP_HOSTS = new Set(['tile.openstreetmap.org','a.basemaps.cartocdn.com','b.basemaps.cartocdn.com','c.basemaps.cartocdn.com','d.basemaps.cartocdn.com','nominatim.openstreetmap.org']);
 
+async function precacheRequiredAssets() {
+  const cache = await caches.open(APP_CACHE);
+  // El núcleo debe instalarse completo: si falta uno de estos archivos no se
+  // activa una versión parcialmente funcional.
+  await cache.addAll(APP_SHELL);
+  // Los módulos diferidos mejoran la continuidad offline, pero un fallo aislado
+  // no debe invalidar la instalación completa del Service Worker.
+  await Promise.allSettled(OPTIONAL_APP_ASSETS.map(asset => cache.add(asset)));
+}
+
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(APP_CACHE).then(cache => cache.addAll(APP_SHELL)));
+  event.waitUntil(precacheRequiredAssets());
   // La activación continúa controlada desde “Actualizar ahora”.
 });
 
