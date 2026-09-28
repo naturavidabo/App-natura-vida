@@ -15,7 +15,8 @@ let _backgroundStarted = false;
 let _refreshInFlight = null;
 let _deferredRenderPending = false;
 let _realtimeRefreshTimer = null;
-const _realtimeRefreshQueue = new Map();
+const _realtimeRefreshQueue = [];
+const REALTIME_INCREMENTAL_TABLES_V9 = new Set(['clients', 'sales', 'app_records']);
 let _authObserverSubscription = null;
 const NV801_PROFILE_CACHE_PREFIX = 'nv801-profile-cache:';
 
@@ -1566,16 +1567,24 @@ async function refreshAfterEvent(table, payload = null) {
   // V9 fase 1: agrupa ráfagas de eventos de la misma tabla. Una operación de
   // negocio puede emitir varios cambios consecutivos; antes cada evento podía
   // descargar de nuevo una colección completa y volver a renderizar la vista.
-  _realtimeRefreshQueue.set(table, payload);
+  if (REALTIME_INCREMENTAL_TABLES_V9.has(table)) {
+    // Los handlers incrementales necesitan conservar cada evento para no perder
+    // dos altas/cambios distintos ocurridos dentro de la misma ráfaga.
+    _realtimeRefreshQueue.push({ table, payload });
+  } else {
+    // Los handlers de resincronización completa sí pueden colapsarse por tabla.
+    const index = _realtimeRefreshQueue.findIndex(item => item.table === table);
+    if (index >= 0) _realtimeRefreshQueue[index] = { table, payload };
+    else _realtimeRefreshQueue.push({ table, payload });
+  }
   clearTimeout(_realtimeRefreshTimer);
   _realtimeRefreshTimer = setTimeout(flushRealtimeRefreshQueue, 120);
 }
 
 async function flushRealtimeRefreshQueue() {
-  const pending = Array.from(_realtimeRefreshQueue.entries());
-  _realtimeRefreshQueue.clear();
+  const pending = _realtimeRefreshQueue.splice(0);
   _realtimeRefreshTimer = null;
-  for (const [table, payload] of pending) {
+  for (const { table, payload } of pending) {
     await refreshAfterEventNow(table, payload);
   }
 }
@@ -1587,6 +1596,11 @@ async function applyGenericRealtimeRecordV9(payload = null) {
   const recordId = String(row?.record_id || '');
   if (!storeName || !recordId || !CLOUD_GENERIC_STORES.includes(storeName)) return false;
 
+  // Sólo se aplica incrementalmente cuando el store tiene una representación
+  // directa como arreglo en AppState. Stores con semántica especial (settings,
+  // priceGroups, etc.) conservan la sincronización completa.
+  if (!Array.isArray(AppState[storeName])) return false;
+
   if (eventType === 'DELETE') {
     await DB.delete(storeName, recordId, { silent: true });
   } else {
@@ -1597,10 +1611,6 @@ async function applyGenericRealtimeRecordV9(payload = null) {
     });
     await DB.put(storeName, mapped, { silent: true });
   }
-
-  // priceGroups mantiene una combinación especial entre grupos centrales y
-  // propios; hasta separar ese modelo, conserva su sincronización completa.
-  if (storeName === 'priceGroups') return false;
 
   const stateKey = storeName;
   if (Array.isArray(AppState[stateKey])) {
