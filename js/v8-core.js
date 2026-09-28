@@ -5,6 +5,9 @@
 
   const esc = value => window.escapeHtml ? escapeHtml(String(value ?? '')) : String(value ?? '');
   const ROLE_FALLBACK = window.ROLE_DEFINITIONS_V800 || {};
+  let v8ContextPromise = null;
+  let v8ContextLastSyncAt = 0;
+  const V8_CONTEXT_MIN_INTERVAL_MS = 15000;
 
   function roleCatalogItemV800(code) {
     const row = (AppState.roleCatalog || []).find(item => item.roleCode === code);
@@ -78,7 +81,7 @@
   async function fetchRoleCatalogV800() {
     try {
       const sb = await requireClient();
-      const { data, error } = await sb.from('business_roles').select('*').eq('active', true).order('hierarchy_level', { ascending: false });
+      const { data, error } = await sb.from('business_roles').select('role_code,role_name,short_name,summary,hierarchy_level,can_sell,can_hold_stock,can_buy,can_manage_team,can_manage_region,can_supply_team,assignable,tools,active').eq('active', true).order('hierarchy_level', { ascending: false });
       if (error) return { ok: false, message: messageFromError(error) };
       AppState.roleCatalog = (data || []).map(mapRoleRowV800);
       return { ok: true, roles: AppState.roleCatalog };
@@ -95,10 +98,19 @@
     } catch (error) { return { ok: false, message: messageFromError(error) }; }
   }
 
-  async function syncV8ContextV800() {
-    const results = await Promise.all([fetchRoleCatalogV800(), fetchManageableProfilesV800()]);
-    const failed = results.find(result => !result.ok);
-    return failed || { ok: true };
+  async function syncV8ContextV800(options = {}) {
+    const force = options.force === true;
+    const now = Date.now();
+    if (!force && v8ContextPromise) return v8ContextPromise;
+    if (!force && v8ContextLastSyncAt && now - v8ContextLastSyncAt < V8_CONTEXT_MIN_INTERVAL_MS) return { ok: true, cached: true };
+    v8ContextPromise = (async () => {
+      const results = await Promise.all([fetchRoleCatalogV800(), fetchManageableProfilesV800()]);
+      const failed = results.find(result => !result.ok);
+      if (!failed) v8ContextLastSyncAt = Date.now();
+      return failed || { ok: true };
+    })();
+    try { return await v8ContextPromise; }
+    finally { v8ContextPromise = null; }
   }
 
   function profileNameV800(userId) {
