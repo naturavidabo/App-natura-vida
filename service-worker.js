@@ -1,9 +1,10 @@
 // NATURA VIDA V8.4.0 — Director Administrativo Inteligente y sesión persistente.
 const VERSION = 'natura-vida-v8-4-0-director-administrativo-sesion-persistente';
 const APP_CACHE = 'nv-app-shell-v9-saneamiento-1';
-const IMAGE_CACHE = 'nv-images-v3';
+const IMAGE_CACHE = 'nv-images-v9-saneamiento-1';
 const RUNTIME_CACHE = 'nv-runtime-v9-saneamiento-1';
-const IMAGE_CACHE_LIMIT = 120;
+const IMAGE_CACHE_LIMIT = 80;
+const RUNTIME_CACHE_LIMIT = 40;
 const APP_SHELL = [
   './app-version.json',
   './css/app.css',
@@ -134,12 +135,21 @@ async function appShellResponse(request) {
   return network;
 }
 
+async function trimRuntimeCache(cache) {
+  const keys = await cache.keys();
+  if (keys.length <= RUNTIME_CACHE_LIMIT) return;
+  await Promise.all(keys.slice(0, keys.length - RUNTIME_CACHE_LIMIT).map(key => cache.delete(key)));
+}
+
 async function runtimeResponse(request) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(request);
   try {
     const response = await fetch(request, { cache: 'no-store' });
-    if (response && (response.ok || response.type === 'opaque')) await cache.put(request, response.clone());
+    if (response && (response.ok || response.type === 'opaque')) {
+      await cache.put(request, response.clone());
+      trimRuntimeCache(cache).catch(() => {});
+    }
     return response;
   } catch (error) {
     if (cached) return cached;
