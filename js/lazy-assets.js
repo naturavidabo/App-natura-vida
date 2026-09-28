@@ -29,6 +29,16 @@
     'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
   ], () => !!window.L);
 
+  function loadLocalModuleV9(key, src, ready) {
+    return loadExternalScriptV9(key, src, ready);
+  }
+
+  window.ensureTerritoryModuleV9 = () => loadLocalModuleV9('territorio',
+    'js/v8-territory.js?v=8.4.0', () => !!window.renderTerritoryV801);
+
+  window.ensureDistributionModuleV9 = () => loadLocalModuleV9('distribucion',
+    'js/v7-distribution.js?v=8.4.0', () => !!window.renderDistributionV760);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
