@@ -1580,8 +1580,51 @@ async function flushRealtimeRefreshQueue() {
   }
 }
 
+async function applySimpleRealtimeRecordV9(table, payload = null) {
+  const eventType = String(payload?.eventType || payload?.event || '').toUpperCase();
+  const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old;
+  if (!row?.id || !eventType) return false;
+
+  let storeName = '';
+  let stateKey = '';
+  let mapper = null;
+  if (table === 'clients') {
+    storeName = 'clients';
+    stateKey = 'clients';
+    mapper = mapClientFromCloud;
+  } else if (table === 'sales') {
+    storeName = 'sales';
+    stateKey = 'sales';
+    mapper = mapSaleFromCloud;
+  } else {
+    return false;
+  }
+
+  const id = String(row.id);
+  if (eventType === 'DELETE') {
+    await DB.delete(storeName, id, { silent: true });
+    AppState[stateKey] = (AppState[stateKey] || []).filter(item => String(item?.id) !== id);
+    return true;
+  }
+  if (!payload?.new || !Object.keys(payload.new).length) return false;
+
+  const mapped = mapper(payload.new);
+  await DB.put(storeName, mapped, { silent: true });
+  const list = AppState[stateKey] || [];
+  const index = list.findIndex(item => String(item?.id) === id);
+  if (index >= 0) list[index] = mapped;
+  else list.push(mapped);
+  AppState[stateKey] = list;
+  return true;
+}
+
 async function refreshAfterEventNow(table, payload = null) {
   try {
+    if ((table === 'clients' || table === 'sales') && await applySimpleRealtimeRecordV9(table, payload)) {
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      setCloudConnectionState('online', `Realtime incremental: ${table}`);
+      return;
+    }
     if (table === 'products' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
     else if (table === 'representative_stock') {
       await syncCloudProductsToLocal();
