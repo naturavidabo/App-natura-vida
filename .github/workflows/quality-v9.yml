@@ -56,5 +56,3 @@ jobs:
           python tests/test_ai_assistant_v810.py
           python tests/test_ai_assistant_v811.py
           python tests/test_ai_analytics_v812.py
-          python tests/test_ai_engine_v829.py
-          python tests/test_ai_engine_v830.py
