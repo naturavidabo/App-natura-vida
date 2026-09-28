@@ -239,7 +239,8 @@ function renderPasswordResetScreen() {
 }
 
 async function afterLoginSuccess(result) {
-  await loadAllState();
+  // V9: conserva el estado ya cargado por auth/sync; evita una lectura completa
+  // antes de iniciar la sincronización oficial de Supabase.
   renderTopHeader();
   if (AppState.session && AppState.session.pendingApproval) {
     $('#mainArea').innerHTML = `
@@ -267,7 +268,9 @@ async function afterLoginSuccess(result) {
       showToast(syncResult.message || 'No se pudieron cargar los datos oficiales de Supabase.', 'error');
     }
   }
-  await loadAllState();
+  // runBackgroundSyncOnce ya consolida el estado local antes de devolver.
+  // Sólo usamos loadAllState como respaldo si el sincronizador no estuvo disponible.
+  if (!window.syncAfterLogin) await loadAllState();
   render();
 }
 
