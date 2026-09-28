@@ -568,13 +568,43 @@ function isOnlineConfigured() {
   );
 }
 
-function setCloudConnectionState(state, detail = '') {
+let _cloudConnectionPendingTimer = null;
+let _cloudConnectionPending = null;
+const CLOUD_TRANSIENT_VISUAL_DELAY_MS = 650;
+
+function commitCloudConnectionStateV9(state, detail = '') {
+  const nextDetail = detail || '';
+  if (CloudConnection.state === state && CloudConnection.detail === nextDetail) return;
   CloudConnection.state = state;
-  CloudConnection.detail = detail || '';
+  CloudConnection.detail = nextDetail;
   CloudConnection.updatedAt = Date.now();
   window.dispatchEvent(new CustomEvent('nv:connection', {
     detail: Object.assign({}, CloudConnection)
   }));
+}
+
+function setCloudConnectionState(state, detail = '') {
+  const nextState = state || (navigator.onLine ? 'connecting' : 'offline');
+  const transient = nextState === 'connecting' || nextState === 'error';
+
+  if (!transient) {
+    clearTimeout(_cloudConnectionPendingTimer);
+    _cloudConnectionPendingTimer = null;
+    _cloudConnectionPending = null;
+    commitCloudConnectionStateV9(nextState, detail);
+    return;
+  }
+
+  // Evita el parpadeo "Conectando/En línea" durante operaciones breves.
+  // Offline y online reales siguen apareciendo inmediatamente.
+  _cloudConnectionPending = { state: nextState, detail };
+  clearTimeout(_cloudConnectionPendingTimer);
+  _cloudConnectionPendingTimer = setTimeout(() => {
+    const pending = _cloudConnectionPending;
+    _cloudConnectionPending = null;
+    _cloudConnectionPendingTimer = null;
+    if (pending) commitCloudConnectionStateV9(pending.state, pending.detail);
+  }, CLOUD_TRANSIENT_VISUAL_DELAY_MS);
 }
 
 function getSupabaseClient() {
