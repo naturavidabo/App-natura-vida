@@ -23,7 +23,9 @@ jobs:
           python-version: '3.12'
 
       - name: Verificar entorno V9
-        run: test "$(cat .node-version)" = "24"
+        run: |
+          test "$(cat .node-version)" = "24"
+          test -f .nojekyll
 
       - name: Validar sintaxis JavaScript
         run: |
