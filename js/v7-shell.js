@@ -240,6 +240,7 @@
   }
 
   async function getOrdersMemoryV7() {
+    if (Array.isArray(AppState.purchaseOrders)) return AppState.purchaseOrders;
     const rows = await DB.getAll('purchaseOrders').catch(() => []);
     AppState.purchaseOrders = rows;
     return rows;
