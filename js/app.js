@@ -508,7 +508,7 @@ function renderMas() {
   $('#moreClients').addEventListener('click', () => navigateTo('clientes'));
   $('#moreGroups').addEventListener('click', () => navigateTo('grupos'));
   $('#moreCommercialRulesV807')?.addEventListener('click', () => navigateTo('reglas-comerciales'));
-  $('#moreCatalogPdf').addEventListener('click', () => openCatalogPdfOptions());
+  $('#moreCatalogPdf').addEventListener('click', async () => { try { if (window.ensureCatalogPdfModuleV9) await ensureCatalogPdfModuleV9(); openCatalogPdfOptions(); } catch (_) { showToast('No se pudo cargar el catálogo PDF.', 'error'); } });
   const moreOrder = $('#moreOrder');
   if (moreOrder) moreOrder.addEventListener('click', () => navigateTo('pedido'));
   $('#moreUsers').addEventListener('click', () => navigateTo('usuarios'));
