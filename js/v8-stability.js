@@ -44,6 +44,16 @@
     switch (AppState.currentTab) {
       case 'inicio':
         return window.patchInicioMetricsV9 ? patchInicioMetricsV9(context) : false;
+      case 'inventario':
+        if (['products','representative_product_preferences','representative_stock'].includes(context.table) && window.patchInventoryProductV9) return patchInventoryProductV9(context);
+        return false;
+      case 'vender':
+        if (['products','representative_product_preferences','representative_stock'].includes(context.table) && window.renderCatalogGrid) {
+          renderCatalogGrid();
+          if (window.renderCartBar) renderCartBar();
+          return true;
+        }
+        return context.table === 'sales';
       case 'clientes':
         if (context.table === 'clients' && context.incremental && window.patchClientsRealtimeV9) return patchClientsRealtimeV9(context);
         return false;
