@@ -1265,6 +1265,23 @@ function mapSaleFromCloud(row) {
   });
 }
 
+async function syncCloudSaleByIdV9(saleId) {
+  const id=String(saleId||'');if(!id)return false;
+  const result=await findCloudSaleById(id);
+  if(!result.ok)throw new Error(result.message||'No se pudo actualizar la venta.');
+  if(!result.sale){
+    await DB.delete('sales',id,{silent:true});
+    AppState.sales=(AppState.sales||[]).filter(s=>String(s?.id)!==id);
+    return true;
+  }
+  const mapped=mapSaleFromCloud(result.sale);
+  await DB.put('sales',mapped,{silent:true});
+  const list=AppState.sales||[],index=list.findIndex(s=>String(s?.id)===id);
+  if(index>=0)list[index]=mapped;else list.push(mapped);
+  AppState.sales=list;
+  return true;
+}
+
 async function syncCloudSalesToLocal() {
   const sb = await requireClient();
   const { data, error } = await sb.from('sales').select('id,seller_user_id,seller_name,client_name,client_phone,sale_type,total,seller_profit,stock_owner_user_id,stock_point_id,region_name,operation_city,payload,created_at,updated_at').order('created_at', { ascending: true });
