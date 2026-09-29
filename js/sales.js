@@ -940,6 +940,8 @@ function prepareSaleDraftV827(options = {}) {
 
 Object.assign(window, {
   renderVender,
+  renderCatalogGrid,
+  renderCartBar,
   startSaleWithProduct,
   prepareSaleDraftV827,
   applyPercentGroupV7: applyPercentGroup,
