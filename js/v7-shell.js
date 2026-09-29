@@ -168,6 +168,16 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'cotizaciones' || tab === 'compra' || tab === 'pedidos') {
+      try {
+        if (tab === 'cotizaciones' && window.ensureQuotesModuleV9) await ensureQuotesModuleV9();
+        if ((tab === 'compra' || tab === 'pedidos') && window.ensureBaseOrdersModuleV9) await ensureBaseOrdersModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'perfil' || tab === 'usuarios' || tab === 'distribucion' || tab === 'pedidos') {
       try {
         if (window.ensureIntegrationV771ModuleV9) await ensureIntegrationV771ModuleV9();
