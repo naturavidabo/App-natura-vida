@@ -157,3 +157,16 @@ img,svg{max-width:100%}.field-row>*{min-width:0}.toolrow{display:flex;flex-wrap:
 .nvAiAdminMetricsV840,.nvAiExecutiveMetricsV834,.nvAiEvaluationGridV832,.nvAiWeeklyMetricsV835{gap:7px!important}.nvAiAdminSummaryV840,.nvAiAdminWorkPreviewV840,.nvAiDailySummaryV832,.nvAiExecutiveOverviewV834,.nvAiControlSheetV832{border-radius:18px!important;box-shadow:var(--nv9-shadow-sm)!important}
 .nvAiTaskToolbarV834,.nvAiControlTabsV832,.nvAiSummarySwitchV835{gap:5px}.nvAiControlTabsV832 button,.nvAiSummarySwitchV835 button{min-height:40px;border-radius:11px!important}
 @media(max-width:390px){.miniStats{grid-template-columns:1fr 1fr}.histitem.userRow{grid-template-columns:1fr}.userActions{justify-content:flex-start;padding-top:8px;border-top:1px solid var(--nv9-line)}.nvAiActionButtons .btn{flex-basis:100%}}
+
+/* V9.7b — Más: corrección estable sin competir con la grilla interna V8. */
+@media(max-width:700px){
+ .v770CategoryGrid{display:block!important}
+ .v770CategoryCard.v802CategoryCard{display:grid!important;grid-template-columns:96px minmax(0,1fr) 34px!important;width:100%!important;min-height:132px!important;margin:0 0 10px!important;padding:12px!important;gap:13px!important;box-sizing:border-box!important}
+ .v770CategoryCard.v802CategoryCard .v802CategoryArt{width:96px!important;min-width:96px!important;height:106px!important;align-self:center!important}
+ .v770CategoryCard.v802CategoryCard .v802CategoryArt svg{width:84px!important;height:92px!important}
+ .v770CategoryCard.v802CategoryCard .v802CategoryCopy{min-width:0!important;width:auto!important}
+ .v770CategoryCard.v802CategoryCard .v802CategoryCopy strong{font-size:18px!important;line-height:1.12!important;word-break:normal!important;overflow-wrap:normal!important}
+ .v770CategoryCard.v802CategoryCard .v802CategoryCopy small{font-size:11px!important;line-height:1.38!important;word-break:normal!important;overflow-wrap:normal!important}
+ .v770CategoryCard.v802CategoryCard .v802CategoryCopy u{margin-top:8px!important}
+ .v770CategoryCard.v802CategoryCard>em{position:static!important;align-self:start!important;justify-self:end!important}
+}
