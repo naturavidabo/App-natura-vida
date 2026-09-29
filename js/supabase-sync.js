@@ -1055,6 +1055,46 @@ async function fetchRepresentativeStockMap() {
   }]));
 }
 
+async function syncCloudProductByIdV9(productId) {
+  const id=String(productId||'');
+  if(!id)return false;
+  const sb=await requireClient();
+  const {data:row,error}=await sb.from('products')
+    .select('id,name,category,sku,description,cost,market_price,reseller_price,public_price,stock,photo_url,status,payload,updated_at')
+    .eq('id',id).maybeSingle();
+  if(error)throw new Error(messageFromError(error));
+  if(!row || row.status!=='active'){
+    await DB.delete('products',id,{silent:true});
+    AppState.products=(AppState.products||[]).filter(p=>String(p?.id)!==id);
+    return true;
+  }
+  let repStockMap=null,repPrefsMap=null;
+  if(window.isReseller&&isReseller()){
+    // La consulta puntual evita descargar nuevamente todo products. Los mapas
+    // representativos se conservan completos por seguridad de roles/stock.
+    repStockMap=await fetchRepresentativeStockMap();
+    if(AppState.session.commercialRole!=='field_seller'){
+      const {data:prefRows,error:prefError}=await sb.from('representative_product_preferences')
+        .select('product_id,additional_cost,unit_price,wholesale_price,note,updated_at')
+        .eq('representative_user_id',AppState.session.onlineUserId).eq('product_id',id);
+      if(prefError)throw new Error(messageFromError(prefError));
+      repPrefsMap=new Map((prefRows||[]).map(pref=>[pref.product_id,{
+        resellerAdditionalCost:Number(pref.additional_cost||0),
+        resellerLocalUnitPrice:Number(pref.unit_price||0),
+        resellerLocalWholesalePrice:Number(pref.wholesale_price||0),
+        resellerLocalNote:pref.note||'',
+        resellerLocalUpdatedAt:pref.updated_at?new Date(pref.updated_at).getTime():Date.now()
+      }]));
+    } else repPrefsMap=new Map();
+  }
+  const mapped=mapProductFromCloud(row,repStockMap,repPrefsMap);
+  await DB.put('products',mapped,{silent:true});
+  const list=AppState.products||[],index=list.findIndex(p=>String(p?.id)===id);
+  if(index>=0)list[index]=mapped;else list.push(mapped);
+  AppState.products=list;
+  return true;
+}
+
 async function syncCloudProductsToLocal() {
   const sb = await requireClient();
   const { data, error } = await sb.from('products').select('id,name,category,sku,description,cost,market_price,reseller_price,public_price,stock,photo_url,status,payload,updated_at').eq('status', 'active').order('updated_at', { ascending: true });
