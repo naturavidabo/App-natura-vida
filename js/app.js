@@ -595,9 +595,15 @@ function renderResumen() {
 
   main.innerHTML = html;
   $all('.saletoggle button').forEach(b => b.addEventListener('click', () => { _histFilterType = b.dataset.f; renderResumen(); }));
-  $all('.histitem-clickable').forEach(el => el.addEventListener('click', () => {
+  $all('.histitem-clickable').forEach(el => el.addEventListener('click', async () => {
     const sale = AppState.sales.find(s => s.id === el.dataset.saleid);
-    if (sale) openReceiptPreview(sale);
+    if (!sale) return;
+    if (window.openSaleReceiptSafeV829) {
+      const result = await openSaleReceiptSafeV829(sale);
+      if (!result?.ok) showToast(result?.message || 'No se pudo abrir el recibo.', 'error');
+      return;
+    }
+    showToast('El módulo de recibos no está disponible.', 'error');
   }));
 }
 
