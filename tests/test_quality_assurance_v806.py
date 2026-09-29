@@ -4,12 +4,13 @@ root=Path(sys.argv[1] if len(sys.argv)>1 else '.').resolve()
 index=(root/'index.html').read_text(encoding='utf-8')
 js=(root/'js/v8-quality-assurance.js').read_text(encoding='utf-8')
 settings=(root/'js/settings.js').read_text(encoding='utf-8')
+lazy=(root/'js/lazy-assets.js').read_text(encoding='utf-8')
 css=(root/'css/v8.css').read_text(encoding='utf-8')
 sw=(root/'service-worker.js').read_text(encoding='utf-8')
 version=json.loads((root/'app-version.json').read_text(encoding='utf-8'))
 checks={
  'version 8.2.0':version.get('version')=='8.4.0',
- 'module loaded':'js/v8-quality-assurance.js?v=8.4.0' in index,
+ 'module deferred':'js/v8-quality-assurance.js?v=8.4.0' not in index and 'ensureQualityModuleV9' in lazy and 'ensureQualityModuleV9' in settings,
  'module cached':"'./js/v8-quality-assurance.js'" in sw,
  'verified backup schema':'natura-vida-verified-backup' in js,
  'sha256 integrity':'SHA-256' in js and 'payloadHash' in js,
