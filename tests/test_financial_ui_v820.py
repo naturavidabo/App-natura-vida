@@ -32,7 +32,7 @@ checks={
  'financial documents without embedded qr':'QR DE PAGO' not in module and 'El código QR se muestra en la pantalla de cobro' in module,
  'summary and detailed modes':'openDocumentModePickerV820' in module and 'Versión resumida' in module and 'Versión detallada' in module,
  'payment plan schedule':'openPaymentPlanFormV820' in module and 'planSchedule' in module and 'CRONOGRAMA DEL PLAN DE PAGOS' in module,
- 'payment plan installments':'applyPaymentToPlanV825' in module and 'Registrar cuota' in module and 'Pago mayor / adelanto' in module,
+ 'payment plan installments':'postPaymentAtomicV9' in module and 'nv_financial_post_payment_atomic' in module and 'Registrar cuota' in module and 'Pago mayor / adelanto' in module,
  'csv exports':'exportReceivablesCsvV820' in module and 'exportClientFinancialCsvV820' in module,
 }
 failed=[k for k,v in checks.items() if not v]
