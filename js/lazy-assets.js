@@ -49,6 +49,15 @@
   window.ensureRegionalModuleV9 = () => loadLocalModuleV9('regional',
     'js/v7-regional.js?v=8.4.0', () => !!window.renderRegionalManagementV750);
 
+  window.ensureGovernanceModuleV9 = () => loadLocalModuleV9('gobernanza',
+    'js/v8-governance.js?v=8.4.0', () => !!window.NV804Governance);
+
+  window.ensureQualityModuleV9 = async () => {
+    await window.ensureGovernanceModuleV9();
+    return loadLocalModuleV9('calidad',
+      'js/v8-quality-assurance.js?v=8.4.0', () => !!window.NV806QualityAssurance);
+  };
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
