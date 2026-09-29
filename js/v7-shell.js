@@ -144,8 +144,10 @@
       distribucion:'routes:own', personal:'tasks:own', produccion:'production:operate', egresos:'finance:operate',
       territorio:'territory:manage', 'roles-estructura':'workforce:manage', usuarios:'workforce:manage', pedidos:'orders:team_read'
     };
-    if (tab === 'distribucion' && hasPermission('deliveries:manage')) return true;
+    if (tab === 'distribucion' && (hasPermission('routes:manage') || hasPermission('deliveries:manage'))) return true;
     if (tab === 'personal' && (hasPermission('workforce:manage') || hasPermission('attendance:own'))) return true;
+    if (tab === 'territorio' && hasPermission('territory:team_read')) return true;
+    if (tab === 'rendicion-caja' && (AppState.session?.commercialRole === 'field_seller' || (window.canManageTeamV800 && canManageTeamV800()))) return true;
     if (tab === 'inventario' && (hasPermission('inventory:operate') || hasPermission('inventory:delegated_read'))) return true;
     if (tab === 'puntos-stock' && (AppState.session?.commercialRole==='field_seller' || (window.canHoldStockV800&&canHoldStockV800()) || (window.canManageTeamV800&&canManageTeamV800()))) return true;
     if (tab === 'roles-estructura' && window.canOpenRolesV800 && canOpenRolesV800()) return true;
