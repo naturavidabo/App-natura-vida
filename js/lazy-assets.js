@@ -28,10 +28,39 @@
     return promise;
   }
 
-  window.ensureLeafletV9 = () => loadExternalScriptV9('Leaflet', [
-    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
-  ], () => !!window.L);
+  function ensureLeafletCssV9() {
+    if (document.querySelector('link[data-nv-leaflet-css="1"]')) return Promise.resolve(true);
+    if (pending.has('LeafletCSS')) return pending.get('LeafletCSS');
+    const sources = [
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+      'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'
+    ];
+    const promise = new Promise((resolve, reject) => {
+      let index = 0;
+      const attempt = () => {
+        if (index >= sources.length) return reject(new Error('No se pudo cargar Leaflet CSS.'));
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = sources[index++];
+        link.crossOrigin = '';
+        link.dataset.nvLeafletCss = '1';
+        link.onload = () => resolve(true);
+        link.onerror = () => { link.remove(); attempt(); };
+        document.head.appendChild(link);
+      };
+      attempt();
+    }).finally(() => pending.delete('LeafletCSS'));
+    pending.set('LeafletCSS', promise);
+    return promise;
+  }
+
+  window.ensureLeafletV9 = async () => {
+    await ensureLeafletCssV9();
+    return loadExternalScriptV9('Leaflet', [
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+      'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
+    ], () => !!window.L);
+  };
 
   function loadLocalModuleV9(key, src, ready) {
     return loadExternalScriptV9(key, src, ready);
