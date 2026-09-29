@@ -12,7 +12,7 @@ checks={
  'versión 8.2.0': version.get('version')=='8.4.0',
  'script versionado': 'v8-ai-assistant.js?v=8.4.0' in html,
  'acceso propio en administración': "id: 'asistente-ia'" in center and "category: 'administracion'" in center,
- 'navegación robusta': "case 'asistente-ia'" in shell and 'renderAIAssistantV812' in shell,
+ 'navegación robusta': "case 'asistente-ia'" in shell and 'renderAIAssistantV9' in shell,
  'conversación estructurada': 'readConversation' in js and 'writeConversation' in js and "role:'assistant',response" in js,
  'respuesta no se borra al renderizar': 'if(existing && !options.force)' in js and 'renderConversation(false)' in js,
  'panel rápido continúa conversación': 'Continuar conversación' in js and 'Abrir asistente completo' in js,
