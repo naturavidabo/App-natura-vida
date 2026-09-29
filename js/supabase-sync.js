@@ -1799,19 +1799,19 @@ async function refreshAfterEventNow(table, payload = null) {
     if (table === 'app_records') {
       if (await applyGenericRealtimeRecordV9(payload)) {
         renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
-        setCloudConnectionState('online', 'Realtime incremental: app_records');
+        // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
         return;
       }
       const storeName=payload?.new?.store_name||payload?.old?.store_name;
       if(storeName && await syncGenericCloudStoreToLocalV9(storeName).catch(()=>false)){
         renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:true });
-        setCloudConnectionState('online', `Realtime store: ${storeName}`);
+        // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
         return;
       }
     }
     if ((table === 'clients' || table === 'sales') && await applySimpleRealtimeRecordV9(table, payload)) {
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
-      setCloudConnectionState('online', `Realtime incremental: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     if (table === 'products' || table === 'representative_product_preferences') {
@@ -1819,7 +1819,7 @@ async function refreshAfterEventNow(table, payload = null) {
       const targeted=productId ? await syncCloudProductByIdV9(productId).catch(()=>false) : false;
       if(!targeted) await syncCloudProductsToLocal();
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'representative_stock') {
@@ -1831,13 +1831,13 @@ async function refreshAfterEventNow(table, payload = null) {
         hydrateRepresentativeCardsV730(AppState.allProfiles || []);
       }
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'clients') {
       await syncCloudClientsToLocal();
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: false });
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'sales') {
@@ -1846,19 +1846,19 @@ async function refreshAfterEventNow(table, payload = null) {
         hydrateRepresentativeCardsV730(AppState.allProfiles || []);
       }
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: false });
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) {
       await fetchAndCachePurchaseOrders();
       renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'messages' && window.syncInboxFromCloud) {
       await syncInboxFromCloud();
       if (window.refreshInboxBadge) refreshInboxBadge({ silent:true }).catch(()=>{});
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'app_records') {
@@ -1866,36 +1866,36 @@ async function refreshAfterEventNow(table, payload = null) {
       if(storeName) await syncGenericCloudStoreToLocalV9(storeName);
       else await syncGenericCloudRecordsToLocal();
       renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) {
       await syncProductionCloudToLocalV740();
       if(AppState.currentTab==='produccion' && window.renderProductionV740) renderProductionV740();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['delivery_routes','route_stops','deliveries','geo_events','delivery_requests'].includes(table)) {
       if (window.handleDistributionRealtimeV770) handleDistributionRealtimeV770(table, payload);
       else if (window.refreshDistributionV760) await refreshDistributionV760();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['representative_regional_profiles','regional_restock_requests'].includes(table)) {
       if (window.handleRegionalRealtimeV771) handleRegionalRealtimeV771(table, payload);
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['staff_members','staff_tasks','staff_attendance','labor_costs','staff_payments'].includes(table)) {
       if (window.handleWorkforceRealtimeV770) handleWorkforceRealtimeV770(table, payload);
       else if (window.refreshWorkforceV770) await refreshWorkforceV770();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['territory_prospects','territory_visits','territory_events'].includes(table)) {
       if (window.handleTerritoryRealtimeV801) handleTerritoryRealtimeV801(table, payload);
       else if (window.handleTerritoryRealtimeV800) handleTerritoryRealtimeV800(table, payload);
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['stock_points','stock_point_balances','stock_point_movements','seller_restock_requests'].includes(table)) {
@@ -1906,25 +1906,25 @@ async function refreshAfterEventNow(table, payload = null) {
         if(!targeted) await syncCloudProductsToLocal();
         renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
       }
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'business_roles') {
       if (window.fetchRoleCatalogV800) await fetchRoleCatalogV800().catch(() => {});
       if (AppState.currentTab === 'roles-estructura' && window.renderRolesStructureV800) renderRolesStructureV800();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) {
       await syncV7Context();
       renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     await loadAllState();
     renderAfterCloudRefresh();
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
-    setCloudConnectionState('online', `Realtime: ${table}`);
+    // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
   } catch (error) {
     console.warn(`Realtime ${table}:`, error);
     setCloudConnectionState('error', messageFromError(error));
