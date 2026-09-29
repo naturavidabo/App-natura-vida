@@ -70,3 +70,26 @@ input:focus,select:focus,textarea:focus,.field input:focus,.field select:focus,.
 .invActions{border-top:1px solid var(--nv9-line);background:#fbfdfc}.invActions button{min-height:44px;font-weight:750}
 .kpiGrid{gap:8px}.kpiCard{border:1px solid var(--nv9-line);border-radius:16px;box-shadow:var(--nv9-shadow-sm)}
 @media(max-width:390px){.v2ProductCard{grid-template-columns:118px minmax(0,1fr)!important;min-height:180px}.v2ProductCard .invPhoto{min-height:180px!important}.priceMatrix.priceMatrix4{grid-template-columns:repeat(2,1fr)!important}.catalogGrid,.v7ProductGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* V9.3 — Pedidos: estado, total y acciones primero. */
+.v7BuyHead .v7DiscountChip{display:inline-flex;margin:7px 5px 0 0;padding:6px 9px;border-radius:999px;background:#edf8f1;color:#357058;font-size:9.5px;font-weight:750}
+.v7EditBanner{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;padding:10px 12px;border:1px solid #f1d7a5;border-radius:14px;background:#fff9ec;color:#7b5c1f}.v7EditBanner button{min-height:36px;border-radius:10px}
+.v7OrderCard{margin-bottom:10px;padding:14px;border:1px solid var(--nv9-line);border-radius:19px;background:#fff;box-shadow:var(--nv9-shadow-sm)}
+.v7OrderTop{gap:10px}.v7OrderTop>div{min-width:0}.v7DocNumber{display:block;margin-bottom:4px;color:var(--nv9-green);font-size:9.5px;font-weight:850;letter-spacing:.05em}.v7OrderTop strong{font-size:13.5px;line-height:1.3}
+.v7Status{flex:0 0 auto;padding:6px 8px;border-radius:999px;font-size:8.5px;font-weight:850}.v7OrderItems{display:grid;gap:4px;margin:11px 0;padding:9px 10px;border-radius:12px;background:#f7faf8}.v7OrderItems span{font-size:10.5px;color:#5f766b}.v7OrderItems b{color:var(--nv9-ink)}
+.v7OrderFoot{padding-top:9px;border-top:1px solid var(--nv9-line)}.v7OrderFoot span{font-size:9.5px;color:var(--nv9-muted)}.v7OrderFoot strong{font-size:16px;color:var(--nv9-forest)}
+.v7OrderActions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.v7OrderActions .btn{flex:1 1 120px;min-height:40px;padding:8px 10px}
+
+/* V9.3 — Cuentas por cobrar y documentos financieros. */
+.nv820FinanceHead{margin-bottom:12px}.nv820Metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px}.nv820Metrics .v7MetricCard{min-height:82px;padding:11px}.nv820Metrics .v7MetricCard span{font-size:9px}.nv820Metrics .v7MetricCard strong{font-size:17px}
+.nv820DebtCard{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:12px;margin-bottom:10px;padding:14px!important;border:1px solid var(--nv9-line)!important;border-radius:20px!important;background:#fff;box-shadow:var(--nv9-shadow-sm)}
+.nv820DebtMain{min-width:0}.nv820DebtTitle{display:flex;align-items:center;gap:9px}.nv820ClientAvatar{display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border-radius:13px;background:#eaf7ef;color:var(--nv9-green);font-weight:850}.nv820DebtTitle strong{font-size:13.5px}.nv820DebtTitle small{display:block;margin-top:2px;color:var(--nv9-muted);font-size:9.5px}
+.nv820DebtFacts{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}.nv820DebtFacts span{padding:5px 7px;border-radius:9px;background:#f6f9f7;color:#71847a;font-size:8.5px}.nv820DebtBadges{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.nv820Status,.nv820Responsible{border-radius:999px!important;font-size:8.5px!important}
+.nv820DebtAmount{display:flex;flex-direction:column;align-items:flex-end;min-width:126px}.nv820DebtAmount>small{font-size:8.5px;color:var(--nv9-muted)}.nv820DebtAmount>strong{margin:3px 0 9px;color:var(--nv9-forest);font-size:19px}.nv820DebtAmount .btn{width:100%;min-height:37px;margin-top:5px;padding:7px 8px;font-size:9.5px}
+.nv820QuickDocGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.nv820QuickDocGrid button{min-height:48px;padding:9px;border:1px solid var(--nv9-line);border-radius:13px;background:#fff;color:#385e4c;font-weight:750;font-size:10px}.nv820QuickDocGrid button:disabled{opacity:.45}
+.nv820DocumentList{display:grid;gap:7px;margin-top:10px}.nv820DocumentList>button{min-height:54px;padding:10px 11px;border:1px solid var(--nv9-line);border-radius:13px;background:#fff;text-align:left}.nv820DocumentList strong{font-size:11px}.nv820DocumentList small{display:block;margin-top:3px;color:var(--nv9-muted);font-size:9px}
+
+/* V9.3 — Formularios operativos: ritmo vertical consistente. */
+.sheet .field,.sheet .field-row{margin-bottom:12px}.field-row{gap:9px}.sheet .actions{position:sticky;bottom:0;z-index:2;margin:14px -4px -4px;padding:10px 4px 4px;background:linear-gradient(180deg,rgba(248,251,249,0),var(--nv9-surface-soft) 24%)}.sheet .actions .btn{min-height:48px}
+.formNotice,.v7CashNotice{padding:11px 12px;border:1px solid rgba(11,135,81,.12);border-radius:14px;background:#f1f8f4;color:#557064;font-size:10.5px;line-height:1.45}
+@media(max-width:420px){.nv820DebtCard{grid-template-columns:1fr}.nv820DebtAmount{align-items:stretch;padding-top:9px;border-top:1px solid var(--nv9-line)}.nv820DebtAmount>strong{font-size:21px}.nv820DebtAmount .btn{min-height:42px}.v7OrderActions .btn{flex-basis:calc(50% - 4px)}}
