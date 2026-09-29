@@ -37,8 +37,13 @@
     return loadExternalScriptV9(key, src, ready);
   }
 
-  window.ensureTerritoryModuleV9 = () => loadLocalModuleV9('territorio',
-    'js/v8-territory.js?v=8.4.0', () => !!window.renderTerritoryV801);
+  window.ensureTerritoryModuleV9 = async () => {
+    // Territorio usa L durante la inicialización; desde V9 Leaflet ya no forma
+    // parte del arranque global, por lo que debe estar listo antes del módulo.
+    await window.ensureLeafletV9();
+    return loadLocalModuleV9('territorio',
+      'js/v8-territory.js?v=8.4.0', () => !!window.renderTerritoryV801);
+  };
 
   window.ensureDistributionModuleV9 = () => loadLocalModuleV9('distribucion',
     'js/v7-distribution.js?v=8.4.0', () => !!window.renderDistributionV760);
