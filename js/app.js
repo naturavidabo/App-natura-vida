@@ -710,7 +710,7 @@ async function initApp() {
     } else {
       renderBottomNav();
       if (window.syncAfterLogin && navigator.onLine) await syncAfterLogin().catch(() => {});
-      await loadAllState();
+      else if (!window.syncAfterLogin) await loadAllState();
       if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
       render();
       if (restored.status === 'recovering') setCloudConnectionState('connecting', 'Sesión conservada · perfil en reconexión');
