@@ -15,7 +15,7 @@ const APP_SHELL = [
 ];
 
 const OPTIONAL_APP_ASSETS = [
-  './js/catalog-pdf.js','./js/quotes.js','./js/receipt.js',
+  './js/catalog-pdf.js','./js/quotes.js',
   './js/v7-commercial-center.js','./js/v7-distribution.js','./js/v7-documents.js','./js/v7-finance.js','./js/v7-integration-v771.js',
   './js/v7-inventory-sales.js','./js/v7-management-center.js','./js/v7-orders.js','./js/v7-production.js','./js/v7-profile-users.js',
   './js/v7-regional.js','./js/v7-stats.js','./js/v7-workforce.js','./js/v8-ai-assistant.js','./js/v8-commercial-rules.js',
