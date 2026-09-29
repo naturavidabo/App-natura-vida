@@ -1797,15 +1797,20 @@ async function refreshAfterEventNow(table, payload = null) {
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
-    else if (table === 'clients') await syncCloudClientsToLocal();
+    else if (table === 'clients') {
+      await syncCloudClientsToLocal();
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: false });
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if (table === 'sales') {
       await syncCloudSalesToLocal();
-      await loadAllState();
       if (AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
         hydrateRepresentativeCardsV730(AppState.allProfiles || []);
-        setCloudConnectionState('online', `Realtime: ${table}`);
-        return;
       }
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: false });
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
     }
     else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
     else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
