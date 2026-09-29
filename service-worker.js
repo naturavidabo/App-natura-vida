@@ -1,8 +1,8 @@
-// NATURA VIDA V10.0.0 — Director Administrativo Inteligente y sesión persistente.
-const VERSION = 'natura-vida-v10-0-0-ui-polish';
-const APP_CACHE = 'nv-app-shell-v10-preview-1';
+// NATURA VIDA V10.1.0 — Director Administrativo Inteligente y sesión persistente.
+const VERSION = 'natura-vida-v10-1-0-audit-polish';
+const APP_CACHE = 'nv-app-shell-v10-1';
 const IMAGE_CACHE = 'nv-images-stable-restore-1';
-const RUNTIME_CACHE = 'nv-runtime-v10-preview-1';
+const RUNTIME_CACHE = 'nv-runtime-v10-1';
 const IMAGE_CACHE_LIMIT = 160;
 const RUNTIME_CACHE_LIMIT = 40;
 const APP_SHELL = [

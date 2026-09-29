@@ -9,8 +9,8 @@ css=(root/'css/v8.css').read_text(encoding='utf-8')
 sw=(root/'service-worker.js').read_text(encoding='utf-8')
 version=json.loads((root/'app-version.json').read_text(encoding='utf-8'))
 checks={
- 'version 8.2.0':version.get('version')=='10.0.0',
- 'module deferred':'js/v8-quality-assurance.js?v=10.0.0' not in index and 'ensureQualityModuleV9' in lazy and 'ensureQualityModuleV9' in settings,
+ 'version 8.2.0':version.get('version')=='10.1.0',
+ 'module deferred':'js/v8-quality-assurance.js?v=10.1.0' not in index and 'ensureQualityModuleV9' in lazy and 'ensureQualityModuleV9' in settings,
  'module cached':"'./js/v8-quality-assurance.js'" in sw,
  'verified backup schema':'natura-vida-verified-backup' in js,
  'sha256 integrity':'SHA-256' in js and 'payloadHash' in js,
@@ -27,7 +27,7 @@ checks={
  'responsive styles':'.nv806Metrics' in css and '@media(max-width:640px)' in css,
 }
 failed=[name for name,ok in checks.items() if not ok]
-print(f"Control administrativo V10.0.0: {len(checks)-len(failed)}/{len(checks)} controles OK")
+print(f"Control administrativo V10.1.0: {len(checks)-len(failed)}/{len(checks)} controles OK")
 if failed:
     for name in failed: print('ERROR:',name)
     sys.exit(1)

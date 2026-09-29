@@ -121,3 +121,188 @@ body.nv10 .card,body.nv10 .v7Panel{border-color:var(--nv10-line);box-shadow:var(
  body.nv10 .v802CategoryArt{width:78px;height:92px;min-width:78px}
  body.nv10 .v802CategoryArt svg{width:70px!important;height:82px!important}
 }
+
+
+/* =====================================================================
+   NATURA VIDA V10.1 — presencia visual, contraste y acciones claras
+   ===================================================================== */
+
+/* Tarjetas de áreas: color con control, mayor sensación de botón. */
+body.nv10 .v770CategoryCard.v802CategoryCard{
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  border-color:rgba(6,75,46,.13)!important;
+  box-shadow:0 10px 26px rgba(5,74,43,.075),inset 0 1px rgba(255,255,255,.86)!important;
+  transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;
+}
+body.nv10 .v770CategoryCard.v802CategoryCard:active{
+  transform:scale(.986);
+  box-shadow:0 5px 14px rgba(5,74,43,.075)!important;
+}
+body.nv10 .v770CategoryCard.v802CategoryCard::before{
+  content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:0 6px 6px 0;background:#0b8a54;z-index:2
+}
+body.nv10 .v770CategoryCard.v802CategoryCard.blue::before{background:#3c8ebc}
+body.nv10 .v770CategoryCard.v802CategoryCard.violet::before{background:#7a5aa1}
+body.nv10 .v770CategoryCard.v802CategoryCard.gold::before{background:#d39a2c}
+body.nv10 .v770CategoryCard.v802CategoryCard.slate::before{background:#537b70}
+body.nv10 .v770CategoryCard.v802CategoryCard.lime::before{background:#7fad30}
+
+body.nv10 .v802CategoryArt{
+  border:1px solid rgba(255,255,255,.8);
+  box-shadow:inset 0 1px rgba(255,255,255,.75),0 6px 15px rgba(5,74,43,.06)
+}
+body.nv10 .v770CategoryCard.v802CategoryCard.lime{
+  background:linear-gradient(135deg,#fbfff4 0%,#f0f8df 62%,#e6f3bd 100%)!important;
+}
+body.nv10 .v770CategoryCard.v802CategoryCard.lime .v802CategoryArt{
+  color:#fff!important;
+  background:linear-gradient(145deg,#0b6846 0%,#0f9258 58%,#8dbe36 118%)!important;
+  box-shadow:inset 0 1px rgba(255,255,255,.28),0 8px 18px rgba(8,103,61,.16)!important
+}
+body.nv10 .v770CategoryCard.v802CategoryCard.lime .v802CategoryCopy strong{
+  color:#17392d!important
+}
+body.nv10 .v770CategoryCard.v802CategoryCard.lime .v802CategoryCopy small{
+  color:#60776b!important
+}
+body.nv10 .v770CategoryCard.v802CategoryCard .v802CategoryCopy u{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;width:max-content;
+  min-height:34px;margin-top:9px!important;padding:0 12px;border-radius:999px;
+  background:#e8f6ee;color:#087348!important;text-decoration:none!important;
+  font-size:.62rem!important;font-weight:900;box-shadow:inset 0 0 0 1px rgba(7,112,68,.08)
+}
+body.nv10 .v770CategoryCard.v802CategoryCard.blue .v802CategoryCopy u{background:#e8f3fa;color:#2d779f!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.violet .v802CategoryCopy u{background:#f0eafa;color:#684b90!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.gold .v802CategoryCopy u{background:#fff2d6;color:#9a680b!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.slate .v802CategoryCopy u{background:#eaf2f0;color:#456d64!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.lime .v802CategoryCopy u{background:#e5f3c6;color:#436f16!important}
+body.nv10 .v770CategoryCard.v802CategoryCard .v802CategoryCopy u b{font-size:.95rem;line-height:1}
+body.nv10 .v802CategoryCard>em{
+  border:1px solid rgba(8,100,59,.10)!important;background:rgba(255,255,255,.9)!important;
+  box-shadow:0 5px 12px rgba(5,74,43,.07)!important
+}
+
+/* Cabecera de cada área: vuelve a tener identidad visual en vez de una caja blanca. */
+body.nv10 .v770CenterHead.category{
+  min-height:178px;padding:18px 17px 20px;border:0;border-radius:24px;
+  color:#fff;box-shadow:0 14px 32px rgba(5,70,41,.16)
+}
+body.nv10 .v770CenterHead.category.green{background:linear-gradient(135deg,#06472f 0%,#0a8551 62%,#42b96f 115%)}
+body.nv10 .v770CenterHead.category.blue{background:linear-gradient(135deg,#1f587a 0%,#3288b5 62%,#68b8d2 118%)}
+body.nv10 .v770CenterHead.category.violet{background:linear-gradient(135deg,#563f76 0%,#7759a1 64%,#a685c5 120%)}
+body.nv10 .v770CenterHead.category.gold{background:linear-gradient(135deg,#805713 0%,#c18c27 62%,#e6b94f 120%)}
+body.nv10 .v770CenterHead.category.slate{background:linear-gradient(135deg,#344f49 0%,#55796f 64%,#83aa9d 122%)}
+body.nv10 .v770CenterHead.category.lime{background:linear-gradient(135deg,#075238 0%,#0b8751 56%,#7fae30 112%)}
+body.nv10 .v770CenterHead.category .v770CenterGlow{display:block;width:190px;height:190px;right:-70px;top:-95px;background:rgba(255,255,255,.10)}
+body.nv10 .v770CenterHead.category h1{color:#fff;font-size:30px;margin:5px 0 8px}
+body.nv10 .v770CenterHead.category p{max-width:440px;color:rgba(255,255,255,.86);font-size:12px;line-height:1.48}
+body.nv10 .v770CenterHead.category .v7Eyebrow{color:#dcf8e8}
+body.nv10 .v770CenterHead.category.gold .v7Eyebrow{color:#fff0bd}
+body.nv10 .v770CenterHead.category.lime .v7Eyebrow{color:#edffc5}
+body.nv10 .v770Back{
+  min-height:36px;margin-bottom:13px;padding:0 12px;border:1px solid rgba(255,255,255,.22);
+  border-radius:999px;background:rgba(255,255,255,.13);color:#fff;backdrop-filter:blur(8px);
+  box-shadow:inset 0 1px rgba(255,255,255,.12)
+}
+
+/* Funciones dentro de un área: botones-app con icono, flecha y favorito separados. */
+body.nv10 .nv101ActionList{display:grid;gap:10px}
+body.nv10 .nv101ActionList .v770ModuleAction{
+  margin:0;border:1px solid var(--nv10-line);border-radius:20px;background:#fff;
+  box-shadow:0 8px 22px rgba(5,74,43,.065);overflow:hidden
+}
+body.nv10 .nv101ActionList .v770ModuleAction::before{
+  content:"";position:absolute;left:0;top:13px;bottom:13px;width:4px;border-radius:0 5px 5px 0;background:#0b8a54
+}
+body.nv10 .nv101ActionList.tone-blue .v770ModuleAction::before{background:#3d8db8}
+body.nv10 .nv101ActionList.tone-violet .v770ModuleAction::before{background:#77589f}
+body.nv10 .nv101ActionList.tone-gold .v770ModuleAction::before{background:#d39a2b}
+body.nv10 .nv101ActionList.tone-slate .v770ModuleAction::before{background:#56786f}
+body.nv10 .nv101ActionList.tone-lime .v770ModuleAction::before{background:#79a92e}
+body.nv10 .nv101ActionList .v770ActionMain{
+  grid-template-columns:52px minmax(0,1fr) 32px;gap:11px;min-height:82px;padding:12px 55px 12px 14px
+}
+body.nv10 .nv101ActionList .v770ActionIcon{
+  width:50px;height:50px;border-radius:16px;background:linear-gradient(145deg,#e4f6eb,#f8fcf9);
+  border:1px solid rgba(7,112,68,.08);box-shadow:inset 0 1px #fff;color:#087348;font-size:23px
+}
+body.nv10 .nv101ActionList.tone-blue .v770ActionIcon{background:linear-gradient(145deg,#e5f2fa,#f9fcfe);color:#2f779e}
+body.nv10 .nv101ActionList.tone-violet .v770ActionIcon{background:linear-gradient(145deg,#efe8f8,#fbf9fd);color:#684d8c}
+body.nv10 .nv101ActionList.tone-gold .v770ActionIcon{background:linear-gradient(145deg,#fff0cf,#fffaf0);color:#9b680b}
+body.nv10 .nv101ActionList.tone-slate .v770ActionIcon{background:linear-gradient(145deg,#e8f1ee,#fafcfa);color:#486d64}
+body.nv10 .nv101ActionList.tone-lime .v770ActionIcon{background:linear-gradient(145deg,#eaf6d2,#f9fcec);color:#5e8a22}
+body.nv10 .nv101ActionList .v770ActionMain strong{font-size:14px;line-height:1.2;color:#17392d}
+body.nv10 .nv101ActionList .v770ActionMain small{margin-top:4px;font-size:10px;line-height:1.38;color:#6f8278}
+body.nv10 .nv101ActionList .v770ActionMain>b{
+  display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#edf7f1;color:#0a7b4c;font-size:17px
+}
+body.nv10 .nv101ActionList .v770Favorite{
+  right:12px;width:34px;height:34px;border:1px solid #e0e9e4;border-radius:11px;background:#f7faf8;color:#8fa198
+}
+body.nv10 .nv101ActionList .v770Favorite.active{border-color:#f1d998;background:#fff5d9;color:#b67a00}
+
+/* Favoritos y recientes también deben sentirse tocables. */
+body.nv10 .v770QuickGrid{gap:9px}
+body.nv10 .v770QuickGrid button{
+  min-height:86px;padding:11px 7px;border:1px solid var(--nv10-line);border-radius:17px;
+  background:linear-gradient(155deg,#fff,#f4faf6);box-shadow:0 5px 14px rgba(5,74,43,.045)
+}
+body.nv10 .v770QuickGrid button span{
+  display:grid;place-items:center;width:36px;height:36px;margin:0 auto 6px;border-radius:12px;
+  background:#e8f6ee;font-size:19px
+}
+body.nv10 .v770Recent>button{min-height:62px;border-radius:14px;padding:9px 7px}
+body.nv10 .v770Recent>button>span:first-child{
+  display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#eef7f2;font-size:18px
+}
+body.nv10 .v770Recent>button>b{
+  display:grid;place-items:center;width:27px;height:27px;border-radius:9px;background:#f0f6f2;color:#087348
+}
+
+/* Territorio real: más identidad y controles con presencia. */
+body.nv10 .v800ModuleHero.territory,
+body.nv10 .v802TerritoryHero{
+  border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(132deg,#06442e 0%,#08774a 54%,#79aa30 120%)!important;
+  box-shadow:0 16px 34px rgba(5,76,43,.19)!important
+}
+body.nv10 .v802TerritoryControls{
+  border:1px solid var(--nv10-line)!important;border-radius:18px!important;background:#fff!important;
+  box-shadow:0 7px 18px rgba(5,74,43,.055)!important
+}
+body.nv10 .v802TerritoryControls .v800ViewTabs{
+  padding:4px;border-radius:14px;background:#eef4f0
+}
+body.nv10 .v802TerritoryControls .v800ViewTabs button{
+  border:0;border-radius:11px;background:transparent;color:#5f756a;font-weight:800
+}
+body.nv10 .v802TerritoryControls .v800ViewTabs button.active{
+  background:#fff;color:#087348;box-shadow:0 4px 12px rgba(5,74,43,.08)
+}
+body.nv10 .v802MapActions button{
+  border:1px solid rgba(7,112,68,.10)!important;
+  background:linear-gradient(145deg,#0a7b4b,#11a160)!important;
+  color:#fff!important;box-shadow:0 6px 14px rgba(7,112,68,.14)!important
+}
+body.nv10 .v802MapActions .v802LayersButton{
+  background:linear-gradient(145deg,#355e50,#587d70)!important
+}
+
+/* Botones generales: más definidos sin cambiar jerarquía funcional. */
+body.nv10 .btn{
+  border:1px solid rgba(5,89,50,.08);background:linear-gradient(135deg,#07573a,#0c9559);
+  box-shadow:0 7px 16px rgba(7,112,68,.14)
+}
+body.nv10 .btn.outline{
+  border:1px solid #bad8c8;background:#fff;color:#0a6e46;box-shadow:0 3px 10px rgba(5,74,43,.035)
+}
+body.nv10 .btn.ghost{background:#edf7f1;color:#0a6f46;box-shadow:none}
+
+@media(max-width:700px){
+  body.nv10 .v770CenterHead.category{min-height:168px;padding:16px 15px 18px}
+  body.nv10 .v770CenterHead.category h1{font-size:28px}
+  body.nv10 .nv101ActionList .v770ActionMain{grid-template-columns:50px minmax(0,1fr) 30px;min-height:78px;padding:11px 52px 11px 13px}
+  body.nv10 .nv101ActionList .v770ActionIcon{width:48px;height:48px}
+}
