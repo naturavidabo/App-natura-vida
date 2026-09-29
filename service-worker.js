@@ -3,7 +3,7 @@ const VERSION = 'natura-vida-v8-4-0-director-administrativo-sesion-persistente';
 const APP_CACHE = 'nv-app-shell-stable-restore-1';
 const IMAGE_CACHE = 'nv-images-stable-restore-1';
 const RUNTIME_CACHE = 'nv-runtime-stable-restore-1';
-const IMAGE_CACHE_LIMIT = 80;
+const IMAGE_CACHE_LIMIT = 160;
 const RUNTIME_CACHE_LIMIT = 40;
 const APP_SHELL = [
   './app-version.json','./css/app.css','./css/v7.css','./css/v8.css','./css/v9.css',
@@ -48,7 +48,7 @@ self.addEventListener('message', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(key => /^(nv-|natura-vida)/i.test(key) && ![APP_CACHE, IMAGE_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key))))
+      .then(keys => Promise.all(keys.filter(key => /^(nv-|natura-vida)/i.test(key) && !key.startsWith('nv-images-') && ![APP_CACHE, IMAGE_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -62,7 +62,7 @@ async function trimImageCache(cache) {
 async function imageResponse(request) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request);
-  const network = fetch(request, { cache: 'no-store' }).then(async response => {
+  const network = fetch(request).then(async response => {
     if (response && (response.ok || response.type === 'opaque')) {
       await cache.put(request, response.clone());
       trimImageCache(cache).catch(() => {});
