@@ -94,6 +94,9 @@
   window.ensureOrdersV7ModuleV9 = () => loadLocalModuleV9('pedidos-v7',
     'js/v7-orders.js?v=8.4.0', () => !!window.renderOrderRequestV7);
 
+  window.ensureRepresentativeSalesModuleV9 = () => loadLocalModuleV9('inventario-ventas-v7',
+    'js/v7-inventory-sales.js?v=8.4.0', () => !!window.renderRepresentativeSalesV7);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
