@@ -1429,32 +1429,19 @@
     window.addEventListener('nv:ai-route-changed',ensureFab);
     setTimeout(ensureFab,250);
 
+    // API pública vigente. V829 se conserva temporalmente porque la regresión
+    // operativa y borradores históricos aún la consumen.
+    window.renderAIAssistantV9=renderAssistant;
+    window.renderAIAssistantV840=renderAssistant;
     window.renderAIAssistantV829=renderAssistant;
-    window.renderAIAssistantV826=renderAssistant;
-    window.renderAIAssistantV825=renderAssistant;
-    window.renderAIAssistantV824=renderAssistant;
-    window.renderAIAssistantV822=renderAssistant;
-    window.renderAIAssistantV821=renderAssistant;
-    window.renderAIAssistantV812=renderAssistant;
-    window.renderAIAssistantV810=renderAssistant;
-    window.openAIAssistantSheetV826=openSheet;
-    window.openAIAssistantSheetV825=openSheet;
-    window.openAIAssistantSheetV824=openSheet;
-    window.openAIAssistantSheetV822=openSheet;
-    window.openAIAssistantSheetV821=openSheet;
-    window.openAIAssistantSheetV812=openSheet;
-    window.openAIAssistantSheetV810=openSheet;
+    window.openAIAssistantSheetV9=openSheet;
+    window.openAIAssistantSheetV840=openSheet;
     window.refreshAIFabV9=ensureFab;
   }
 
-  window.__nvAiV840={VERSION,openAdministrativeCenterV840,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,openControlCenterV832,readControlTasksV832,controlAlertsV832,businessEvaluationV832,dailySummaryV832,weeklySummaryV835,ensureWeeklySummaryV835,proactiveActionsV835,showProactiveBriefV835,productCommercialHealthV832,taskOverviewV834,executiveOverviewV834,syncControlCenterV834,installControlSyncV834,get controlSyncStateV834(){return {...controlSyncStateV834};},get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}}; window.__nvAiV835=window.__nvAiV840; window.__nvAiV834=window.__nvAiV840; window.__nvAiV832=window.__nvAiV840; window.__nvAiV830=window.__nvAiV840; window.__nvAiV829=window.__nvAiV840;
-  window.__nvAiV827=window.__nvAiV829;
-  window.__nvAiV826=window.__nvAiV829;
-  window.__nvAiV825=window.__nvAiV827;
-  window.__nvAiV824=window.__nvAiV827;
-  window.__nvAiV822=window.__nvAiV827;
-  window.__nvAiV821=window.__nvAiV827;
-  window.__nvAiV812=window.__nvAiV827;
+  window.__nvAiV840={VERSION,openAdministrativeCenterV840,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,openControlCenterV832,readControlTasksV832,controlAlertsV832,businessEvaluationV832,dailySummaryV832,weeklySummaryV835,ensureWeeklySummaryV835,proactiveActionsV835,showProactiveBriefV835,productCommercialHealthV832,taskOverviewV834,executiveOverviewV834,syncControlCenterV834,installControlSyncV834,get controlSyncStateV834(){return {...controlSyncStateV834};},get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}};
+  window.__nvAiV9=window.__nvAiV840;
+  window.__nvAiV829=window.__nvAiV840;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0));
   else setTimeout(install,0);
 })();
