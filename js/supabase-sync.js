@@ -1587,7 +1587,7 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
     renderAfterCloudRefresh();
     // Finanzas/producción/históricos quedan disponibles desde su copia actual y
     // se hidratan después del primer render para no bloquear la experiencia.
-    const hydrateSecondaryStateV9 = () => loadAllState().catch(() => {});
+    const hydrateSecondaryStateV9 = () => loadAllState({ secondaryOnly: true }).catch(() => {});
     if ('requestIdleCallback' in window) requestIdleCallback(hydrateSecondaryStateV9, { timeout: 2500 });
     else setTimeout(hydrateSecondaryStateV9, 900);
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
