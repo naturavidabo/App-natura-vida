@@ -36,8 +36,9 @@ async function precacheRequiredAssets() {
 }
 
 self.addEventListener('install', event => {
-  event.waitUntil(precacheRequiredAssets());
-  // La activación continúa controlada desde “Actualizar ahora”.
+  // Hotfix de estabilidad: cuando el shell obligatorio terminó de precargarse,
+  // activa el worker corregido sin dejar al teléfono atrapado en el anterior.
+  event.waitUntil(precacheRequiredAssets().then(() => self.skipWaiting()));
 });
 
 self.addEventListener('message', event => {
