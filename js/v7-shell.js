@@ -216,6 +216,7 @@
     }
     if (tab === 'compra' || tab === 'pedidos') {
       try {
+        if (navigator.onLine && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders().catch(() => {});
         if (window.ensureOrdersV7ModuleV9) await ensureOrdersV7ModuleV9();
       } catch (_) {
         if (requestId === navigationRequestV9) showToast('No se pudo cargar Pedidos. Revisa tu conexión.', 'error');
