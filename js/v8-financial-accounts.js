@@ -100,6 +100,31 @@
     const updated={...plan,schedule,status:'active',paidTotal:Core.round(schedule.reduce((sum,r)=>sum+Number(r.paid||0),0)),updatedAt:Date.now()};await DB.put('paymentPlans',updated);AppState.paymentPlans=await DB.getAll('paymentPlans');
   }
 
+  async function postPaymentAtomicV9(payment,planId='',preferredInstallment=0){
+    if(!navigator.onLine) throw new Error('Se necesita conexión para registrar el pago.');
+    if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para registrar el pago.');
+    const {data,error}=await getSupabaseClient().rpc('nv_financial_post_payment_atomic',{
+      p_payment:payment,p_plan_id:planId||null,p_preferred_installment:Number(preferredInstallment||0)
+    });
+    if(error) throw new Error(window.messageFromError?messageFromError(error):error.message);
+    await Promise.all([
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('receivablePayments'):Promise.resolve(),
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('paymentPlans'):Promise.resolve()
+    ]);
+    return data||{};
+  }
+  async function voidPaymentAtomicV9(paymentId,reason){
+    if(!navigator.onLine) throw new Error('Se necesita conexión para anular el pago.');
+    if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para anular el pago.');
+    const {data,error}=await getSupabaseClient().rpc('nv_financial_void_payment_atomic',{p_payment_id:paymentId,p_reason:reason});
+    if(error) throw new Error(window.messageFromError?messageFromError(error):error.message);
+    await Promise.all([
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('receivablePayments'):Promise.resolve(),
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('paymentPlans'):Promise.resolve()
+    ]);
+    return data||{};
+  }
+
   async function nextFinancialNumberV820(prefix){
     const clean=String(prefix||'DOC').toUpperCase().replace(/[^A-Z]/g,'').slice(0,5)||'DOC';
     const authenticated=!!(window.requireAuth&&requireAuth());
@@ -282,12 +307,18 @@
           const proof=await readProofImageV820($('#nv820Proof',overlay).files?.[0]);
           const payment={id:uid('pay'),clientId:account.client.id,clientName:account.client.name,amount:allocation.amount,allocations:allocation.allocations,applicationMode:mode.value,method:$('#nv820PayMethod',overlay).value,voucherNumber:$('#nv820Voucher',overlay).value.trim(),proofImage:proof,note:$('#nv820PayNote',overlay).value.trim(),date:new Date($('#nv820PayDate',overlay).value).getTime()||Date.now(),responsibleUserId:currentUserId(),responsibleName:AppState.session.fullName||AppState.session.username||'',ownerUserId:currentUserId(),status:'posted',createdAt:Date.now()};
           payment.saleId=allocation.allocations.length===1?allocation.allocations[0].operationId:'';
-          const planResult=await applyPaymentToPlanV825(account.client.id,payment,options.planId||'',Number(options.installmentNumber||0));
-          if(planResult){payment.planId=planResult.plan.id;payment.planInstallments=planResult.installments;payment.planUnapplied=planResult.unapplied;}
-          await DB.put('receivablePayments',payment);AppState.receivablePayments=await DB.getAll('receivablePayments');
-          await writeAudit('receivable_payment_posted','receivablePayments',payment.id,null,{clientId:payment.clientId,amount:payment.amount,allocations:payment.allocations,method:payment.method});
-          const after=clientAccountV820(account.client.id); const kind=after.totalDebt<=.009?'REC':'RPP'; const doc=await createPaymentDocumentV820(payment,after,kind);
-          close();showToast('Pago registrado y recibo generado.');openFinancialDocumentPreviewV820(doc);if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
+          const atomic=await postPaymentAtomicV9(payment,options.planId||'',Number(options.installmentNumber||0));
+          const savedPayment=atomic.payment||payment;
+          await writeAudit('receivable_payment_posted','receivablePayments',savedPayment.id,null,{clientId:savedPayment.clientId,amount:savedPayment.amount,allocations:savedPayment.allocations,method:savedPayment.method,recovered:!!atomic.recovered}).catch(()=>{});
+          const after=clientAccountV820(account.client.id); const kind=after.totalDebt<=.009?'REC':'RPP';
+          let doc=null;
+          try{doc=await createPaymentDocumentV820(savedPayment,after,kind);}
+          catch(receiptError){
+            close();showToast('Pago registrado correctamente, pero no se pudo generar el recibo. Puedes recuperarlo desde Pagos.','warning');
+            if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
+            return;
+          }
+          close();showToast(atomic.recovered?'Pago ya registrado; recibo recuperado.':'Pago registrado y recibo generado.');openFinancialDocumentPreviewV820(doc);if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
         }catch(err){button.disabled=false;button.textContent='Guardar pago y generar recibo';showToast(err.message||'No se pudo guardar el pago.','error');}
       });
     });
@@ -297,8 +328,10 @@
     const payment=(AppState.receivablePayments||[]).find(p=>p.id===paymentId);if(!payment)return;
     const reason=window.prompt('Motivo obligatorio para anular el pago:','');if(!reason?.trim())return showToast('La anulación requiere un motivo.','error');
     if(!window.confirm(`Se anulará el pago de ${money(payment.amount)}. El saldo volverá a calcularse. ¿Continuar?`))return;
-    const before=Object.assign({},payment);const updated=Object.assign({},payment,{status:'voided',voidedAt:Date.now(),voidedBy:currentUserId(),voidReason:reason.trim(),updatedAt:Date.now()});
-    await reversePaymentFromPlanV825(payment);await DB.put('receivablePayments',updated);AppState.receivablePayments=await DB.getAll('receivablePayments');await writeAudit('receivable_payment_voided','receivablePayments',payment.id,before,{status:'voided',reason:reason.trim()});showToast('Pago anulado. El saldo fue restaurado.');renderClientAccountV820();
+    const before=Object.assign({},payment);
+    await voidPaymentAtomicV9(payment.id,reason.trim());
+    await writeAudit('receivable_payment_voided','receivablePayments',payment.id,before,{status:'voided',reason:reason.trim()}).catch(()=>{});
+    showToast('Pago anulado. El saldo fue restaurado.');renderClientAccountV820();
   }
 
   async function createPaymentDocumentV820(payment,account,kind){
@@ -314,7 +347,9 @@
       try{
         await syncGenericCloudStoreToLocalV9('financialDocuments');
         doc=(AppState.financialDocuments||[]).find(d=>String(d.paymentId||'')===String(paymentId));
-      }catch(_){ }
+      }catch(error){
+        return showToast('No se pudo verificar si ya existe el recibo. Revisa la conexión antes de regenerarlo.','error');
+      }
     }
     if(!doc){
       const account=clientAccountV820(payment.clientId);
