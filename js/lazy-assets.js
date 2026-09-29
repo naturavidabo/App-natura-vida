@@ -117,9 +117,6 @@
   window.ensureQuotesModuleV9 = () => loadLocalModuleV9('cotizaciones',
     'js/quotes.js?v=8.4.0', () => !!window.renderQuotes);
 
-  window.ensureBaseOrdersModuleV9 = () => loadLocalModuleV9('pedidos-base',
-    'js/orders.js?v=8.4.0', () => !!window.renderOrderRequest);
-
   window.ensureReceiptModuleV9 = () => loadLocalModuleV9('recibo-base',
     'js/receipt.js?v=8.4.0', () => !!window.openReceiptPreview);
 
