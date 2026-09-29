@@ -103,6 +103,9 @@
   window.ensureCatalogPdfModuleV9 = () => loadLocalModuleV9('catalogo-pdf',
     'js/catalog-pdf.js?v=8.4.0', () => !!window.openCatalogPdfOptions);
 
+  window.ensureDocumentsV7ModuleV9 = () => loadLocalModuleV9('documentos-v7',
+    'js/v7-documents.js?v=8.4.0', () => !!window.openV7ReceiptPreview);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
