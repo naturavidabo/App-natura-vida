@@ -2,8 +2,6 @@
    Supabase continúa siendo la única fuente persistente. */
 
 (() => {
-  const originalSyncAfterLogin = window.syncAfterLogin;
-  const originalRunBackgroundSyncOnce = window.runBackgroundSyncOnce;
   const originalSetCloudConnectionState = window.setCloudConnectionState;
   let v7Channel = null;
   let v7RefreshTimer = null;
@@ -413,20 +411,6 @@
     return true;
   }
 
-  async function syncAfterLoginV7() {
-    const base = originalSyncAfterLogin ? await originalSyncAfterLogin() : { ok: true };
-    await syncV7Context();
-    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
-    return base;
-  }
-
-  async function runBackgroundSyncV7(reason = 'automatic') {
-    const base = originalRunBackgroundSyncOnce ? await originalRunBackgroundSyncOnce(reason) : { ok: true };
-    await syncV7Context();
-    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
-    return base;
-  }
-
   // Evita que el indicador cambie a “Conectando” por cada lectura o guardado.
   window.setCloudConnectionState = function v7ConnectionState(state, detail = '') {
     const current = window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' };
@@ -468,8 +452,6 @@
     nextDocumentNumberV7,
     activeRepresentativesV7,
     startV7Realtime,
-    stopV7Realtime,
-    syncAfterLogin: syncAfterLoginV7,
-    runBackgroundSyncOnce: runBackgroundSyncV7
+    stopV7Realtime
   });
 })();
