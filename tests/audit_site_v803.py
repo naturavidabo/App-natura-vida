@@ -27,7 +27,7 @@ require(index.lstrip().startswith('<!DOCTYPE html>'),'index.html no inicia como 
 require(version.get('version')=='10.0.0','app-version no indica 10.0.0')
 require("CURRENT_VERSION = '10.0.0'" in update,'app-update no indica 10.0.0')
 require('service-worker.js?v=10.0.0' in update,'registro del service worker no usa 10.0.0')
-require('natura-vida-v8-4-0' in sw.lower(),'service worker no corresponde a V10.0.0')
+require('natura-vida-v10-0-0' in sw.lower(),'service worker no corresponde a V10.0.0')
 require('V10.0.0' in manifest.get('name',''),'manifest no identifica V10.0.0')
 require('css/v8.css?v=10.0.0' in index,'index no carga CSS base V8 bajo V10')
 require('css/v10.css?v=10.0.0' in index and 'css/v9.css' not in index,'V10 no usa su capa visual propia o sigue cargando V9')
