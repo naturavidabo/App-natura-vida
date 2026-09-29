@@ -1659,8 +1659,9 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
       syncCloudProductsToLocal(),
       syncCloudClientsToLocal(),
       syncCloudSalesToLocal(),
-      syncGenericCloudRecordsToLocal(),
-      window.fetchAndCachePurchaseOrders ? fetchAndCachePurchaseOrders() : Promise.resolve({ ok: true }),
+      // Sólo stores necesarios por el núcleo visual/comercial.
+      syncGenericCloudStoreToLocalV9('priceGroups'),
+      syncGenericCloudStoreToLocalV9('settings'),
       window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true })
     ];
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
