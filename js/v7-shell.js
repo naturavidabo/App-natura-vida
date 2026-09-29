@@ -177,10 +177,9 @@
       }
       if (requestId !== navigationRequestV9) return;
     }
-    if (tab === 'cotizaciones' || tab === 'compra' || tab === 'pedidos') {
+    if (tab === 'cotizaciones') {
       try {
-        if (tab === 'cotizaciones' && window.ensureQuotesModuleV9) await ensureQuotesModuleV9();
-        if ((tab === 'compra' || tab === 'pedidos') && window.ensureBaseOrdersModuleV9) await ensureBaseOrdersModuleV9();
+        if (window.ensureQuotesModuleV9) await ensureQuotesModuleV9();
       } catch (_) {
         if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado.', 'error');
         return;
