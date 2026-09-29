@@ -1850,7 +1850,14 @@ async function refreshAfterEventNow(table, payload = null) {
     }
     else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
     else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
-    else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
+    else if (table === 'app_records') {
+      const storeName=payload?.new?.store_name||payload?.old?.store_name;
+      if(storeName) await syncGenericCloudStoreToLocalV9(storeName);
+      else await syncGenericCloudRecordsToLocal();
+      renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
     else if (['delivery_routes','route_stops','deliveries','geo_events','delivery_requests'].includes(table)) {
       if (window.handleDistributionRealtimeV770) handleDistributionRealtimeV770(table, payload);
