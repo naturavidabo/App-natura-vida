@@ -76,6 +76,9 @@
   window.ensureCommercialCenterModuleV9 = () => loadLocalModuleV9('centro-comercial',
     'js/v7-commercial-center.js?v=8.4.0', () => !!window.renderCommercialCenterV730);
 
+  window.ensureCommercialRulesModuleV9 = () => loadLocalModuleV9('reglas-comerciales',
+    'js/v8-commercial-rules.js?v=8.4.0', () => !!window.renderCommercialRulesV807);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
