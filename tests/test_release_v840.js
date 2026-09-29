@@ -10,10 +10,13 @@ const updater=read('js/app-update.js');
 const dirty=read('js/v8-offline-continuity.js');
 const shell=read('js/v7-shell.js');
 const ai=read('js/v8-ai-assistant.js');
+const aiBridge=read('js/v9-ai-bridge.js');
 
 assert.equal(version.version,'8.4.0');
 assert(index.includes('@supabase/supabase-js@2.111.0'),'Supabase debe estar fijado a 2.111.0');
-assert(index.includes('js/v8-ai-assistant.js?v=8.4.0'));
+assert(index.includes('js/v9-ai-bridge.js?v=8.4.0'),'El arranque debe usar el puente IA liviano');
+assert(!index.includes('<script src="js/v8-ai-assistant.js?v=8.4.0"></script>'),'La IA pesada no debe bloquear el arranque');
+assert(aiBridge.includes("s.src='js/v8-ai-assistant.js?v=8.4.0'"),'El puente debe cargar la IA completa bajo demanda');
 assert.equal(manifest.start_url,'./index.html?v=8.4.0');
 assert(/APP_CACHE = 'nv-app-shell-v9-/.test(sw),'La rama V9 debe usar una generación propia de app cache');
 assert(/RUNTIME_CACHE = 'nv-runtime-v9-/.test(sw),'La rama V9 debe usar una generación propia de runtime cache');
