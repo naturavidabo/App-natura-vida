@@ -13,8 +13,6 @@
   const ENGINE_TIMEOUT_MS=16000;
   const REQUEST_WATCHDOG_MS=22000;
   const ENGINE_HEALTH_TTL=5*60*1000;
-  let oldNavigate=null;
-  let oldRender=null;
   let lastNonAiTab='inicio';
   let assistantContext={tab:'inicio',label:'Negocio general'};
   let pendingQuestion='';
@@ -1334,7 +1332,7 @@
   }
   function renderAssistant(options={}){
     if(!adminAllowed()){
-      if(oldNavigate) oldNavigate('inicio');
+      window.navigateTo?.('inicio');
       return;
     }
     const existing=document.querySelector('.nvAiPage');
@@ -1419,40 +1417,18 @@
     if(window.__NV_AI_V825_INSTALLED) return;
     window.__NV_AI_V825_INSTALLED=true;
     window.__NV_AI_V824_INSTALLED=true;
-    oldNavigate=window.navigateTo;
-    oldRender=window.render;
-    window.navigateTo=function(tab){
-      if(tab==='asistente-ia'){
-        if(!adminAllowed()) return;
-        if(String(window.AppState?.currentTab)!=='asistente-ia'){
-          const ctx=currentContext();
-          if(ctx.tab!=='asistente-ia'){ assistantContext=ctx; lastNonAiTab=ctx.tab; }
-        }
-        window.AppState.currentTab=tab;
-        if(window.highlightActiveV7) try{ highlightActiveV7(); }catch(_){}
-        renderAssistant();
-        ensureFab();
-        return;
-      }
-      if(String(window.AppState?.currentTab)==='asistente-ia'){ lastNonAiTab=tab||'inicio'; stopSpeechV826(); }
-      return oldNavigate(tab);
-    };
-    window.render=function(){
-      if(String(window.AppState?.currentTab)==='asistente-ia') renderAssistant();
-      else oldRender();
-      setTimeout(ensureFab,0);
-    };
-    // V9: el FAB se mantiene desde navegación/render y cambios reales de viewport.
-    // Observar cada mutación del main y cada scroll hacía trabajar a la IA aunque no estuviera abierta.
+
+    // V9: navegación y render ya conocen la pestaña asistente-ia. La IA no
+    // reemplaza window.navigateTo ni window.render del resto de Natura Vida.
     let aiFabPositionRafV9=0;
     const scheduleFabPositionV9=()=>{if(aiFabPositionRafV9)return;aiFabPositionRafV9=requestAnimationFrame(()=>{aiFabPositionRafV9=0;positionFabSmartV827();});};
     window.addEventListener('resize',scheduleFabPositionV9,{passive:true});
     window.addEventListener('orientationchange',scheduleFabPositionV9,{passive:true});
     document.addEventListener('focusin',scheduleFabPositionV9);
     document.addEventListener('focusout',scheduleFabPositionV9);
+    window.addEventListener('nv:ai-route-changed',ensureFab);
     setTimeout(ensureFab,250);
-    // V9: el motor remoto y el centro administrativo no compiten con el arranque
-    // de Natura Vida. Se activan al abrir/usar realmente el asistente.
+
     window.renderAIAssistantV829=renderAssistant;
     window.renderAIAssistantV826=renderAssistant;
     window.renderAIAssistantV825=renderAssistant;
@@ -1468,6 +1444,7 @@
     window.openAIAssistantSheetV821=openSheet;
     window.openAIAssistantSheetV812=openSheet;
     window.openAIAssistantSheetV810=openSheet;
+    window.refreshAIFabV9=ensureFab;
   }
 
   window.__nvAiV840={VERSION,openAdministrativeCenterV840,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,openControlCenterV832,readControlTasksV832,controlAlertsV832,businessEvaluationV832,dailySummaryV832,weeklySummaryV835,ensureWeeklySummaryV835,proactiveActionsV835,showProactiveBriefV835,productCommercialHealthV832,taskOverviewV834,executiveOverviewV834,syncControlCenterV834,installControlSyncV834,get controlSyncStateV834(){return {...controlSyncStateV834};},get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}}; window.__nvAiV835=window.__nvAiV840; window.__nvAiV834=window.__nvAiV840; window.__nvAiV832=window.__nvAiV840; window.__nvAiV830=window.__nvAiV840; window.__nvAiV829=window.__nvAiV840;
