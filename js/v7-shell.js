@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'por-cobrar' || tab === 'estado-cuenta') {
+      try {
+        if (window.ensureFinancialAccountsModuleV9) await ensureFinancialAccountsModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Cuentas por cobrar. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'personal' || tab === 'regional') {
       try {
         if (tab === 'personal' && window.ensureWorkforceModuleV9) await ensureWorkforceModuleV9();
