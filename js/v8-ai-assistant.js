@@ -936,6 +936,7 @@
       recordAction(action,'confirmed',action.summary||'Acción aprobada');await auditAssistantAction(action,'confirmed');close();
       if(action.type==='open_tab')return window.navigateTo?.(action.tab||'inicio');
       if(action.type==='seller_settlement')return window.navigateTo?.('rendicion-caja');
+      if(['generate_collection_document','create_payment_plan','register_payment','generate_receipt'].includes(action.type) && window.ensureFinancialAccountsModuleV9) await ensureFinancialAccountsModuleV9();
       if(action.type==='generate_collection_document'&&window.requestClientDocumentV820)return requestClientDocumentV820(action.clientId,'COB');
       if(action.type==='create_payment_plan'&&window.openPaymentPlanFormV820)return openPaymentPlanFormV820(action.clientId,{installmentAmount:action.installmentAmount,frequency:action.frequency,startDate:action.startDate,notes:action.note||'Plan preparado por el Asistente IA',source:'ai'});
       if((action.type==='register_payment'||action.type==='generate_receipt')&&window.openPaymentFormV820)return openPaymentFormV820(action.clientId,{amount:action.amount,note:action.note||'Pago preparado por el Asistente IA',source:'ai'});
