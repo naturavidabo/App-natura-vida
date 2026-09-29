@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if ((tab === 'inventario' || tab === 'vender') && !isAdmin()) {
+      try {
+        if (window.ensureRepresentativeSalesModuleV9) await ensureRepresentativeSalesModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Inventario/Ventas. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'compra' || tab === 'pedidos') {
       try {
         if (window.ensureOrdersV7ModuleV9) await ensureOrdersV7ModuleV9();
