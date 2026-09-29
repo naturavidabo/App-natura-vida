@@ -1795,10 +1795,18 @@ async function applySimpleRealtimeRecordV9(table, payload = null) {
 
 async function refreshAfterEventNow(table, payload = null) {
   try {
-    if (table === 'app_records' && await applyGenericRealtimeRecordV9(payload)) {
-      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
-      setCloudConnectionState('online', 'Realtime incremental: app_records');
-      return;
+    if (table === 'app_records') {
+      if (await applyGenericRealtimeRecordV9(payload)) {
+        renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+        setCloudConnectionState('online', 'Realtime incremental: app_records');
+        return;
+      }
+      const storeName=payload?.new?.store_name||payload?.old?.store_name;
+      if(storeName && await syncGenericCloudStoreToLocalV9(storeName).catch(()=>false)){
+        renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:true });
+        setCloudConnectionState('online', `Realtime store: ${storeName}`);
+        return;
+      }
     }
     if ((table === 'clients' || table === 'sales') && await applySimpleRealtimeRecordV9(table, payload)) {
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
