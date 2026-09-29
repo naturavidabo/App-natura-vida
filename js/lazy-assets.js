@@ -64,6 +64,18 @@
   window.ensureSellerSettlementModuleV9 = () => loadLocalModuleV9('rendicion-caja',
     'js/v8-seller-settlement.js?v=8.4.0', () => !!window.renderSellerSettlementV825);
 
+  window.ensureLinkedStockModuleV9 = () => loadLocalModuleV9('puntos-stock',
+    'js/v8-linked-stock.js?v=8.4.0', () => !!window.renderLinkedStockV801);
+
+  window.ensureRolesModuleV9 = async () => {
+    await window.ensureLinkedStockModuleV9();
+    return loadLocalModuleV9('roles-estructura',
+      'js/v8-roles.js?v=8.4.0', () => !!window.renderRolesStructureV800);
+  };
+
+  window.ensureCommercialCenterModuleV9 = () => loadLocalModuleV9('centro-comercial',
+    'js/v7-commercial-center.js?v=8.4.0', () => !!window.renderCommercialCenterV730);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
