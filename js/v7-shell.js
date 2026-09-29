@@ -168,6 +168,17 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'perfil' || tab === 'usuarios' || tab === 'mas' || tab === 'egresos') {
+      try {
+        if ((tab === 'perfil' || tab === 'usuarios') && window.ensureProfileModuleV9) await ensureProfileModuleV9();
+        if (tab === 'mas' && window.ensureManagementCenterModuleV9) await ensureManagementCenterModuleV9();
+        if (tab === 'egresos' && window.ensureLegacyFinanceModuleV9) await ensureLegacyFinanceModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'estadisticas') {
       try {
         if (window.ensureStatsModuleV9) await ensureStatsModuleV9();
