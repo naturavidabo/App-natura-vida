@@ -517,7 +517,13 @@
       </section>`;
     $all('[data-sale-id]').forEach(btn => btn.addEventListener('click', () => {
       const sale = sales.find(s => s.id === btn.dataset.saleId);
-      if (sale) openV7ReceiptPreview(sale, 'sale');
+      if (sale) {
+        (async () => {
+          try { if (!window.openV7ReceiptPreview && window.ensureDocumentsV7ModuleV9) await ensureDocumentsV7ModuleV9(); }
+          catch (_) { return showToast('No se pudo cargar el recibo.', 'error'); }
+          if (window.openV7ReceiptPreview) openV7ReceiptPreview(sale, 'sale');
+        })();
+      }
     }));
   }
 
