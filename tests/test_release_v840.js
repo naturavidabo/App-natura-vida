@@ -12,14 +12,14 @@ const shell=read('js/v7-shell.js');
 const ai=read('js/v8-ai-assistant.js');
 const aiBridge=read('js/v9-ai-bridge.js');
 
-assert.equal(version.version,'8.4.0');
+assert.equal(version.version,'10.0.0');
 assert(index.includes('@supabase/supabase-js@2.111.0'),'Supabase debe estar fijado a 2.111.0');
-assert(index.includes('js/v9-ai-bridge.js?v=8.4.0'),'El arranque debe usar el puente IA liviano');
-assert(!index.includes('<script src="js/v8-ai-assistant.js?v=8.4.0"></script>'),'La IA pesada no debe bloquear el arranque');
-assert(aiBridge.includes("s.src='js/v8-ai-assistant.js?v=8.4.0'"),'El puente debe cargar la IA completa bajo demanda');
-assert.equal(manifest.start_url,'./index.html?v=8.4.0');
-assert(/APP_CACHE = 'nv-app-shell-v9-/.test(sw),'La rama V9 debe usar una generación propia de app cache');
-assert(/RUNTIME_CACHE = 'nv-runtime-v9-/.test(sw),'La rama V9 debe usar una generación propia de runtime cache');
+assert(index.includes('js/v9-ai-bridge.js?v=10.0.0'),'El arranque debe usar el puente IA liviano');
+assert(!index.includes('<script src="js/v8-ai-assistant.js?v=10.0.0"></script>'),'La IA pesada no debe bloquear el arranque');
+assert(aiBridge.includes("s.src='js/v8-ai-assistant.js?v=10.0.0'"),'El puente debe cargar la IA completa bajo demanda');
+assert.equal(manifest.start_url,'./index.html?v=10.0.0');
+assert(/APP_CACHE = 'nv-app-shell-v10-/.test(sw),'La rama V9 debe usar una generación propia de app cache');
+assert(/RUNTIME_CACHE = 'nv-runtime-v10-/.test(sw),'La rama V9 debe usar una generación propia de runtime cache');
 
 for(const token of [
   'AuthStorageV840','natura-vida-auth-v840','indexedDB.open',
@@ -44,4 +44,4 @@ for(const token of ['Director Administrativo','openAdministrativeCenterV840','Ce
 
 const publicCount=(()=>{let n=4;const walk=d=>fs.readdirSync(d,{withFileTypes:true}).forEach(e=>e.isDirectory()?walk(path.join(d,e.name)):n++);for(const dir of ['js','css','icons','img','data']){const full=path.join(root,dir);if(fs.existsSync(full))walk(full);}return n;})();
 assert(publicCount<=110,`demasiados recursos públicos de runtime: ${publicCount}`);
-console.log(`V8.4.0/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
+console.log(`V10.0.0/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
