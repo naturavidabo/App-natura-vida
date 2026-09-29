@@ -432,9 +432,8 @@
     const current = window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' };
     const importantConnecting = /reconect|internet recuperado|abriendo realtime|inicio de sesión|verificando acceso|creando cuenta/i.test(String(detail));
     if (state === 'connecting' && current.state === 'online' && navigator.onLine && !importantConnecting) {
-      current.detail = detail || 'Actualizando datos';
-      current.updatedAt = Date.now();
-      window.dispatchEvent(new CustomEvent('nv:connection', { detail: Object.assign({}, current) }));
+      // Sincronización rutinaria: permanece visualmente En línea. El detalle
+      // interno no justifica repintar la cápsula ni generar parpadeo.
       return;
     }
     return originalSetCloudConnectionState ? originalSetCloudConnectionState(state, detail) : undefined;
