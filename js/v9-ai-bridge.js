@@ -8,7 +8,7 @@
     if(loading)return loading;
     loading=new Promise((resolve,reject)=>{
       const s=document.createElement('script');
-      s.src='js/v8-ai-assistant.js?v=10.0.0';
+      s.src='js/v8-ai-assistant.js?v=10.1.0';
       s.async=true;
       s.onload=()=>window.renderAIAssistantV9?resolve(window.__nvAiV9||true):reject(new Error('IA no inicializada'));
       s.onerror=()=>reject(new Error('No se pudo cargar IA'));
