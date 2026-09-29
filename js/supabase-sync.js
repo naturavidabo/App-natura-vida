@@ -2098,6 +2098,7 @@ Object.assign(window, {
   updateCloudProfileStatus,
   uploadProductPhotoIfNeeded,
   syncCloudProductsToLocal,
+  syncGenericCloudStoreToLocalV9,
   syncCloudProductByIdV9,
   syncCloudSaleByIdV9,
   pushLocalProductsToCloud,
