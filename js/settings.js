@@ -228,10 +228,16 @@ function renderSettings() {
   $('#openQualityControlV806Btn')?.addEventListener('click', async () => {
     const btn = $('#openQualityControlV806Btn');
     btn.disabled = true; btn.textContent = 'Preparando control administrativo…';
-    try { if (window.ensureQualityModuleV9) await ensureQualityModuleV9(); } catch (_) {}
-    if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
-    if (window.renderDataControlCenterV806) await renderDataControlCenterV806();
-    else { btn.disabled = false; btn.textContent = 'Abrir respaldo, auditoría y calidad'; showToast('El módulo V8.0.7 no está disponible.', 'error'); }
+    try {
+      if (window.ensureQualityModuleV9) await ensureQualityModuleV9();
+      if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
+      if (!window.renderDataControlCenterV806) throw new Error('Control de calidad no inicializado');
+      await renderDataControlCenterV806();
+    } catch (_) {
+      btn.disabled = false;
+      btn.textContent = 'Abrir respaldo, auditoría y calidad';
+      showToast('No se pudo cargar respaldo, auditoría y calidad. Revisa tu conexión.', 'error');
+    }
   });
 
   $('#testOnlineBtn').addEventListener('click', async () => {
