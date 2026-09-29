@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'reglas-comerciales') {
+      try {
+        if (window.ensureCommercialRulesModuleV9) await ensureCommercialRulesModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Reglas comerciales. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'puntos-stock' || tab === 'roles-estructura' || tab === 'centro-comercial') {
       try {
         if (tab === 'puntos-stock' && window.ensureLinkedStockModuleV9) await ensureLinkedStockModuleV9();
