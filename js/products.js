@@ -243,6 +243,65 @@ function renderInventario() {
   $all('.sellThisBtn').forEach(b => b.addEventListener('click', () => { window.startSaleWithProduct ? startSaleWithProduct(b.dataset.id) : navigateTo('vender'); }));
 }
 
+function inventoryProductCardHtmlV9(p) {
+  const seller = window.isReseller && isReseller();
+  const adminMode = !window.isAdmin || isAdmin();
+  const low = Number(p.stock || 0) <= Number(AppState.settings.lowStockThreshold || 0);
+  const cost = productCost(p), mPrice = marketPrice(p), rPrice = resellerPrice(p), pPrice = publicPrice(p);
+  const localCost = resellerEffectiveCost(p), localUnit = resellerLocalUnitPrice(p), localWholesale = resellerLocalWholesalePrice(p);
+  const mMargin = marginPct(mPrice, cost), rMargin = marginPct(rPrice, cost), pMargin = marginPct(pPrice, cost);
+  const localUnitMargin = marginAmount(localUnit, localCost), localWholesaleMargin = marginAmount(localWholesale, localCost);
+  return `<article class="invCard v2ProductCard ${seller ? 'resellerInventoryCard' : ''}" data-id="${p.id}">
+    <div class="invPhoto">${p.photo ? `<img src="${p.photo}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async">` : '<span class="invPhotoFallback">🌿</span>'}</div>
+    <div class="invBody">
+      <div class="productLineTop"><span class="categoryBadge">${escapeHtml(p.category || 'General')}</span>${p.sku ? `<span class="skuBadge">${escapeHtml(p.sku)}</span>` : ''}</div>
+      <div class="invName">${escapeHtml(p.name)}</div>${p.description ? `<div class="invDesc">${escapeHtml(p.description)}</div>` : ''}
+      <span class="pill ${low ? 'low' : 'ok'} stockPill">${low ? '⚠ stock bajo' : 'stock'} · ${p.stock}</span>
+      ${seller ? `<div class="priceMatrix priceMatrix4 resellerPriceMatrix"><div><span>Base admin</span><strong>${fmtMoney(rPrice)}</strong></div><div><span>+ Envío/costos</span><strong>${fmtMoney(resellerAdditionalCost(p))}</strong></div><div><span>Mi unitario</span><strong>${fmtMoney(localUnit)}</strong><small>${fmtMoney(localUnitMargin)}</small></div><div><span>Mi mayorista</span><strong>${fmtMoney(localWholesale)}</strong><small>${fmtMoney(localWholesaleMargin)}</small></div></div>` : `<div class="priceMatrix priceMatrix4"><div><span>Costo</span><strong>${fmtMoney(cost)}</strong></div><div><span>Mayorista</span><strong>${fmtMoney(mPrice)}</strong><small>${mMargin >= 0 ? '+' : ''}${mMargin.toFixed(0)}%</small></div><div><span>Represent.</span><strong>${fmtMoney(rPrice)}</strong><small>${rMargin >= 0 ? '+' : ''}${rMargin.toFixed(0)}%</small></div><div><span>Público</span><strong>${fmtMoney(pPrice)}</strong><small>${pMargin >= 0 ? '+' : ''}${pMargin.toFixed(0)}%</small></div></div>`}
+    </div>
+    ${adminMode ? `<div class="invActions"><button class="editBtn" data-id="${p.id}">Editar</button><button class="danger delBtn" data-id="${p.id}">Eliminar</button></div>` : `<div class="invActions"><button class="editMyInvBtn" data-id="${p.id}">Editar mi inventario</button><button class="sellThisBtn" data-id="${p.id}">Vender</button></div>`}
+  </article>`;
+}
+
+function bindInventoryCardV9(card) {
+  if (!card) return;
+  const id = card.dataset.id;
+  card.querySelector('.editBtn')?.addEventListener('click', () => openProductForm(id));
+  card.querySelector('.editMyInvBtn')?.addEventListener('click', () => openResellerProductForm(id));
+  card.querySelector('.delBtn')?.addEventListener('click', () => confirmDeleteProduct(id));
+  card.querySelector('.sellThisBtn')?.addEventListener('click', () => { window.startSaleWithProduct ? startSaleWithProduct(id) : navigateTo('vender'); });
+}
+
+function patchInventoryProductV9(context = {}) {
+  if (AppState.currentTab !== 'inventario') return false;
+  const grid = document.querySelector('#mainArea .invGrid');
+  if (!grid) return false;
+  const payload = context.payload || {};
+  const row = payload.new && Object.keys(payload.new).length ? payload.new : payload.old;
+  const id = String(row?.id || row?.product_id || '');
+  if (!id) return false;
+  const existing = grid.querySelector(`.invCard[data-id="${CSS.escape(id)}"]`);
+  const product = (AppState.products || []).find(p => String(p.id) === id);
+  if (!product || product.status === 'archived') { existing?.remove(); return true; }
+  const holder = document.createElement('div');
+  holder.innerHTML = inventoryProductCardHtmlV9(product);
+  const card = holder.firstElementChild;
+  if (!card) return false;
+  if (existing) existing.replaceWith(card); else grid.prepend(card);
+  bindInventoryCardV9(card);
+  if (_prodSearch) {
+    const needle = normalizeSearch(_prodSearch);
+    card.style.display = normalizeSearch(card.textContent || '').includes(needle) ? '' : 'none';
+  }
+  const metrics = productMetrics();
+  const values = document.querySelectorAll('#mainArea .inventoryKpis .kpiCard strong');
+  if (values[0]) values[0].textContent = metrics.count;
+  if (values[1]) values[1].textContent = metrics.units;
+  if (values[3]) values[3].textContent = metrics.lowStock;
+  return true;
+}
+window.patchInventoryProductV9 = patchInventoryProductV9;
+
 async function confirmDeleteProduct(id) {
   const p = AppState.products.find(x => x.id === id);
   if (!p) return;
