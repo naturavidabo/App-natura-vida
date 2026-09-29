@@ -117,9 +117,6 @@
   window.ensureQuotesModuleV9 = () => loadLocalModuleV9('cotizaciones',
     'js/quotes.js?v=8.4.0', () => !!window.renderQuotes);
 
-  window.ensureReceiptModuleV9 = () => loadLocalModuleV9('recibo-base',
-    'js/receipt.js?v=8.4.0', () => !!window.openReceiptPreview);
-
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
