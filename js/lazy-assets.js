@@ -106,6 +106,9 @@
   window.ensureDocumentsV7ModuleV9 = () => loadLocalModuleV9('documentos-v7',
     'js/v7-documents.js?v=8.4.0', () => !!window.openV7ReceiptPreview);
 
+  window.ensureIntegrationV771ModuleV9 = () => loadLocalModuleV9('integracion-v771',
+    'js/v7-integration-v771.js?v=8.4.0', () => !!window.profileAvatarUrlV771);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
