@@ -54,6 +54,7 @@ const APP_SHELL = [
   './js/v7-supabase.js',
   './js/v7-workforce.js',
   './js/v8-core.js',
+  './js/v8-commercial-rules-core.js',
   './js/v8-commercial-rules.js',
   './js/v8-governance.js',
   './js/v8-linked-stock.js',
