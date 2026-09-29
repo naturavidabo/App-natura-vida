@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'compra' || tab === 'pedidos') {
+      try {
+        if (window.ensureOrdersV7ModuleV9) await ensureOrdersV7ModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Pedidos. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'perfil' || tab === 'usuarios' || tab === 'mas' || tab === 'egresos') {
       try {
         if ((tab === 'perfil' || tab === 'usuarios') && window.ensureProfileModuleV9) await ensureProfileModuleV9();
