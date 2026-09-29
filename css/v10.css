@@ -1,0 +1,123 @@
+/* NATURA VIDA V10 — pulido visual sobre la base funcional V8.
+   No redefine lógica ni oculta funciones; sólo presentación y responsive. */
+:root{
+  --nv10-bg:#f3f7f4;
+  --nv10-surface:#ffffff;
+  --nv10-ink:#17392d;
+  --nv10-muted:#6f8278;
+  --nv10-line:rgba(6,75,46,.11);
+  --nv10-forest:#075238;
+  --nv10-green:#0a8b54;
+  --nv10-lime:#b8dc52;
+  --nv10-gold:#d4a640;
+  --nv10-shadow:0 12px 30px rgba(5,74,43,.08);
+  --nv10-shadow-soft:0 6px 18px rgba(5,74,43,.055);
+}
+html,body.nv10{background:var(--nv10-bg)}
+body.nv10 #app{background:linear-gradient(180deg,#f5faf7 0%,#f1f6f3 100%)}
+body.nv10 #mainArea{padding:14px 12px 116px}
+
+/* Cabecera: conserva identidad verde sin ocupar demasiado espacio. */
+body.nv10 header.top.nv771Top{padding:8px 10px 6px;background:linear-gradient(180deg,#f3f7f4 72%,rgba(243,247,244,0))!important;box-shadow:none!important;border:0}
+body.nv10 .nv771BrandShell{min-height:68px;padding:10px 11px;border-radius:22px;background:linear-gradient(120deg,#05402c 0%,#087149 55%,#14a25f 100%);box-shadow:0 12px 28px rgba(5,70,41,.16)}
+body.nv10 .nv771LogoInsignia{width:46px;height:46px;border-radius:15px}
+body.nv10 .nv771BrandCopy .bizname{font-size:14px;color:#fff}
+body.nv10 .nv771BrandCopy .bizsub{font-size:9.5px;color:rgba(255,255,255,.82)!important}
+body.nv10 .nv771HeaderActions{gap:5px}
+body.nv10 #cloudStatusBadge.nv807ConnectionCapsule{background:rgba(255,255,255,.92)!important;border-color:rgba(255,255,255,.46)!important}
+body.nv10 .nv771ProfileButton{min-height:40px!important;border-radius:13px!important}
+
+/* Navegación inferior: ligera, estable y legible. */
+body.nv10 nav.bottom{left:10px;right:10px;bottom:8px;width:auto;max-width:500px;height:auto;min-height:68px;padding:6px;border:1px solid rgba(255,255,255,.22);border-radius:23px;background:linear-gradient(105deg,#075238 0%,#087d4d 55%,#16a960 100%)!important;box-shadow:0 15px 34px rgba(5,72,42,.22)!important}
+body.nv10 nav.bottom button{min-height:54px;border-radius:16px;color:rgba(255,255,255,.66);font-size:9.5px}
+body.nv10 nav.bottom button .ic{width:24px;height:24px}
+body.nv10 nav.bottom button.active{background:linear-gradient(180deg,#fafffb,#e7f6ec);color:#075238;box-shadow:0 5px 16px rgba(2,51,29,.14)}
+body.nv10 nav.bottom button.active:after{content:"";width:15px;height:3px;margin-top:1px;border-radius:9px;background:var(--nv10-gold)}
+
+/* Inicio: misma información, más densidad y mejor lectura. */
+body.nv10 .v802ExecutiveHero{margin-bottom:11px;padding:20px 18px 18px;border-radius:23px;background:linear-gradient(128deg,#05402d 0%,#08754a 60%,#16a660 100%);box-shadow:0 15px 34px rgba(3,67,39,.18)}
+body.nv10 .v802ExecutiveHero h1{font-size:clamp(1.55rem,6vw,1.95rem)}
+body.nv10 .v802ExecutiveHero p{font-size:.76rem;line-height:1.45}
+body.nv10 .v802Identity{margin-top:13px;gap:7px}
+body.nv10 .v802MetricGrid{gap:8px;margin:10px 0 12px}
+body.nv10 .v802KpiCard{grid-template-columns:39px minmax(0,1fr);gap:9px;min-height:96px;padding:12px;border-radius:18px!important;box-shadow:var(--nv10-shadow-soft)!important}
+body.nv10 .v802KpiIcon{width:39px;height:39px;border-radius:12px}
+body.nv10 .v802KpiCard>div>strong{font-size:1.38rem;margin:5px 0 2px}
+body.nv10 .v802KpiCard>div>span{font-size:.56rem}
+body.nv10 .v802KpiCard>div>small{font-size:.61rem}
+body.nv10 .v802ActivityPanel,body.nv10 .v802NaturePanel{border-radius:20px!important;box-shadow:var(--nv10-shadow-soft)!important}
+
+/* Centro de gestión: no más tarjetas anchas comprimidas dentro de dos columnas. */
+body.nv10 .v770CenterHead{margin-bottom:12px;padding:18px 16px 16px;border:1px solid var(--nv10-line);border-radius:22px;background:linear-gradient(145deg,#fff,#f5faf7);color:var(--nv10-ink);box-shadow:var(--nv10-shadow-soft)}
+body.nv10 .v770CenterHead .v770CenterGlow{display:none}
+body.nv10 .v770CenterHead .v7Eyebrow{color:var(--nv10-green)}
+body.nv10 .v770CenterHead h1{margin-bottom:6px;font-size:25px;color:var(--nv10-ink)}
+body.nv10 .v770CenterHead p{color:var(--nv10-muted);font-size:11px;line-height:1.45}
+body.nv10 .v770ModuleSearch{margin-top:13px;border:1px solid var(--nv10-line);border-radius:15px;background:#fff;box-shadow:none}
+body.nv10 .v770ModuleSearch input{min-height:45px!important}
+body.nv10 .v770FavoriteSection,body.nv10 .v770SearchResults,body.nv10 .v770Recent{padding:12px;border:1px solid var(--nv10-line);border-radius:19px;background:#fff;box-shadow:var(--nv10-shadow-soft)}
+body.nv10 .v770CategoryGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+body.nv10 .v770CategoryCard.v802CategoryCard{display:grid!important;grid-template-columns:92px minmax(0,1fr) 32px!important;grid-template-rows:1fr!important;align-items:center!important;gap:12px!important;min-width:0;min-height:142px!important;padding:11px!important;border:1px solid var(--nv10-line)!important;border-radius:21px!important;background:#fff!important;box-shadow:var(--nv10-shadow-soft)!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.blue{background:linear-gradient(145deg,#fff,#f2f8fc)!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.violet{background:linear-gradient(145deg,#fff,#faf6fd)!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.gold{background:linear-gradient(145deg,#fff,#fffaf0)!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.slate{background:linear-gradient(145deg,#fff,#f4f8f7)!important}
+body.nv10 .v770CategoryCard.v802CategoryCard.lime{background:linear-gradient(145deg,#f8ffeb,#f0f9dc)!important}
+body.nv10 .v802CategoryArt{align-self:center;width:92px;height:108px;min-width:92px;border-radius:18px}
+body.nv10 .v802CategoryArt svg{width:84px!important;height:96px!important;max-height:none}
+body.nv10 .v802CategoryCopy{align-self:center}
+body.nv10 .v802CategoryCopy strong{font-size:1rem!important;line-height:1.13!important;color:var(--nv10-ink)!important;word-break:normal!important;overflow-wrap:normal!important}
+body.nv10 .v802CategoryCopy small{margin-top:5px!important;font-size:.65rem!important;line-height:1.38!important;color:var(--nv10-muted)!important;word-break:normal!important;overflow-wrap:normal!important}
+body.nv10 .v802CategoryCopy u{margin-top:8px;font-size:.6rem}
+body.nv10 .v802CategoryCard>em{min-width:30px;height:30px;align-self:start}
+body.nv10 .v770SettingsSeparation{margin:11px 0;padding:12px;border-radius:17px;background:#f7faf8}
+body.nv10 .v7Logout{margin-top:12px}
+body.nv10 .v7Version{padding:9px 0 3px;color:#93a198}
+
+/* Productos / ventas: compactar sin tocar controles ni edición de precios. */
+body.nv10 .v7SearchBox,body.nv10 .toolrow input[type="text"]{box-shadow:none}
+body.nv10 .v7ProductGrid{gap:9px}
+body.nv10 .v7ProductCard{border-color:var(--nv10-line);border-radius:18px;box-shadow:var(--nv10-shadow-soft)}
+body.nv10 .v7ProductImage{aspect-ratio:1.22;background:linear-gradient(180deg,#f7faf8,#eef5f1)}
+body.nv10 .v7ProductBody{padding:10px}
+body.nv10 .v7ProductBody h3{font-size:12.5px;margin:4px 0 6px}
+body.nv10 .v7ProductPrice{margin:7px 0}
+body.nv10 .v7ProductPrice strong{font-size:14px}
+body.nv10 .v7Stepper{grid-template-columns:36px 1fr 36px}
+body.nv10 .v7Stepper button{height:36px}
+body.nv10 .miniEditPrice,body.nv10 .v7EditOwnPrices,body.nv10 .v7ConfigureSalePrice{min-height:38px!important}
+
+/* Inventario general: conserva matrices y acciones, mejora superficie. */
+body.nv10 .invCard.v2ProductCard{border:1px solid var(--nv10-line)!important;border-radius:19px!important;background:#fff!important;box-shadow:var(--nv10-shadow-soft)!important;overflow:hidden}
+body.nv10 .v2ProductCard .invBody{padding:11px!important}
+body.nv10 .v2ProductCard .invName{font-size:14px;line-height:1.25}
+body.nv10 .priceMatrix{gap:5px!important}
+body.nv10 .priceMatrix>div{border-radius:10px!important;background:#f6f9f7!important}
+body.nv10 .invActions{background:#fbfdfc;border-top:1px solid var(--nv10-line)}
+
+/* Formularios y paneles: misma función, menos ruido. */
+body.nv10 .btn{border-radius:13px}
+body.nv10 input,body.nv10 select,body.nv10 textarea{border-radius:12px}
+body.nv10 .sheet{border-radius:23px 23px 0 0}
+body.nv10 .card,body.nv10 .v7Panel{border-color:var(--nv10-line);box-shadow:var(--nv10-shadow-soft)}
+
+/* Android y pantallas estrechas: una sola columna donde el contenido necesita ancho. */
+@media(max-width:700px){
+ body.nv10 .v770CategoryGrid{grid-template-columns:1fr!important}
+ body.nv10 .v770CategoryCard.v802CategoryCard{grid-template-columns:88px minmax(0,1fr) 30px!important;min-height:126px!important}
+ body.nv10 .v802CategoryArt{width:88px;height:100px;min-width:88px}
+ body.nv10 .v802CategoryArt svg{width:78px!important;height:90px!important}
+ body.nv10 .v802CategoryCopy strong{font-size:1.02rem!important}
+ body.nv10 .v802CategoryCopy small{font-size:.67rem!important}
+}
+@media(max-width:390px){
+ body.nv10 #mainArea{padding-inline:10px}
+ body.nv10 .nv771BrandShell{padding:9px}
+ body.nv10 .nv771ProfileText{display:none}
+ body.nv10 .v802MetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.nv10 .v802KpiCard{grid-template-columns:34px minmax(0,1fr);padding:10px;min-height:90px}
+ body.nv10 .v802KpiIcon{width:34px;height:34px}
+ body.nv10 .v770CategoryCard.v802CategoryCard{grid-template-columns:78px minmax(0,1fr) 28px!important;gap:10px!important;padding:10px!important}
+ body.nv10 .v802CategoryArt{width:78px;height:92px;min-width:78px}
+ body.nv10 .v802CategoryArt svg{width:70px!important;height:82px!important}
+}
