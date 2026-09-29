@@ -17,8 +17,9 @@
   function actionRegistryV770() {
     const isAdminUser = admin();
     const canTeam = window.canOpenRolesV800 && canOpenRolesV800();
+    const canReadTeamOrders = isAdminUser || !!(window.hasPermission && hasPermission('orders:team_read'));
     const actions = [
-      { id: 'catalogo', category: 'comercial', icon: '🌿', title: 'Catálogo comercial', subtitle: 'Productos, presentaciones y precios para ofrecer al cliente', handler: () => window.openCatalogPdfOptions ? openCatalogPdfOptions() : navigateTo('vender'), permission: 'catalog:use' },
+      { id: 'catalogo', category: 'comercial', icon: '🌿', title: 'Catálogo comercial', subtitle: 'Productos, presentaciones y precios para ofrecer al cliente', handler: async () => { try { if (window.ensureCatalogPdfModuleV9) await ensureCatalogPdfModuleV9(); if (window.openCatalogPdfOptions) openCatalogPdfOptions(); else navigateTo('vender'); } catch (_) { showToast('No se pudo cargar el catálogo PDF.', 'error'); } }, permission: 'catalog:use' },
       { id: 'vender', category: 'comercial', icon: '🛍️', title: 'Nueva venta', subtitle: 'Venta unitaria o mayorista', tab: 'vender', permission: 'sales:create' },
       { id: 'clientes', category: 'comercial', icon: '👥', title: 'Clientes', subtitle: 'Directorio, ubicación e historial', tab: 'clientes', permission: 'clients:manage' },
       { id: 'historial', category: 'comercial', icon: '🧾', title: 'Ventas y recibos', subtitle: 'Historial permanente de operaciones', tab: 'historial', permission: 'own_reports:read' },
@@ -35,7 +36,7 @@
       { id: 'regional', category: 'operaciones', icon: '🧭', title: isAdminUser ? 'Gestión regional' : 'Mi región comercial', subtitle: isAdminUser ? 'Stock, regiones y reposiciones' : 'Mi stock, equipo y solicitudes', tab: 'regional', permission: 'regional:manage' },
       { id: 'distribucion', category: 'operaciones', icon: '🚚', title: 'Distribución y rutas', subtitle: 'Rutas, entregas, GPS y evidencia', tab: 'distribucion', anyPermissions: ['routes:own','routes:manage','deliveries:manage'] },
       { id: 'produccion', category: 'operaciones', icon: '🌿', title: 'Producción e insumos', subtitle: 'Materia prima, lotes y costo real', tab: 'produccion', anyPermissions: ['production:operate'], adminAlso: true },
-      { id: 'pedidos', category: 'operaciones', icon: '🛒', title: isAdminUser ? 'Pedidos de representantes' : 'Mis pedidos de reposición', subtitle: 'Solicitudes, recepción y seguimiento', tab: isAdminUser ? 'pedidos' : 'compra', anyPermissions: ['orders:create','orders:team_read'], adminAlso: true },
+      { id: 'pedidos', category: 'operaciones', icon: '🛒', title: isAdminUser ? 'Pedidos de representantes' : (canReadTeamOrders ? 'Pedidos del equipo' : 'Mis pedidos de reposición'), subtitle: 'Solicitudes, recepción y seguimiento', tab: canReadTeamOrders ? 'pedidos' : 'compra', anyPermissions: ['orders:create','orders:team_read'], adminAlso: true },
 
       { id: 'territorio', category: 'territorio', icon: '🗺️', title: 'Gestión territorial', subtitle: 'Prospectos, visitas, clientes, mapa y cobertura comercial', tab: 'territorio', anyPermissions: ['territory:manage','territory:team_read'], adminAlso: true },
 
@@ -137,7 +138,7 @@
   function renderCategoryView(category, actions) {
     const cat = categoryRegistryV770().find(item => item.id === category);
     const items = actions.filter(action => action.category === category);
-    return `<section class="v770CenterHead category ${esc(cat?.tone || 'green')}"><div class="v770CenterGlow"></div><button class="v770Back" id="backManagementV770">← Centro de gestión</button><span class="v7Eyebrow">Área de trabajo</span><h1>${esc(cat?.title || 'Gestión')}</h1><p>${esc(cat?.subtitle || '')}</p></section><section class="v770ActionList">${items.map(action => actionButton(action)).join('') || '<div class="v7Empty"><span>🌿</span><h3>Sin funciones habilitadas</h3><p>Tu rol no tiene herramientas disponibles en esta área.</p></div>'}</section>`;
+    return `<section class="v770CenterHead category ${esc(cat?.tone || 'green')}"><div class="v770CenterGlow"></div><button class="v770Back" id="backManagementV770">← Centro de gestión</button><span class="v7Eyebrow">Área de trabajo</span><h1>${esc(cat?.title || 'Gestión')}</h1><p>${esc(cat?.subtitle || '')}</p></section><section class="v770ActionList nv101ActionList tone-${esc(cat?.tone || 'green')} category-${esc(cat?.id || category)}">${items.map(action => actionButton(action)).join('') || '<div class="v7Empty"><span>🌿</span><h3>Sin funciones habilitadas</h3><p>Tu rol no tiene herramientas disponibles en esta área.</p></div>'}</section>`;
   }
 
   function renderMainView(actions) {
