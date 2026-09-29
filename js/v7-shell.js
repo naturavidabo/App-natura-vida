@@ -242,7 +242,7 @@
       case 'reportes-pro': oldRenderReports ? oldRenderReports() : renderInicioV7(); break;
       case 'ajustes': isAdmin() ? renderSettings() : renderProfileV7(); break;
       case 'reglas-comerciales': isAdmin() && window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderProfileV7(); break;
-      case 'asistente-ia': isAdmin() && window.renderAIAssistantV821 ? renderAIAssistantV821() : (window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicioV7()); break;
+      case 'asistente-ia': isAdmin() && window.renderAIAssistantV9 ? renderAIAssistantV9() : renderInicioV7(); break;
       case 'mas': renderMasV7(); break;
       default: renderInicioV7();
     }
