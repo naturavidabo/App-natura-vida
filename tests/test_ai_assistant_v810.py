@@ -3,8 +3,9 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 js=(root/'js/v8-ai-assistant.js').read_text(encoding='utf-8')
 html=(root/'index.html').read_text(encoding='utf-8')
+bridge=(root/'js/v9-ai-bridge.js').read_text(encoding='utf-8')
 checks={
- 'script incluido':'v8-ai-assistant.js?v=8.4.0' in html,
+ 'carga diferida':'v9-ai-bridge.js?v=8.4.0' in html and 'v8-ai-assistant.js?v=8.4.0' in bridge,
  'solo administrador':'adminAllowed' in js and 'isAdmin()' in js,
  'fab flotante':'nvAiFab' in js,
  'panel rápido':'nvAiSheet' in js,
