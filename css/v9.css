@@ -43,3 +43,30 @@ input:focus,select:focus,textarea:focus,.field input:focus,.field select:focus,.
 .v7MoreItem>b{position:absolute;right:11px;top:20px;color:#9baca3;font-size:18px}.v7MoreItem>em{position:absolute;right:10px;bottom:10px}
 .v7MoreItem:active{transform:scale(.985);background:#f8fcf9!important}.v7Logout{min-height:48px;margin-top:16px;border-radius:15px}.v7Version{padding:12px 0 2px;color:#899990}
 @media(max-width:370px){.v802MetricGrid,.v7MoreList{grid-template-columns:1fr}.v802KpiCard{min-height:92px}.v7MoreItem{min-height:94px}.v802StatusStrip{grid-template-columns:1fr}.v802StatusStrip>span{text-align:left}.v802StatusStrip b{display:inline;margin-right:4px}}
+
+/* V9.2 — Operación comercial: búsqueda, catálogo, clientes e inventario. */
+.toolrow,.enhancedSearch,.v7SearchBox{position:relative;margin-bottom:13px}.toolrow input[type="text"],.enhancedSearch input,.v7SearchBox input{min-height:50px;border:1px solid var(--nv9-line);border-radius:16px;background:#fff;box-shadow:0 6px 18px rgba(8,61,38,.05);padding-left:14px}
+.v7SearchBox{display:flex;align-items:center}.v7SearchBox>span{position:absolute;left:13px;z-index:1;color:#7b8f84;font-size:20px}.v7SearchBox input{padding-left:42px}
+.v7Segment,.saletoggle{padding:4px;border:1px solid var(--nv9-line);border-radius:16px;background:#eaf1ed;gap:4px}.v7Segment button,.saletoggle button{min-height:42px;border-radius:12px;font-size:11.5px}.v7Segment button.active,.saletoggle button.active{background:#fff;color:var(--nv9-green);box-shadow:0 5px 14px rgba(8,61,38,.08)}
+.catalogGrid,.v7ProductGrid{gap:10px}.catalogCard,.v7ProductCard{border:1px solid var(--nv9-line)!important;border-radius:19px!important;background:#fff;box-shadow:var(--nv9-shadow-sm);overflow:hidden}
+.catalogPhoto,.v7ProductImage{background:linear-gradient(180deg,#f8fbf9,#edf5f0)}.catalogBody,.v7ProductBody{padding:11px!important}.catalogName,.v7ProductBody h3{color:var(--nv9-ink);line-height:1.25}.catalogPrice,.v7ProductPrice strong{color:var(--nv9-green);font-weight:850}
+.v7Stepper{min-height:42px;border-radius:13px;padding:4px;background:#eef5f1}.v7Stepper button{width:36px;height:34px;border-radius:10px;font-size:19px}.v7Stepper b{font-size:14px}
+.cartBar,.v7CartBar{left:12px!important;right:12px!important;bottom:92px!important;width:auto!important;max-width:516px!important;min-height:66px;padding:9px 10px!important;border:1px solid rgba(255,255,255,.5);border-radius:19px!important;background:rgba(6,63,42,.96)!important;box-shadow:0 16px 36px rgba(4,46,28,.25)!important;backdrop-filter:blur(12px)}
+.cartBar .btn,.v7CartBar .btn{min-height:44px;background:#fff;color:var(--nv9-forest);box-shadow:none}
+
+/* Clientes: las tarjetas heredadas dejan de parecer fichas administrativas. */
+#mainArea>.card{border-radius:18px;margin-bottom:9px;box-shadow:var(--nv9-shadow-sm)}
+#mainArea>.card>.cardactions{background:#fbfdfc;border-top:1px solid var(--nv9-line)}
+#mainArea>.card>.cardactions button{min-height:44px;padding:9px 7px;color:#526d60;font-size:11px}
+#mainArea>.card>.cardactions button.danger{color:var(--nv9-danger)}
+#mainArea>.card .name{font-size:14.5px;color:var(--nv9-ink)}#mainArea>.card .costline{color:var(--nv9-muted);line-height:1.5}
+.pill{border-radius:999px}
+
+/* Inventario: prioriza producto, stock y precio; matrices densas se vuelven escaneables. */
+.invGrid.v2Grid{gap:10px!important}.invCard.v2ProductCard{border:1px solid var(--nv9-line);border-radius:20px!important;box-shadow:var(--nv9-shadow-sm)!important;overflow:hidden;background:#fff}
+.v2ProductCard .invBody{padding:12px!important}.v2ProductCard .invName{font-size:15px;line-height:1.25;color:var(--nv9-ink)}.v2ProductCard .invDesc{font-size:10.5px;line-height:1.4;color:var(--nv9-muted)}
+.productLineTop{gap:5px}.categoryBadge,.skuBadge{border-radius:999px;font-size:9px}.stockPill{display:inline-flex;margin-top:7px}
+.priceMatrix{gap:5px!important;margin-top:9px!important}.priceMatrix>div{padding:8px 6px!important;border-radius:11px!important;background:#f6faf7!important}.priceMatrix span{font-size:8.5px!important}.priceMatrix strong{font-size:11.5px!important}.priceMatrix small{font-size:8px!important}
+.invActions{border-top:1px solid var(--nv9-line);background:#fbfdfc}.invActions button{min-height:44px;font-weight:750}
+.kpiGrid{gap:8px}.kpiCard{border:1px solid var(--nv9-line);border-radius:16px;box-shadow:var(--nv9-shadow-sm)}
+@media(max-width:390px){.v2ProductCard{grid-template-columns:118px minmax(0,1fr)!important;min-height:180px}.v2ProductCard .invPhoto{min-height:180px!important}.priceMatrix.priceMatrix4{grid-template-columns:repeat(2,1fr)!important}.catalogGrid,.v7ProductGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
