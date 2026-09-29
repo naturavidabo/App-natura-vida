@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'produccion' && isAdmin()) {
+      try {
+        if (window.ensureProductionModuleV9) await ensureProductionModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Producción. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if ((tab === 'inventario' || tab === 'vender') && !isAdmin()) {
       try {
         if (window.ensureRepresentativeSalesModuleV9) await ensureRepresentativeSalesModuleV9();
