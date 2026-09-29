@@ -1716,13 +1716,19 @@ async function refreshAfterEventNow(table, payload = null) {
       setCloudConnectionState('online', `Realtime incremental: ${table}`);
       return;
     }
-    if (table === 'products' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
+    if (table === 'products' || table === 'representative_product_preferences') {
+      await syncCloudProductsToLocal();
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if (table === 'representative_stock') {
       await syncCloudProductsToLocal();
       if (window.handleRegionalRealtimeV771) handleRegionalRealtimeV771(table, payload);
       if (AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
         hydrateRepresentativeCardsV730(AppState.allProfiles || []);
       }
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
@@ -1765,7 +1771,10 @@ async function refreshAfterEventNow(table, payload = null) {
     }
     else if (['stock_points','stock_point_balances','stock_point_movements','seller_restock_requests'].includes(table)) {
       if (window.handleLinkedStockRealtimeV801) handleLinkedStockRealtimeV801(table, payload);
-      if (['stock_point_balances','stock_point_movements'].includes(table)) await syncCloudProductsToLocal();
+      if (['stock_point_balances','stock_point_movements'].includes(table)) {
+        await syncCloudProductsToLocal();
+        renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      }
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
