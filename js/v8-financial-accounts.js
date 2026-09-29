@@ -307,7 +307,8 @@
           const proof=await readProofImageV820($('#nv820Proof',overlay).files?.[0]);
           const payment={id:uid('pay'),clientId:account.client.id,clientName:account.client.name,amount:allocation.amount,allocations:allocation.allocations,applicationMode:mode.value,method:$('#nv820PayMethod',overlay).value,voucherNumber:$('#nv820Voucher',overlay).value.trim(),proofImage:proof,note:$('#nv820PayNote',overlay).value.trim(),date:new Date($('#nv820PayDate',overlay).value).getTime()||Date.now(),responsibleUserId:currentUserId(),responsibleName:AppState.session.fullName||AppState.session.username||'',ownerUserId:currentUserId(),status:'posted',createdAt:Date.now()};
           payment.saleId=allocation.allocations.length===1?allocation.allocations[0].operationId:'';
-          const atomic=await postPaymentAtomicV9(payment,options.planId||'',Number(options.installmentNumber||0));
+          const targetPlanId=options.planId||activePaymentPlanV825(account.client.id)?.id||'';
+          const atomic=await postPaymentAtomicV9(payment,targetPlanId,Number(options.installmentNumber||0));
           const savedPayment=atomic.payment||payment;
           await writeAudit('receivable_payment_posted','receivablePayments',savedPayment.id,null,{clientId:savedPayment.clientId,amount:savedPayment.amount,allocations:savedPayment.allocations,method:savedPayment.method,recovered:!!atomic.recovered}).catch(()=>{});
           const after=clientAccountV820(account.client.id); const kind=after.totalDebt<=.009?'REC':'RPP';
