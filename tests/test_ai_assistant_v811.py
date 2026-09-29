@@ -3,6 +3,7 @@ import json
 root=Path(__file__).resolve().parents[1]
 js=(root/'js/v8-ai-assistant.js').read_text(encoding='utf-8')
 html=(root/'index.html').read_text(encoding='utf-8')
+bridge=(root/'js/v9-ai-bridge.js').read_text(encoding='utf-8')
 css=(root/'css/v8.css').read_text(encoding='utf-8')
 center=(root/'js/v7-management-center.js').read_text(encoding='utf-8')
 shell=(root/'js/v7-shell.js').read_text(encoding='utf-8')
@@ -10,7 +11,7 @@ sw=(root/'service-worker.js').read_text(encoding='utf-8')
 version=json.loads((root/'app-version.json').read_text(encoding='utf-8'))
 checks={
  'versión 8.2.0': version.get('version')=='8.4.0',
- 'script versionado': 'v8-ai-assistant.js?v=8.4.0' in html,
+ 'script versionado diferido': 'v9-ai-bridge.js?v=8.4.0' in html and 'v8-ai-assistant.js?v=8.4.0' in bridge,
  'acceso propio en administración': "id: 'asistente-ia'" in center and "category: 'administracion'" in center,
  'navegación robusta': "case 'asistente-ia'" in shell and 'renderAIAssistantV9' in shell,
  'conversación estructurada': 'readConversation' in js and 'writeConversation' in js and "role:'assistant',response" in js,
