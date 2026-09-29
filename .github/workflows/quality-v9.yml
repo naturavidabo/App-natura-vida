@@ -43,6 +43,7 @@ jobs:
           node tests/test_financial_accounts_v820.js
           node tests/test_ai_persistence_v811.js
           node tests/test_release_v840.js
+          node tests/test_management_access_v101.js
 
       - name: Regresión Python
         run: |
