@@ -43,6 +43,12 @@
   window.ensureDistributionModuleV9 = () => loadLocalModuleV9('distribucion',
     'js/v7-distribution.js?v=8.4.0', () => !!window.renderDistributionV760);
 
+  window.ensureWorkforceModuleV9 = () => loadLocalModuleV9('personal',
+    'js/v7-workforce.js?v=8.4.0', () => !!window.renderWorkforceV770);
+
+  window.ensureRegionalModuleV9 = () => loadLocalModuleV9('regional',
+    'js/v7-regional.js?v=8.4.0', () => !!window.renderRegionalManagementV750);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
