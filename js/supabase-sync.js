@@ -1848,8 +1848,18 @@ async function refreshAfterEventNow(table, payload = null) {
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
-    else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
-    else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
+    else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) {
+      await fetchAndCachePurchaseOrders();
+      renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
+    else if (table === 'messages' && window.syncInboxFromCloud) {
+      await syncInboxFromCloud();
+      if (window.refreshInboxBadge) refreshInboxBadge({ silent:true }).catch(()=>{});
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if (table === 'app_records') {
       const storeName=payload?.new?.store_name||payload?.old?.store_name;
       if(storeName) await syncGenericCloudStoreToLocalV9(storeName);
@@ -1858,7 +1868,12 @@ async function refreshAfterEventNow(table, payload = null) {
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
-    else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
+    else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) {
+      await syncProductionCloudToLocalV740();
+      if(AppState.currentTab==='produccion' && window.renderProductionV740) renderProductionV740();
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     else if (['delivery_routes','route_stops','deliveries','geo_events','delivery_requests'].includes(table)) {
       if (window.handleDistributionRealtimeV770) handleDistributionRealtimeV770(table, payload);
       else if (window.refreshDistributionV760) await refreshDistributionV760();
@@ -1899,7 +1914,12 @@ async function refreshAfterEventNow(table, payload = null) {
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
     }
-    else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
+    else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) {
+      await syncV7Context();
+      renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
+      setCloudConnectionState('online', `Realtime: ${table}`);
+      return;
+    }
     await loadAllState();
     renderAfterCloudRefresh();
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
