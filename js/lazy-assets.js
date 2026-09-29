@@ -61,6 +61,9 @@
   window.ensureFinancialAccountsModuleV9 = () => loadLocalModuleV9('cuentas-financieras',
     'js/v8-financial-accounts.js?v=8.4.0', () => !!window.renderReceivablesV820);
 
+  window.ensureSellerSettlementModuleV9 = () => loadLocalModuleV9('rendicion-caja',
+    'js/v8-seller-settlement.js?v=8.4.0', () => !!window.renderSellerSettlementV825);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
