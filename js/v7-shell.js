@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'asistente-ia') {
+      try {
+        if (window.ensureAIAssistantModuleV9) await ensureAIAssistantModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el Asistente IA. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'cotizaciones' || tab === 'compra' || tab === 'pedidos') {
       try {
         if (tab === 'cotizaciones' && window.ensureQuotesModuleV9) await ensureQuotesModuleV9();
