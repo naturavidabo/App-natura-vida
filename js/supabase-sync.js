@@ -1579,8 +1579,13 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
       window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true })
     ];
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
-    await loadAllState();
+    await loadAllState({ coreOnly: true });
     renderAfterCloudRefresh();
+    // Finanzas/producción/históricos quedan disponibles desde su copia actual y
+    // se hidratan después del primer render para no bloquear la experiencia.
+    const hydrateSecondaryStateV9 = () => loadAllState().catch(() => {});
+    if ('requestIdleCallback' in window) requestIdleCallback(hydrateSecondaryStateV9, { timeout: 2500 });
+    else setTimeout(hydrateSecondaryStateV9, 900);
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
     const failed = results.filter(result => result && result.ok === false);
     if (failed.length) {
