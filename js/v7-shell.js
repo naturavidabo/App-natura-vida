@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'estadisticas') {
+      try {
+        if (window.ensureStatsModuleV9) await ensureStatsModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Estadísticas. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'reglas-comerciales') {
       try {
         if (window.ensureCommercialRulesModuleV9) await ensureCommercialRulesModuleV9();
