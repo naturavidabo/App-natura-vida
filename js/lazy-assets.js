@@ -109,6 +109,15 @@
   window.ensureIntegrationV771ModuleV9 = () => loadLocalModuleV9('integracion-v771',
     'js/v7-integration-v771.js?v=8.4.0', () => !!window.profileAvatarUrlV771);
 
+  window.ensureQuotesModuleV9 = () => loadLocalModuleV9('cotizaciones',
+    'js/quotes.js?v=8.4.0', () => !!window.renderQuotes);
+
+  window.ensureBaseOrdersModuleV9 = () => loadLocalModuleV9('pedidos-base',
+    'js/orders.js?v=8.4.0', () => !!window.renderOrderRequest);
+
+  window.ensureReceiptModuleV9 = () => loadLocalModuleV9('recibo-base',
+    'js/receipt.js?v=8.4.0', () => !!window.openReceiptPreview);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
