@@ -112,7 +112,17 @@
     const s=window.AppState||{};
     return {sales:s.sales||[],historicalReceivables:s.historicalReceivables||[],clients:s.clients||[],products:s.products||[],expenses:s.expenses||[],payments:s.receivablePayments||[],settings:s.settings||{},productionOrders:s.productionOrders||[],productionBatches:s.productionBatches||[],rawMaterials:s.rawMaterials||[]};
   }
+  // V9: memoria efímera de cálculo. Vive sólo durante una consulta/render de IA;
+  // nunca sustituye AppState ni persiste datos, sólo evita recorrer los mismos
+  // arreglos varias veces para la misma respuesta.
+  let aiCalcMemoV9=new Map();
+  function resetAiCalcMemoV9(){aiCalcMemoV9=new Map();}
+  function memoAiCalcV9(key,compute){
+    if(aiCalcMemoV9.has(key))return aiCalcMemoV9.get(key);
+    const value=compute();aiCalcMemoV9.set(key,value);return value;
+  }
   function salesStats(periodDays=30){
+    return memoAiCalcV9(`sales:${periodDays}`,()=>{
     const {sales,products}=dataset();
     const now=Date.now();
     const from=now-periodDays*86400000;
@@ -135,8 +145,10 @@
       });
     });
     return {rows,revenue,cost,profit:revenue-cost,margin:revenue?((revenue-cost)/revenue*100):0,units,byProduct:[...byProduct.values()].sort((a,b)=>(b.revenue-b.cost)-(a.revenue-a.cost))};
+    });
   }
   function clientStats(){
+    return memoAiCalcV9('clients',()=>{
     const {clients,sales}=dataset();
     const cutoff=Date.now()-30*86400000;
     const inactive=clients.filter(c=>{
@@ -146,13 +158,16 @@
     });
     const incomplete=clients.filter(c=>!String(c.phone||c.whatsapp||'').trim() || !String(c.name||c.businessName||'').trim());
     return {inactive,incomplete,total:clients.length};
+    });
   }
   function stockStats(){
+    return memoAiCalcV9('stock',()=>{
     const {products}=dataset();
     const threshold=Number(dataset().settings.lowStockThreshold||5);
     const critical=products.filter(p=>Number(p.stock||0)<=threshold);
     const negative=products.filter(p=>Number(p.stock||0)<0);
     return {critical,negative,total:products.length};
+    });
   }
   function normalizedName(v){ return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
   function clientDisplayName(c){ return c?clampText(c?.name||c?.businessName||c?.contactName||'Cliente',100):''; }
@@ -288,6 +303,7 @@
   function dateMs(v){ const n=Number(new Date(v||0)); return Number.isFinite(n)?n:0; }
   function daysSince(v){ const n=dateMs(v); return n?Math.max(0,Math.floor((Date.now()-n)/86400000)):9999; }
   function receivableStats(){
+    return memoAiCalcV9('receivables',()=>{
     const {sales,historicalReceivables,payments}=dataset();
     const operations=[...(sales||[]),...(historicalReceivables||[])];
     const open=[];
@@ -298,6 +314,7 @@
       if(balance>.009) open.push({...x,paid,balance,historical:!!(x.historicalActive||x.sourceSystem==='Mi Negocio')});
     });
     return {open,total:open.reduce((a,x)=>a+x.balance,0),overdue:open.filter(x=>dateMs(x.dueDate||x.originalDate||x.date)<Date.now()),historical:open.filter(x=>x.historical)};
+    });
   }
   function productPriceV827(product){
     if(!product)return 0;
@@ -470,9 +487,11 @@
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncControlCenterV834({silent:true}).then(()=>showControlReminderV834()).catch(()=>{});});
   }
   function productCommercialHealthV832(){
+    return memoAiCalcV9('product-health',()=>{
     const {products,sales,productionOrders}=dataset();const since=Date.now()-30*86400000;const sold=new Map();
     (sales||[]).filter(row=>dateMs(row.date||row.createdAt)>=since).forEach(row=>(row.items||[]).forEach(item=>{const key=String(item.productId||normalizedName(item.name));sold.set(key,(sold.get(key)||0)+Number(item.qty||item.quantity||0));}));
     const threshold=Number(dataset().settings.lowStockThreshold||5);return (products||[]).filter(p=>p.status!=='archived').map(product=>{const key=String(product.id||normalizedName(product.name));const units30=Number(sold.get(key)||sold.get(normalizedName(product.name))||0);const daily=units30/30;const stock=Number(product.stock||0);const coverage=daily>0?stock/daily:(stock>threshold?999:0);const openPlanned=(productionOrders||[]).filter(o=>String(o.productId)===String(product.id)&&['planned','in_progress'].includes(o.status)).reduce((sum,o)=>sum+Number(o.plannedOutput||0),0);const target=Math.max(threshold*3,Math.ceil(daily*30*1.15));const suggested=Math.max(0,Math.ceil(target-stock-openPlanned));const price=productPriceV827(product),cost=productCostV827(product),margin=price?((price-cost)/price*100):0;return {product,units30,daily,stock,coverage,openPlanned,suggested,price,cost,margin};}).sort((a,b)=>a.coverage-b.coverage||b.suggested-a.suggested);
+    });
   }
   function controlAlertsV832(includeSnoozed=false){
     const rows=[];const rs=receivableStats(),cs=clientStats(),st=salesStats(30),health=productCommercialHealthV832(),state=readAlertStateV832(),now=Date.now();
@@ -1186,6 +1205,7 @@
     if(!input)return;input.style.height='auto';input.style.height=`${Math.min(124,Math.max(46,input.scrollHeight))}px`;
   }
   async function ask(question){
+    resetAiCalcMemoV9();
     const input=document.getElementById('nvAiInput');
     const q=String(question||input?.value||'').trim();
     const now=Date.now();
