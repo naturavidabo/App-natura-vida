@@ -398,7 +398,7 @@
     return { cls: 'activity', icon: v7Icon('chart'), label: 'Actividad' };
   }
 
-  async async function renderInicioV7() {
+  async function renderInicioV7() {
     const main = $('#mainArea');
     const orders = await getOrdersMemoryV7();
     const sales = AppState.sales || [];
