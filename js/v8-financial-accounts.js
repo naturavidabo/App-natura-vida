@@ -102,12 +102,19 @@
 
   async function nextFinancialNumberV820(prefix){
     const clean=String(prefix||'DOC').toUpperCase().replace(/[^A-Z]/g,'').slice(0,5)||'DOC';
-    try{
-      if(navigator.onLine && window.getSupabaseClient && requireAuth()){
+    const authenticated=!!(window.requireAuth&&requireAuth());
+    if(authenticated){
+      if(!navigator.onLine) throw new Error('Sin internet. No se puede generar una numeración financiera segura.');
+      if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para generar la numeración financiera.');
+      try{
         const {data,error}=await getSupabaseClient().rpc('nv_next_financial_document_number',{p_prefix:clean});
-        if(!error && data) return String(data);
+        if(error) throw new Error(window.messageFromError?messageFromError(error):error.message);
+        if(!data) throw new Error('Supabase no devolvió un número de documento.');
+        return String(data);
+      }catch(error){
+        throw new Error(error?.message||'No se pudo generar una numeración financiera única.');
       }
-    }catch(_){ }
+    }
     AppState.settings.financialDocumentSequences = AppState.settings.financialDocumentSequences || {};
     const next=Number(AppState.settings.financialDocumentSequences[clean]||0)+1;
     AppState.settings.financialDocumentSequences[clean]=next;
