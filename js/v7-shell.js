@@ -398,9 +398,16 @@
     return { cls: 'activity', icon: v7Icon('chart'), label: 'Actividad' };
   }
 
-  async function renderInicioV7() {
+  function renderInicioV7() {
     const main = $('#mainArea');
-    const orders = await getOrdersMemoryV7();
+    // Inicio no debe bloquear su primer pintado esperando IndexedDB/red.
+    // Usa la memoria disponible y completa pedidos en segundo plano.
+    const orders = Array.isArray(AppState.purchaseOrders) ? AppState.purchaseOrders : [];
+    if (!Array.isArray(AppState.purchaseOrders)) {
+      getOrdersMemoryV7().then(() => {
+        if (currentTab === 'inicio') patchInicioMetricsV9();
+      }).catch(() => {});
+    }
     const sales = AppState.sales || [];
     const ownSales = sales.filter(s => window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (isAdmin() || s.sellerId === AppState.session.userId));
     const todayKey = new Date().toDateString();
