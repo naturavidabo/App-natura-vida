@@ -1392,6 +1392,34 @@ async function deleteGenericCloudRecord(storeName, recordId) {
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
 }
 
+async function syncGenericCloudStoreToLocalV9(storeName) {
+  if(!CLOUD_GENERIC_STORES.includes(storeName))return false;
+  const sb=await requireClient();
+  const {data,error}=await sb.from('app_records')
+    .select('store_name,record_id,owner_user_id,visibility,payload,updated_at')
+    .eq('store_name',storeName).order('updated_at',{ascending:true});
+  if(error)throw new Error(messageFromError(error));
+  const currentUserId=AppState.session&&AppState.session.onlineUserId;
+  let rows=(data||[]).filter(row=>row.payload).map(row=>Object.assign({},row.payload,{
+    _cloudOwnerUserId:row.owner_user_id,_cloudVisibility:row.visibility
+  }));
+  if(storeName==='priceGroups'){
+    const central=rows.filter(row=>row._cloudVisibility==='shared'||row.scope==='central');
+    const own=rows.filter(row=>row._cloudOwnerUserId===currentUserId && !(row._cloudVisibility==='shared'||row.scope==='central'));
+    AppState.centralPriceGroups=central;
+    rows=isAdmin()?central:own;
+    AppState.priceGroups=rows;
+  } else if(storeName==='settings'){
+    const main=rows.find(row=>String(row.key||'main')==='main');
+    if(main)AppState.settings=Object.assign({},AppState.settings,main.value||main);
+  } else if(Array.isArray(AppState[storeName])) {
+    AppState[storeName]=rows;
+  }
+  await DB.clear(storeName);
+  if(rows.length)await DB.bulkPut(storeName,rows,{silent:true});
+  return true;
+}
+
 async function syncGenericCloudRecordsToLocal() {
   const sb = await requireClient();
   const { data, error } = await sb.from('app_records').select('store_name,record_id,owner_user_id,visibility,payload,updated_at')
