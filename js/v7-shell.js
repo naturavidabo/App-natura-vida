@@ -191,6 +191,12 @@
         .catch(() => {});
     }
     if (window.clearMeaningfulDirtyV840) clearMeaningfulDirtyV840('navigation');
+    // La IA V9 ya no envuelve la navegación global; sólo actualiza su FAB
+    // después de que el shell termina una navegación real.
+    requestAnimationFrame(() => {
+      if (window.refreshAIFabV9) refreshAIFabV9();
+      try { window.dispatchEvent(new CustomEvent('nv:ai-route-changed', { detail: { tab } })); } catch (_) {}
+    });
     else window.V7_FORM_DIRTY = false;
     AppState.currentTab = tab;
     highlightActiveV7();
