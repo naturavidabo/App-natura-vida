@@ -1,8 +1,8 @@
 // NATURA VIDA V8.4.0 — Director Administrativo Inteligente y sesión persistente.
 const VERSION = 'natura-vida-v8-4-0-director-administrativo-sesion-persistente';
-const APP_CACHE = 'nv-app-shell-v9-android-fix-1';
-const IMAGE_CACHE = 'nv-images-v9-android-fix-1';
-const RUNTIME_CACHE = 'nv-runtime-v9-android-fix-1';
+const APP_CACHE = 'nv-app-shell-v10-ui-1';
+const IMAGE_CACHE = 'nv-images-v10-ui-1';
+const RUNTIME_CACHE = 'nv-runtime-v10-ui-1';
 const IMAGE_CACHE_LIMIT = 80;
 const RUNTIME_CACHE_LIMIT = 40;
 const APP_SHELL = [
