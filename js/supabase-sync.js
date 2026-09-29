@@ -1761,7 +1761,9 @@ async function refreshAfterEventNow(table, payload = null) {
       return;
     }
     if (table === 'products' || table === 'representative_product_preferences') {
-      await syncCloudProductsToLocal();
+      const productId=payload?.new?.product_id||payload?.old?.product_id||payload?.new?.id||payload?.old?.id;
+      const targeted=productId ? await syncCloudProductByIdV9(productId).catch(()=>false) : false;
+      if(!targeted) await syncCloudProductsToLocal();
       renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
       setCloudConnectionState('online', `Realtime: ${table}`);
       return;
