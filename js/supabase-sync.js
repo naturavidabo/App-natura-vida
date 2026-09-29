@@ -1567,14 +1567,16 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
     if (!requireAuth()) return { ok: false, message: 'No hay sesión activa.' };
     if (AppState.session.pendingApproval) return { ok: true, restricted: true };
     setCloudConnectionState('connecting', reason);
+    // V9: el arranque crítico prioriza lo necesario para Inicio, Inventario y Ventas.
+    // Producción puede descargar cientos de movimientos/lotes y no debe competir
+    // con el primer render; se sincroniza al entrar a su módulo.
     const tasks = [
       syncCloudProductsToLocal(),
       syncCloudClientsToLocal(),
       syncCloudSalesToLocal(),
       syncGenericCloudRecordsToLocal(),
       window.fetchAndCachePurchaseOrders ? fetchAndCachePurchaseOrders() : Promise.resolve({ ok: true }),
-      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true }),
-      window.syncProductionCloudToLocalV740 ? syncProductionCloudToLocalV740() : Promise.resolve({ ok: true })
+      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true })
     ];
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
     await loadAllState();
