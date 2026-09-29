@@ -877,7 +877,12 @@ function openCheckoutSheet() {
           }
         }
         operation.stage = 'refresh';
-        await Promise.all([syncCloudProductsToLocal().catch(() => null), window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()]);
+        await Promise.all([
+          ...rawItems.map(item => window.syncCloudProductByIdV9 ? syncCloudProductByIdV9(item.product.id).catch(() => null) : Promise.resolve(null)),
+          window.syncCloudSaleByIdV9 ? syncCloudSaleByIdV9(operation.sale.id).catch(() => null) : Promise.resolve(null)
+        ]);
+        if (!window.syncCloudProductByIdV9) await syncCloudProductsToLocal().catch(() => null);
+        if (!window.syncCloudSaleByIdV9 && window.syncCloudSalesToLocal) await syncCloudSalesToLocal().catch(() => null);
         if (!AppState.sales.some(x => x.id === operation.sale.id)) AppState.sales.push(operation.sale);
         await writeAudit('sale:create', 'sales', operation.sale.id, null, operation.sale).catch(() => {});
         let deliveryWarning = '';
