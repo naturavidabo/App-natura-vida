@@ -168,6 +168,17 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'puntos-stock' || tab === 'roles-estructura' || tab === 'centro-comercial') {
+      try {
+        if (tab === 'puntos-stock' && window.ensureLinkedStockModuleV9) await ensureLinkedStockModuleV9();
+        if (tab === 'roles-estructura' && window.ensureRolesModuleV9) await ensureRolesModuleV9();
+        if (tab === 'centro-comercial' && window.ensureCommercialCenterModuleV9) await ensureCommercialCenterModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'rendicion-caja') {
       try {
         if (window.ensureSellerSettlementModuleV9) await ensureSellerSettlementModuleV9();
