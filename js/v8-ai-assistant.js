@@ -494,6 +494,8 @@
     });
   }
   function controlAlertsV832(includeSnoozed=false){
+    const memoKey=includeSnoozed?'alerts:all':'alerts:active';
+    return memoAiCalcV9(memoKey,()=>{
     const rows=[];const rs=receivableStats(),cs=clientStats(),st=salesStats(30),health=productCommercialHealthV832(),state=readAlertStateV832(),now=Date.now();
     health.filter(x=>x.stock<0).forEach(x=>rows.push({id:`stock-negative:${x.product.id}`,priority:'urgent',area:'inventario',title:`Stock negativo: ${x.product.name}`,detail:`Existencia registrada ${x.stock}. Requiere saneamiento antes de vender o producir.`,question:`Analiza el stock de ${x.product.name}`,actionTab:'inventario'}));
     health.filter(x=>x.stock>=0&&x.coverage<=7&&x.suggested>0).slice(0,8).forEach(x=>rows.push({id:`production:${x.product.id}`,priority:x.coverage<=3?'urgent':'high',area:'production',title:`Producir ${x.product.name}`,detail:`Cobertura estimada ${x.coverage===999?'sin consumo':x.coverage.toFixed(1)+' días'}; sugerencia ${x.suggested} unidad(es), descontando órdenes abiertas.`,question:`Prepara una orden de producción de ${x.suggested} unidades de ${x.product.name}`,actionTab:'produccion',productId:x.product.id,suggestedQuantity:x.suggested}));
@@ -502,6 +504,7 @@
     if(st.margin>0&&st.margin<25)rows.push({id:'low-margin',priority:'high',area:'sales',title:'Margen comercial bajo',detail:`Margen estimado de 30 días: ${st.margin.toFixed(1)}%. Revisa descuentos y costos.`,question:'Evalúa el margen y los descuentos',actionTab:'reglas-comerciales'});
     const oldOrders=(dataset().productionOrders||[]).filter(o=>['planned','in_progress'].includes(o.status)&&daysSince(o.createdAt||o.updatedAt)>7);if(oldOrders.length)rows.push({id:'old-production-orders',priority:'normal',area:'production',title:'Órdenes de producción demoradas',detail:`${oldOrders.length} orden(es) abiertas por más de siete días.`,question:'Evalúa las órdenes de producción pendientes',actionTab:'produccion'});
     return rows.filter(row=>{const st=state[row.id];return includeSnoozed||!st?.snoozeUntil||Number(st.snoozeUntil)<=now;}).sort((a,b)=>({urgent:0,high:1,normal:2,low:3}[a.priority]-({urgent:0,high:1,normal:2,low:3}[b.priority])));
+    });
   }
   function personnelScoreV835(){
     const tasks=readControlTasksV832(),completed=tasks.filter(x=>x.status==='completed').length,open=tasks.filter(x=>['pending','in_progress'].includes(x.status)).length;
@@ -512,8 +515,10 @@
     return Math.max(0,Math.min(100,Math.round(completion*.55+assignment*.25+Math.max(0,100-overdue*12)*.20)));
   }
   function businessEvaluationV832(){
+    return memoAiCalcV9('business-evaluation',()=>{
     const st=salesStats(30),ss=stockStats(),rs=receivableStats(),cs=clientStats(),health=productCommercialHealthV832();
     const marginScore=Math.max(0,Math.min(100,st.margin?st.margin/30*100:50));const inventoryScore=Math.max(0,100-ss.critical.length*12-ss.negative.length*30);const collectionBase=rs.total>0?Math.max(0,100-(rs.overdue.reduce((a,x)=>a+Number(x.balance||0),0)/Math.max(rs.total,1))*100):100;const customerScore=Math.max(0,100-(cs.total?cs.inactive.length/cs.total*100:0));const productionRisk=health.filter(x=>x.coverage<=7&&x.suggested>0).length;const productionScore=Math.max(0,100-productionRisk*12);const salesScore=st.rows.length?Math.min(100,55+Math.log10(st.rows.length+1)*25):35;const personnelScore=personnelScoreV835();const dimensions=[['Ventas',salesScore],['Margen',marginScore],['Inventario',inventoryScore],['Cobranzas',collectionBase],['Clientes',customerScore],['Producción',productionScore],['Personal',personnelScore]].map(([name,value])=>({name,score:Math.round(Number(value))}));const score=Math.round(dimensions.reduce((sum,x)=>sum+x.score,0)/dimensions.length);return {score,label:score>=85?'Sólido':score>=70?'Estable':score>=55?'En observación':'Prioridad alta',dimensions,note:'Indicador operativo interno; no sustituye una auditoría financiera.'};
+    });
   }
   function taskOverviewV834(){
     const today=new Date().toISOString().slice(0,10),open=readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)),overdue=open.filter(x=>x.dueDate&&x.dueDate<today),dueToday=open.filter(x=>x.dueDate===today),urgent=open.filter(x=>x.priority==='urgent'||x.priority==='high');
