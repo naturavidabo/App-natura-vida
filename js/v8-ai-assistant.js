@@ -1328,6 +1328,7 @@
     if(question) setTimeout(()=>ask(question),80);
   }
   function openSheet(){
+    ensureAiDemandServicesV9();
     if(!adminAllowed()) return;
     closeSheet();
     const ctx=currentContext();
@@ -1371,7 +1372,19 @@
     positionFabSmartV827();
   }
 
+  let aiDemandStartedV9=false;
+  function ensureAiDemandServicesV9(){
+    if(aiDemandStartedV9)return;
+    aiDemandStartedV9=true;
+    checkEngine(false).catch(()=>{});
+    installControlSyncV834();
+    Promise.resolve(syncControlCenterV834({silent:true})).catch(()=>{});
+    const background=()=>{ensureDailySummaryV832();ensureWeeklySummaryV835();};
+    if('requestIdleCallback' in window)requestIdleCallback(background,{timeout:1800});else setTimeout(background,500);
+  }
+
   function openForContext(context={},question=''){
+    ensureAiDemandServicesV9();
     const ctx={...currentContext(),...context};assistantContext=ctx;lastNonAiTab=ctx.tab==='asistente-ia'?'inicio':ctx.tab;closeSheet();window.navigateTo?.('asistente-ia');if(question)setTimeout(()=>ask(question),100);
   }
 
@@ -1411,8 +1424,8 @@
     document.addEventListener('focusin',scheduleFabPositionV9);
     document.addEventListener('focusout',scheduleFabPositionV9);
     setTimeout(ensureFab,250);
-    setTimeout(()=>checkEngine(false).catch(()=>{}),700);
-    setTimeout(()=>{installControlSyncV834();ensureDailySummaryV832();ensureWeeklySummaryV835();setTimeout(()=>showProactiveBriefV835(false),700);},900);
+    // V9: el motor remoto y el centro administrativo no compiten con el arranque
+    // de Natura Vida. Se activan al abrir/usar realmente el asistente.
     window.renderAIAssistantV829=renderAssistant;
     window.renderAIAssistantV826=renderAssistant;
     window.renderAIAssistantV825=renderAssistant;
