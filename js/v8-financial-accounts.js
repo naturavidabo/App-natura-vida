@@ -83,23 +83,6 @@
     if(Number(row.dueDate||0)<Date.now())return {code:'overdue',label:'Vencida'};
     return {code:'pending',label:'Pendiente'};
   }
-  async function applyPaymentToPlanV825(clientId,payment,preferredPlanId='',preferredInstallment=0){
-    const plans=paymentPlansForClientV825(clientId);let plan=plans.find(p=>String(p.id)===String(preferredPlanId))||plans.find(p=>p.status==='active');
-    if(!plan)return null;
-    let remaining=Core.round(payment.amount||0);const schedule=(plan.schedule||[]).map(r=>({...r,paymentIds:Array.isArray(r.paymentIds)?[...r.paymentIds]:[]}));
-    const ordered=[...schedule].sort((a,b)=>{if(preferredInstallment&&a.number===preferredInstallment)return-1;if(preferredInstallment&&b.number===preferredInstallment)return 1;return Number(a.dueDate||0)-Number(b.dueDate||0);});
-    const installments=[];
-    for(const row of ordered){if(remaining<=.009)break;const open=Core.round(Math.max(0,Number(row.amount||0)-Number(row.paid||0)));if(open<=.009)continue;const used=Core.round(Math.min(open,remaining));row.paid=Core.round(Number(row.paid||0)+used);row.status=scheduleRowStateV825(row).code;row.paymentIds=[...new Set([...(row.paymentIds||[]),payment.id])];installments.push({number:row.number,amount:used});remaining=Core.round(remaining-used);}
-    plan={...plan,schedule,status:schedule.every(r=>Number(r.paid||0)>=Number(r.amount||0)-.009)?'completed':'active',paidTotal:Core.round(schedule.reduce((sum,r)=>sum+Number(r.paid||0),0)),updatedAt:Date.now()};
-    await DB.put('paymentPlans',plan);AppState.paymentPlans=await DB.getAll('paymentPlans');
-    return {plan,installments,unapplied:remaining};
-  }
-  async function reversePaymentFromPlanV825(payment){
-    if(!payment?.planId||!Array.isArray(payment.planInstallments))return;const plan=(AppState.paymentPlans||[]).find(p=>String(p.id)===String(payment.planId));if(!plan)return;
-    const map=new Map(payment.planInstallments.map(x=>[Number(x.number),Number(x.amount||0)]));const schedule=(plan.schedule||[]).map(row=>{const back=map.get(Number(row.number))||0;if(!back)return row;const ids=(row.paymentIds||[]).filter(id=>String(id)!==String(payment.id));const next={...row,paid:Core.round(Math.max(0,Number(row.paid||0)-back)),paymentIds:ids};next.status=scheduleRowStateV825(next).code;return next;});
-    const updated={...plan,schedule,status:'active',paidTotal:Core.round(schedule.reduce((sum,r)=>sum+Number(r.paid||0),0)),updatedAt:Date.now()};await DB.put('paymentPlans',updated);AppState.paymentPlans=await DB.getAll('paymentPlans');
-  }
-
   async function postPaymentAtomicV9(payment,planId='',preferredInstallment=0){
     if(!navigator.onLine) throw new Error('Se necesita conexión para registrar el pago.');
     if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para registrar el pago.');
