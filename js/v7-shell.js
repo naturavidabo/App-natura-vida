@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'rendicion-caja') {
+      try {
+        if (window.ensureSellerSettlementModuleV9) await ensureSellerSettlementModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Rendición de caja. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'por-cobrar' || tab === 'estado-cuenta') {
       try {
         if (window.ensureFinancialAccountsModuleV9) await ensureFinancialAccountsModuleV9();
