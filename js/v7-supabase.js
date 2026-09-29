@@ -2,11 +2,12 @@
    Supabase continúa siendo la única fuente persistente. */
 
 (() => {
-  const originalSyncAfterLogin = window.syncAfterLogin;
-  const originalRunBackgroundSyncOnce = window.runBackgroundSyncOnce;
   const originalSetCloudConnectionState = window.setCloudConnectionState;
   let v7Channel = null;
   let v7RefreshTimer = null;
+  let v7ContextPromise = null;
+  let v7ContextLastSyncAt = 0;
+  const V7_CONTEXT_MIN_INTERVAL_MS = 15000;
 
   AppState.commercialProfiles = AppState.commercialProfiles || [];
   AppState.profileChangeRequests = AppState.profileChangeRequests || [];
@@ -46,7 +47,7 @@
 
   async function fetchCommercialProfilesV7() {
     const sb = await requireClient();
-    const { data, error } = await sb.from('commercial_profiles').select('*').order('updated_at', { ascending: false });
+    const { data, error } = await sb.from('commercial_profiles').select('user_id,business_name,address,location_label,latitude,longitude,receipt_message,qr_url,updated_at').order('updated_at', { ascending: false });
     if (error) return { ok: false, message: v7Error(error) };
     AppState.commercialProfiles = (data || []).map(mapCommercialProfile);
     return { ok: true, profiles: AppState.commercialProfiles };
@@ -54,7 +55,7 @@
 
   async function fetchProfileChangeRequestsV7() {
     const sb = await requireClient();
-    const { data, error } = await sb.from('profile_change_requests').select('*').order('created_at', { ascending: false }).limit(200);
+    const { data, error } = await sb.from('profile_change_requests').select('id,user_id,field_name,old_value,new_value,status,reviewed_by,review_note,created_at,reviewed_at').order('created_at', { ascending: false }).limit(200);
     if (error) return { ok: false, message: v7Error(error) };
     AppState.profileChangeRequests = (data || []).map(row => ({
       id: row.id,
@@ -78,13 +79,18 @@
     return res;
   }
 
-  async function syncV7Context() {
+  async function syncV7Context(options = {}) {
+    const force = options.force === true;
+    const now = Date.now();
+    if (!force && v7ContextPromise) return v7ContextPromise;
+    if (!force && v7ContextLastSyncAt && now - v7ContextLastSyncAt < V7_CONTEXT_MIN_INTERVAL_MS) return { ok: true, cached: true };
+    v7ContextPromise = (async () => {
     const tasks = [fetchCommercialProfilesV7(), fetchProfileChangeRequestsV7()];
     if (isAdmin()) tasks.push(fetchAllProfilesV7());
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: v7Error(error) }))));
     try {
       const sb = await requireClient();
-      const { data } = await sb.from('profiles').select('*').eq('id', AppState.session.onlineUserId).maybeSingle();
+      const { data } = await sb.from('profiles').select('id,role,status,commercial_role,representative_discount_percent,representative_price_group_id,phone,city,full_name,avatar_url,region_name,manager_user_id,supplier_user_id,role_note').eq('id', AppState.session.onlineUserId).maybeSingle();
       if (data && AppState.session) {
         AppState.session.discountPercent = Number(data.representative_discount_percent || 0);
         AppState.session.priceGroupId = data.representative_price_group_id || '';
@@ -119,7 +125,12 @@
       }
     } catch (_) {}
     const failed = results.find(r => r && r.ok === false);
-    return failed || { ok: true };
+    const result = failed || { ok: true };
+    if (!failed) v7ContextLastSyncAt = Date.now();
+    return result;
+    })();
+    try { return await v7ContextPromise; }
+    finally { v7ContextPromise = null; }
   }
 
   async function saveCommercialProfileV7(profile = {}) {
@@ -226,7 +237,7 @@
   async function fetchCloudPurchaseOrdersV7() {
     try {
       const sb = await requireClient();
-      const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(300);
+      const { data, error } = await sb.from('purchase_orders').select('id,order_number,receipt_number,source,representative_user_id,representative_name,supplier_user_id,supplier_name,region_name,regional_manager_user_id,status,payment_status,total,note,payload,created_at,updated_at,approved_at,paid_at').order('created_at', { ascending: false }).limit(300);
       if (error) return { ok: false, message: v7Error(error) };
       return { ok: true, orders: (data || []).map(mapV7OrderRow) };
     } catch (error) { return { ok: false, message: v7Error(error) }; }
@@ -400,28 +411,13 @@
     return true;
   }
 
-  async function syncAfterLoginV7() {
-    const base = originalSyncAfterLogin ? await originalSyncAfterLogin() : { ok: true };
-    await syncV7Context();
-    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
-    return base;
-  }
-
-  async function runBackgroundSyncV7(reason = 'automatic') {
-    const base = originalRunBackgroundSyncOnce ? await originalRunBackgroundSyncOnce(reason) : { ok: true };
-    await syncV7Context();
-    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
-    return base;
-  }
-
   // Evita que el indicador cambie a “Conectando” por cada lectura o guardado.
   window.setCloudConnectionState = function v7ConnectionState(state, detail = '') {
     const current = window.CloudConnection || { state: navigator.onLine ? 'connecting' : 'offline' };
     const importantConnecting = /reconect|internet recuperado|abriendo realtime|inicio de sesión|verificando acceso|creando cuenta/i.test(String(detail));
     if (state === 'connecting' && current.state === 'online' && navigator.onLine && !importantConnecting) {
-      current.detail = detail || 'Actualizando datos';
-      current.updatedAt = Date.now();
-      window.dispatchEvent(new CustomEvent('nv:connection', { detail: Object.assign({}, current) }));
+      // Sincronización rutinaria: permanece visualmente En línea. El detalle
+      // interno no justifica repintar la cápsula ni generar parpadeo.
       return;
     }
     return originalSetCloudConnectionState ? originalSetCloudConnectionState(state, detail) : undefined;
@@ -456,8 +452,6 @@
     nextDocumentNumberV7,
     activeRepresentativesV7,
     startV7Realtime,
-    stopV7Realtime,
-    syncAfterLogin: syncAfterLoginV7,
-    runBackgroundSyncOnce: runBackgroundSyncV7
+    stopV7Realtime
   });
 })();

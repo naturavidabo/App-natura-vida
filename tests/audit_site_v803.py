@@ -30,10 +30,21 @@ require('service-worker.js?v=8.4.0' in update,'registro del service worker no us
 require('natura-vida-v8-4-0' in sw.lower(),'service worker no corresponde a V8.4.0')
 require('V8.4.0' in manifest.get('name',''),'manifest no identifica V8.4.0')
 require('css/v8.css?v=8.4.0' in index,'index no carga CSS V8.4.0')
-for script in ['clients.js','sales.js','v7-documents.js','v7-management-center.js','v8-territory.js','v7-shell.js']:
+for script in ['clients.js','sales.js','v7-shell.js']:
     require(f'js/{script}?v=8.4.0' in index,f'index no carga {script} con versión correcta')
 require(index.index('clients.js') < index.index('sales.js'),'clientes debe cargarse antes de ventas')
-require(index.index('v8-stability.js') < index.index('v7-commercial-center.js'),'estabilidad se carga después de módulos comerciales')
+lazy=read('js/lazy-assets.js')
+require('v7-commercial-center.js?v=8.4.0' not in index and 'ensureCommercialCenterModuleV9' in lazy and 'ensureCommercialCenterModuleV9' in shell,'centro comercial se carga bajo demanda')
+require('v7-management-center.js?v=8.4.0' not in index and 'ensureManagementCenterModuleV9' in lazy and 'ensureManagementCenterModuleV9' in shell,'centro de gestión se carga bajo demanda')
+require('v7-documents.js?v=8.4.0' not in index and 'ensureDocumentsV7ModuleV9' in lazy and 'ensureDocumentsV7ModuleV9' in sales and 'ensureDocumentsV7ModuleV9' in shell,'documentos y recibos V7 se cargan bajo demanda')
+require('js/lazy-assets.js?v=8.4.0' in index,'index no carga el gestor diferido V9')
+require('js/v8-territory.js?v=8.4.0' not in index and 'js/v7-distribution.js?v=8.4.0' not in index,'módulos geográficos siguen bloqueando el arranque')
+lazy=read('js/lazy-assets.js')
+require('ensureTerritoryModuleV9' in lazy and 'ensureDistributionModuleV9' in lazy and 'ensureLeafletV9' in lazy,'carga diferida geográfica incompleta')
+require("'./js/lazy-assets.js'" in sw and 'OPTIONAL_APP_ASSETS' in sw,'service worker no protege la carga diferida offline')
+require('RUNTIME_CACHE_LIMIT' in sw and 'IMAGE_CACHE_LIMIT' in sw,'caches V9 no tienen límites')
+require('REALTIME_INCREMENTAL_TABLES_V9' in sync and '_realtimeRefreshQueue.push' in sync,'Realtime V9 no preserva eventos incrementales')
+require('patchInicioMetricsV9' in shell and 'patchClientsRealtimeV9' in clients,'faltan parches localizados V9')
 
 # Base V8.0.1 conservada
 require('persistSession: true' in sync and 'autoRefreshToken: true' in sync,'Supabase no conserva/renueva sesión')

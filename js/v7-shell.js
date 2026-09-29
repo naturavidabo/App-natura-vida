@@ -62,7 +62,7 @@
     if (subtitle) subtitle.textContent = 'Te cuida por dentro y por fuera';
 
     const avatarBox = $('#topProfileAvatarV771');
-    const avatarUrl = window.profileAvatarUrlV771 ? profileAvatarUrlV771(AppState.session || {}) : String(AppState.session?.avatarUrl || '');
+    const avatarUrl = String(AppState.session?.avatar_url || AppState.session?.avatarUrl || AppState.session?.photo_url || AppState.session?.photoUrl || '').trim();
     if (avatarBox) avatarBox.innerHTML = avatarUrl
       ? `<img src="${escapeHtml(avatarUrl)}" alt="Mi fotografía" loading="lazy" decoding="async">`
       : `<b>${escapeHtml(displayInitialV7())}</b>`;
@@ -153,7 +153,10 @@
     return permission ? hasPermission(permission) : false;
   }
 
-  function navigateToV7(tab) {
+  let navigationRequestV9 = 0;
+
+  async function navigateToV7(tab) {
+    const requestId = ++navigationRequestV9;
     // Compatibilidad con botones antiguos: el módulo se llama distinto según el rol.
     if (tab === 'pedido') tab = isAdmin() ? 'pedidos' : 'compra';
     if (tab === 'cotizar' && !isAdmin()) tab = 'vender';
@@ -164,11 +167,163 @@
       const leave = window.confirm('Hay cambios reales sin guardar en esta pantalla. ¿Salir y descartarlos?');
       if (!leave) return;
     }
+    // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'asistente-ia') {
+      try {
+        if (window.ensureAIAssistantModuleV9) await ensureAIAssistantModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el Asistente IA. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'cotizaciones') {
+      try {
+        if (window.ensureQuotesModuleV9) await ensureQuotesModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'perfil' || tab === 'usuarios' || tab === 'distribucion' || tab === 'pedidos') {
+      try {
+        if (window.ensureIntegrationV771ModuleV9) await ensureIntegrationV771ModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar la integración operativa.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'produccion' && isAdmin()) {
+      try {
+        if (window.ensureProductionModuleV9) await ensureProductionModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Producción. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if ((tab === 'inventario' || tab === 'vender') && !isAdmin()) {
+      try {
+        if (window.ensureRepresentativeSalesModuleV9) await ensureRepresentativeSalesModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Inventario/Ventas. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'compra' || tab === 'pedidos') {
+      try {
+        if (navigator.onLine && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders().catch(() => {});
+        if (window.ensureOrdersV7ModuleV9) await ensureOrdersV7ModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Pedidos. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'perfil' || tab === 'usuarios' || tab === 'mas' || tab === 'egresos') {
+      try {
+        if ((tab === 'perfil' || tab === 'usuarios') && window.ensureProfileModuleV9) await ensureProfileModuleV9();
+        if (tab === 'mas' && window.ensureManagementCenterModuleV9) await ensureManagementCenterModuleV9();
+        if (tab === 'egresos' && window.ensureLegacyFinanceModuleV9) await ensureLegacyFinanceModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'estadisticas') {
+      try {
+        if (window.ensureStatsModuleV9) await ensureStatsModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Estadísticas. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'reglas-comerciales') {
+      try {
+        if (window.ensureCommercialRulesModuleV9) await ensureCommercialRulesModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Reglas comerciales. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'puntos-stock' || tab === 'roles-estructura' || tab === 'centro-comercial') {
+      try {
+        if (tab === 'puntos-stock' && window.ensureLinkedStockModuleV9) await ensureLinkedStockModuleV9();
+        if (tab === 'roles-estructura' && window.ensureRolesModuleV9) await ensureRolesModuleV9();
+        if (tab === 'centro-comercial' && window.ensureCommercialCenterModuleV9) await ensureCommercialCenterModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'rendicion-caja') {
+      try {
+        if (window.ensureSellerSettlementModuleV9) await ensureSellerSettlementModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Rendición de caja. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'por-cobrar' || tab === 'estado-cuenta') {
+      try {
+        if (window.ensureFinancialAccountsModuleV9) await ensureFinancialAccountsModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar Cuentas por cobrar. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'personal' || tab === 'regional') {
+      try {
+        if (tab === 'personal' && window.ensureWorkforceModuleV9) await ensureWorkforceModuleV9();
+        if (tab === 'regional' && window.ensureRegionalModuleV9) await ensureRegionalModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'territorio' || tab === 'distribucion') {
+      try {
+        if (window.ensureLeafletV9) await ensureLeafletV9();
+        if (tab === 'territorio' && window.ensureTerritoryModuleV9) await ensureTerritoryModuleV9();
+        if (tab === 'distribucion' && window.ensureDistributionModuleV9) await ensureDistributionModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo geográfico. Revisa tu conexión.', 'error');
+        return;
+      }
+      // Si el usuario tocó otra pestaña mientras cargaba el mapa, esta
+      // navegación antigua no puede imponerse al terminar la descarga.
+      if (requestId !== navigationRequestV9) return;
+    }
+    if (tab === 'produccion' && window.syncProductionCloudToLocalV740 && navigator.onLine) {
+      // Producción ya no bloquea el login. Se actualiza únicamente cuando el
+      // usuario realmente entra al módulo, conservando primero la copia local.
+      syncProductionCloudToLocalV740()
+        .then(result => {
+          if (result?.ok && AppState.currentTab === 'produccion' && requestId === navigationRequestV9 && window.renderProductionV740) renderProductionV740();
+        })
+        .catch(() => {});
+    }
     if (window.clearMeaningfulDirtyV840) clearMeaningfulDirtyV840('navigation');
     else window.V7_FORM_DIRTY = false;
     AppState.currentTab = tab;
     highlightActiveV7();
     renderV7();
+    // La IA V9 ya no envuelve la navegación global; sólo actualiza su FAB
+    // después de que el shell termina una navegación real.
+    requestAnimationFrame(() => {
+      if (window.refreshAIFabV9) refreshAIFabV9();
+      try { window.dispatchEvent(new CustomEvent('nv:ai-route-changed', { detail: { tab } })); } catch (_) {}
+    });
   }
 
   function renderV7() {
@@ -210,7 +365,7 @@
       case 'reportes-pro': oldRenderReports ? oldRenderReports() : renderInicioV7(); break;
       case 'ajustes': isAdmin() ? renderSettings() : renderProfileV7(); break;
       case 'reglas-comerciales': isAdmin() && window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderProfileV7(); break;
-      case 'asistente-ia': isAdmin() && window.renderAIAssistantV821 ? renderAIAssistantV821() : (window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicioV7()); break;
+      case 'asistente-ia': isAdmin() && window.renderAIAssistantV9 ? renderAIAssistantV9() : renderInicioV7(); break;
       case 'mas': renderMasV7(); break;
       default: renderInicioV7();
     }
@@ -228,6 +383,7 @@
   }
 
   async function getOrdersMemoryV7() {
+    if (Array.isArray(AppState.purchaseOrders)) return AppState.purchaseOrders;
     const rows = await DB.getAll('purchaseOrders').catch(() => []);
     AppState.purchaseOrders = rows;
     return rows;
@@ -294,6 +450,34 @@
     $all('[data-open-inbox]', main).forEach(b => b.addEventListener('click', () => openInboxPanel()));
   }
 
+  function patchInicioMetricsV9() {
+    if (AppState.currentTab !== 'inicio') return false;
+    const grid = document.querySelector('.v802MetricGrid');
+    const strip = document.querySelector('.v802StatusStrip');
+    if (!grid || !strip) return false;
+    const sales = AppState.sales || [];
+    const ownSales = sales.filter(s => window.saleVisibleToCurrentBusinessV801 ? saleVisibleToCurrentBusinessV801(s) : (isAdmin() || s.sellerId === AppState.session.userId));
+    const todayKey = new Date().toDateString();
+    const todaySales = ownSales.filter(s => new Date(s.date).toDateString() === todayKey);
+    const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+    const orders = AppState.purchaseOrders || [];
+    const ownOrders = isAdmin() ? orders : orders.filter(o => o.representativeId === AppState.session.userId);
+    const openOrders = (isAdmin() ? orders : ownOrders).filter(o => !['paid','cancelled','rejected'].includes(o.status)).length;
+    const visibleMessages = (AppState.messages || []).filter(messageVisibleForCurrentUser);
+    const unread = visibleMessages.filter(m => m.status !== 'read').length;
+    const ownStock = (AppState.products || []).reduce((sum, p) => sum + Number(p.stock || 0), 0);
+    const cards = grid.querySelectorAll('.v802KpiCard');
+    if (cards[0]) { cards[0].querySelector('strong').textContent = fmtMoney(todayTotal); cards[0].querySelector('small').textContent = `${todaySales.length} operación(es)`; }
+    if (cards[1]) cards[1].querySelector('strong').textContent = openOrders;
+    if (cards[2]) cards[2].querySelector('strong').textContent = isAdmin() ? AppState.products.length : ownStock;
+    if (cards[3]) cards[3].querySelector('strong').textContent = unread;
+    const spans = strip.querySelectorAll(':scope > span');
+    if (spans[0]) spans[0].querySelector('b').textContent = todaySales.length;
+    if (spans[1]) spans[1].querySelector('b').textContent = openOrders;
+    if (spans[2]) { spans[2].querySelector('b').textContent = unread; spans[2].classList.toggle('attention', unread > 0); }
+    return true;
+  }
+
   function moreItem(id, iconName, title, subtitle = '', badge = '') {
     return `<button class="v7MoreItem" id="${id}"><span class="v7MoreIcon">${v7Icon(iconName)}</span><span><strong>${title}</strong>${subtitle ? `<small>${subtitle}</small>` : ''}</span>${badge ? `<em>${badge}</em>` : ''}<b>›</b></button>`;
   }
@@ -342,7 +526,7 @@
     if ($('#v7MoreDistribution')) $('#v7MoreDistribution').addEventListener('click', () => navigateToV7('distribucion'));
     if ($('#v7MoreProduction')) $('#v7MoreProduction').addEventListener('click', () => navigateToV7('produccion'));
     if ($('#v7MoreFinance')) $('#v7MoreFinance').addEventListener('click', () => navigateToV7('egresos'));
-    $('#v7MoreCatalog').addEventListener('click', () => openCatalogPdfOptions());
+    $('#v7MoreCatalog').addEventListener('click', async () => { try { if (window.ensureCatalogPdfModuleV9) await ensureCatalogPdfModuleV9(); openCatalogPdfOptions(); } catch (_) { showToast('No se pudo cargar el catálogo PDF.', 'error'); } });
     $('#v7MoreProfile').addEventListener('click', () => navigateToV7('perfil'));
     if ($('#v7MoreUsers')) $('#v7MoreUsers').addEventListener('click', () => navigateToV7('usuarios'));
     if ($('#v7MoreGroups')) $('#v7MoreGroups').addEventListener('click', () => navigateToV7('grupos'));
@@ -361,7 +545,13 @@
       </section>`;
     $all('[data-sale-id]').forEach(btn => btn.addEventListener('click', () => {
       const sale = sales.find(s => s.id === btn.dataset.saleId);
-      if (sale) openV7ReceiptPreview(sale, 'sale');
+      if (sale) {
+        (async () => {
+          try { if (!window.openV7ReceiptPreview && window.ensureDocumentsV7ModuleV9) await ensureDocumentsV7ModuleV9(); }
+          catch (_) { return showToast('No se pudo cargar el recibo.', 'error'); }
+          if (window.openV7ReceiptPreview) openV7ReceiptPreview(sale, 'sale');
+        })();
+      }
     }));
   }
 
@@ -375,6 +565,7 @@
     navigateTo: navigateToV7,
     render: renderV7,
     renderInicio: renderInicioV7,
+    patchInicioMetricsV9,
     renderMas: renderMasV7,
     renderHistoryV7,
     canAccessTab: canAccessV7

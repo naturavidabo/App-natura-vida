@@ -3,20 +3,21 @@ from pathlib import Path
 import json, sys
 ROOT=Path(__file__).resolve().parents[1]
 read=lambda p:(ROOT/p).read_text(encoding='utf-8')
-index=read('index.html'); state=read('js/state.js'); rules=read('js/v8-commercial-rules.js')
+index=read('index.html'); state=read('js/state.js'); core=read('js/v8-commercial-rules-core.js'); rules=read('js/v8-commercial-rules.js'); lazy=read('js/lazy-assets.js')
 products=read('js/products.js'); prices=read('js/pricegroups.js'); sales=read('js/sales.js')
 rep=read('js/v7-inventory-sales.js'); settings=read('js/settings.js'); app=read('js/app.js')
 shell=read('js/v7-shell.js'); center=read('js/v7-management-center.js'); sw=read('service-worker.js'); css=read('css/v8.css')
 version=json.loads(read('app-version.json'))
 checks={
  'versión 8.2.0':version.get('version')=='8.4.0',
- 'módulo cargado':'js/v8-commercial-rules.js?v=8.4.0' in index,
- 'orden de carga':index.index('v8-commercial-rules.js') < index.index('products.js') < index.index('sales.js'),
+ 'núcleo cargado':'js/v8-commercial-rules-core.js?v=8.4.0' in index and 'js/v8-commercial-rules.js?v=8.4.0' not in index,
+ 'orden de carga':index.index('v8-commercial-rules-core.js') < index.index('products.js') < index.index('sales.js'),
+ 'interfaz diferida':'ensureCommercialRulesModuleV9' in lazy and 'ensureCommercialRulesModuleV9' in shell,
  'módulo en caché':"'./js/v8-commercial-rules.js'" in sw,
  'configuración persistente':'commercialRules' in state and 'commercialPromotions' in state,
- 'costo y margen':'realCostForProductV807' in rules and 'minimumPriceForProductV807' in rules and 'marginPercentV807' in rules,
- 'descuento por rol':'roleDiscountLimits' in rules and 'roleDiscountLimitV807' in rules,
- 'promociones':'openPromotionFormV807' in rules and 'activePromotionsForProductV807' in rules,
+ 'costo y margen':'realCostForProductV807' in core and 'minimumPriceForProductV807' in core and 'marginPercentV807' in core,
+ 'descuento por rol':'roleDiscountLimits' in core and 'roleDiscountLimitV807' in core,
+ 'promociones':'openPromotionFormV807' in rules and 'activePromotionsForProductV807' in core,
  'simulador':'openUtilitySimulatorV807' in rules and 'Utilidad total' in rules,
  'precio mínimo por producto':'minimumAuthorizedPrice' in products and 'nv807MinimumField' in products,
  'grupos limitados por rol':'roleDiscountLimitV807' in prices,

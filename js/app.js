@@ -239,7 +239,8 @@ function renderPasswordResetScreen() {
 }
 
 async function afterLoginSuccess(result) {
-  await loadAllState();
+  // V9: conserva el estado ya cargado por auth/sync; evita una lectura completa
+  // antes de iniciar la sincronización oficial de Supabase.
   renderTopHeader();
   if (AppState.session && AppState.session.pendingApproval) {
     $('#mainArea').innerHTML = `
@@ -258,16 +259,20 @@ async function afterLoginSuccess(result) {
     $('#pendingLogout').addEventListener('click', () => logoutSession());
     return;
   }
-  showToast('Sesión iniciada. Cargando datos oficiales de Supabase…');
   renderBottomNav();
   AppState.currentTab = 'inicio';
+  // Si existe estado local válido, mostramos la aplicación inmediatamente y
+  // dejamos que Supabase la refresque detrás; evita una pantalla "vacía" al reabrir.
+  if ((AppState.products?.length || AppState.sales?.length || AppState.clients?.length) && window.render) render();
   if (window.syncAfterLogin) {
     const syncResult = await syncAfterLogin().catch(err => ({ ok: false, message: err.message }));
     if (syncResult && syncResult.ok === false) {
       showToast(syncResult.message || 'No se pudieron cargar los datos oficiales de Supabase.', 'error');
     }
   }
-  await loadAllState();
+  // runBackgroundSyncOnce ya consolida el estado local antes de devolver.
+  // Sólo usamos loadAllState como respaldo si el sincronizador no estuvo disponible.
+  if (!window.syncAfterLogin) await loadAllState();
   render();
 }
 
@@ -347,7 +352,7 @@ function render() {
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
     case 'reglas-comerciales': window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderSettings(); break;
-    case 'asistente-ia': window.renderAIAssistantV821 ? renderAIAssistantV821() : (window.renderAIAssistantV812 ? renderAIAssistantV812() : renderInicio()); break;
+    case 'asistente-ia': if (window.renderAIAssistantV9) renderAIAssistantV9(); else { renderInicio(); window.ensureAIAssistantModuleV9?.().then(()=>{ if(AppState.currentTab==='asistente-ia') renderAIAssistantV9?.(); }).catch(()=>showToast('No se pudo cargar el Asistente IA.','error')); } break;
     case 'estado-cuenta': window.renderClientAccountV820 ? renderClientAccountV820() : renderClients(); break;
     case 'usuarios': renderUsersFoundation(); break;
     case 'reportes-pro': renderReportsFoundation(); break;
@@ -503,7 +508,7 @@ function renderMas() {
   $('#moreClients').addEventListener('click', () => navigateTo('clientes'));
   $('#moreGroups').addEventListener('click', () => navigateTo('grupos'));
   $('#moreCommercialRulesV807')?.addEventListener('click', () => navigateTo('reglas-comerciales'));
-  $('#moreCatalogPdf').addEventListener('click', () => openCatalogPdfOptions());
+  $('#moreCatalogPdf').addEventListener('click', async () => { try { if (window.ensureCatalogPdfModuleV9) await ensureCatalogPdfModuleV9(); openCatalogPdfOptions(); } catch (_) { showToast('No se pudo cargar el catálogo PDF.', 'error'); } });
   const moreOrder = $('#moreOrder');
   if (moreOrder) moreOrder.addEventListener('click', () => navigateTo('pedido'));
   $('#moreUsers').addEventListener('click', () => navigateTo('usuarios'));
@@ -590,9 +595,15 @@ function renderResumen() {
 
   main.innerHTML = html;
   $all('.saletoggle button').forEach(b => b.addEventListener('click', () => { _histFilterType = b.dataset.f; renderResumen(); }));
-  $all('.histitem-clickable').forEach(el => el.addEventListener('click', () => {
+  $all('.histitem-clickable').forEach(el => el.addEventListener('click', async () => {
     const sale = AppState.sales.find(s => s.id === el.dataset.saleid);
-    if (sale) openReceiptPreview(sale);
+    if (!sale) return;
+    if (window.openSaleReceiptSafeV829) {
+      const result = await openSaleReceiptSafeV829(sale);
+      if (!result?.ok) showToast(result?.message || 'No se pudo abrir el recibo.', 'error');
+      return;
+    }
+    showToast('El módulo de recibos no está disponible.', 'error');
   }));
 }
 
@@ -705,7 +716,7 @@ async function initApp() {
     } else {
       renderBottomNav();
       if (window.syncAfterLogin && navigator.onLine) await syncAfterLogin().catch(() => {});
-      await loadAllState();
+      else if (!window.syncAfterLogin) await loadAllState();
       if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
       render();
       if (restored.status === 'recovering') setCloudConnectionState('connecting', 'Sesión conservada · perfil en reconexión');

@@ -360,6 +360,45 @@ function renderClients() {
   $all('.benefitClientBtnV725').forEach(b => b.addEventListener('click', () => openClientBenefitV725(b.dataset.id)));
 }
 
+function patchClientsRealtimeV9(context = {}) {
+  if (AppState.currentTab !== 'clientes') return false;
+  const list = document.querySelector('#mainArea .clientListV723');
+  if (!list || !context?.payload) return false;
+  const eventType = String(context.payload.eventType || context.payload.event || '').toUpperCase();
+  const row = context.payload.new && Object.keys(context.payload.new).length ? context.payload.new : context.payload.old;
+  const id = String(row?.id || '');
+  if (!id) return false;
+  const existing = list.querySelector(`.clientCardV723[data-id="${CSS.escape(id)}"]`);
+  if (eventType === 'DELETE') {
+    existing?.remove();
+    return true;
+  }
+  const client = (AppState.clients || []).find(item => String(item.id) === id);
+  if (!client) return false;
+  const holder = document.createElement('div');
+  holder.innerHTML = clientCardHtmlV723(client);
+  const card = holder.firstElementChild;
+  if (!card) return false;
+  if (existing) existing.replaceWith(card);
+  else list.appendChild(card);
+  if (_clientSearch) {
+    const needle = normalizeSearch(_clientSearch);
+    card.style.display = normalizeSearch(card.dataset.search || '').includes(needle) ? '' : 'none';
+  }
+  // Conecta sólo los botones de la tarjeta nueva,
+  // sin reconstruir el listado ni perder scroll/búsqueda.
+  card.querySelector('.editClientBtn')?.addEventListener('click', () => openClientForm(id));
+  card.querySelector('.delClientBtn')?.addEventListener('click', () => confirmDeleteClient(id));
+  card.querySelector('.histClientBtn')?.addEventListener('click', () => openClientHistory(id));
+  card.querySelector('.accountClientBtnV820')?.addEventListener('click', () => window.openClientAccountV820 ? openClientAccountV820(id) : openClientHistory(id));
+  card.querySelector('.waMiniV723')?.addEventListener('click', e => { e.stopPropagation(); const item=AppState.clients.find(x=>String(x.id)===id); if(item) openWhatsAppV723(item.phone,item.name); });
+  card.querySelector('.quoteClientBtnV725')?.addEventListener('click', () => { const item=AppState.clients.find(x=>String(x.id)===id); if(item && window.openQuoteForm) openQuoteForm({client:item,priceGroupId:item.priceGroupId||''}); });
+  card.querySelector('.benefitClientBtnV725')?.addEventListener('click', () => openClientBenefitV725(id));
+  return true;
+}
+
+window.patchClientsRealtimeV9 = patchClientsRealtimeV9;
+
 function clientEditDistanceV802(a, b) {
   a = String(a || ''); b = String(b || '');
   if (!a.length) return b.length; if (!b.length) return a.length;

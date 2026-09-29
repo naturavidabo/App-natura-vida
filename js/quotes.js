@@ -172,23 +172,22 @@ function openQuoteForm(prefill = {}) {
       if (!expiryDate) { showToast('⚠️ Selecciona una fecha de vigencia', 'error'); return; }
       if (cleanItems.length === 0) { showToast('⚠️ Agrega al menos un producto', 'error'); return; }
 
-      await findOrCreateClientQuick(clientName, clientPhone);
-
-      const data = {
-        id: uid('quo'),
-        clientId: prefClient ? prefClient.id : '',
-        clientName, clientPhone, expiryDate,
-        priceGroupId: $('#q_group', overlay) ? $('#q_group', overlay).value : '',
-        title: 'Precios / oferta Natura Vida',
-        items: cleanItems,
-        createdAt: Date.now()
-      };
       const saveBtn = $('#saveForm', overlay);
       saveBtn.disabled = true;
       saveBtn.textContent = 'Guardando en Supabase…';
       try {
+        const resolvedClient = prefClient || await findOrCreateClientQuick(clientName, clientPhone);
+        const data = {
+          id: uid('quo'),
+          clientId: resolvedClient ? resolvedClient.id : '',
+          clientName, clientPhone, expiryDate,
+          priceGroupId: $('#q_group', overlay) ? $('#q_group', overlay).value : '',
+          title: 'Precios / oferta Natura Vida',
+          items: cleanItems,
+          createdAt: Date.now()
+        };
         await DB.put('quotes', data);
-        AppState.quotes.push(data);
+        if (!AppState.quotes.some(q => String(q.id) === String(data.id))) AppState.quotes.push(data);
         close();
         renderQuotes();
         showToast('Precios / oferta creada en Supabase');

@@ -1,0 +1,58 @@
+name: Calidad V9
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: calidad-v9-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-and-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verificar entorno V9
+        run: |
+          test "$(cat .node-version)" = "24"
+          test -f .nojekyll
+
+      - name: Validar sintaxis JavaScript
+        run: |
+          find js -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          find tests -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Auditoría estática V9
+        run: python tests/audit_site_v803.py
+
+      - name: Regresión JavaScript
+        run: |
+          node tests/test_client_autocomplete_v803.js
+          node tests/test_commercial_rules_v807.js
+          node tests/test_quality_core_v806.js
+          node tests/test_financial_accounts_v820.js
+          node tests/test_ai_persistence_v811.js
+          node tests/test_release_v840.js
+
+      - name: Regresión Python
+        run: |
+          python tests/test_governance_v804.py
+          python tests/test_offline_continuity_v805.py
+          python tests/test_quality_assurance_v806.py
+          python tests/test_commercial_integration_v807.py
+          python tests/test_connection_capsule_v807.py
+          python tests/test_territory_registration_v803.py
+          python tests/test_financial_ui_v820.py
+          python tests/test_ai_assistant_v810.py
+          python tests/test_ai_assistant_v811.py
+          python tests/test_ai_analytics_v812.py

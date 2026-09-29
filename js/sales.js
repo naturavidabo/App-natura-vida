@@ -55,8 +55,10 @@ async function verifyCloudSaleV829(saleId) {
 
 async function openSaleReceiptSafeV829(sale) {
   try {
+    if (!window.openV7ReceiptPreview && window.ensureDocumentsV7ModuleV9) {
+      await ensureDocumentsV7ModuleV9();
+    }
     if (window.openV7ReceiptPreview) { openV7ReceiptPreview(sale, 'sale'); return {ok:true}; }
-    if (window.openReceiptPreview) { openReceiptPreview(sale); return {ok:true}; }
     throw new Error('El módulo visual del recibo no está disponible.');
   } catch (error) {
     console.error('NV_RECEIPT_PREVIEW_ERROR', error);
@@ -873,7 +875,12 @@ function openCheckoutSheet() {
           }
         }
         operation.stage = 'refresh';
-        await Promise.all([syncCloudProductsToLocal().catch(() => null), window.syncCloudSalesToLocal ? syncCloudSalesToLocal().catch(() => null) : Promise.resolve()]);
+        await Promise.all([
+          ...rawItems.map(item => window.syncCloudProductByIdV9 ? syncCloudProductByIdV9(item.product.id).catch(() => null) : Promise.resolve(null)),
+          window.syncCloudSaleByIdV9 ? syncCloudSaleByIdV9(operation.sale.id).catch(() => null) : Promise.resolve(null)
+        ]);
+        if (!window.syncCloudProductByIdV9) await syncCloudProductsToLocal().catch(() => null);
+        if (!window.syncCloudSaleByIdV9 && window.syncCloudSalesToLocal) await syncCloudSalesToLocal().catch(() => null);
         if (!AppState.sales.some(x => x.id === operation.sale.id)) AppState.sales.push(operation.sale);
         await writeAudit('sale:create', 'sales', operation.sale.id, null, operation.sale).catch(() => {});
         let deliveryWarning = '';
@@ -940,6 +947,8 @@ function prepareSaleDraftV827(options = {}) {
 
 Object.assign(window, {
   renderVender,
+  renderCatalogGrid,
+  renderCartBar,
   startSaleWithProduct,
   prepareSaleDraftV827,
   applyPercentGroupV7: applyPercentGroup,

@@ -286,6 +286,10 @@ function openCatalogResultSheet(blob, filename, productsCount) {
 }
 
 async function generateCatalogPdf(options = {}) {
+  if (window.ensureJsPdfV9) {
+    try { await ensureJsPdfV9(); }
+    catch (_) { /* el control existente mostrará el error de librería */ }
+  }
   const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
   if (!jsPDFCtor) {
     showToast('No se pudo cargar el generador PDF. Revisa conexión o librería jsPDF.', 'error');

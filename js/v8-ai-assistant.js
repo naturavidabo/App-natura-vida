@@ -13,8 +13,6 @@
   const ENGINE_TIMEOUT_MS=16000;
   const REQUEST_WATCHDOG_MS=22000;
   const ENGINE_HEALTH_TTL=5*60*1000;
-  let oldNavigate=null;
-  let oldRender=null;
   let lastNonAiTab='inicio';
   let assistantContext={tab:'inicio',label:'Negocio general'};
   let pendingQuestion='';
@@ -112,7 +110,17 @@
     const s=window.AppState||{};
     return {sales:s.sales||[],historicalReceivables:s.historicalReceivables||[],clients:s.clients||[],products:s.products||[],expenses:s.expenses||[],payments:s.receivablePayments||[],settings:s.settings||{},productionOrders:s.productionOrders||[],productionBatches:s.productionBatches||[],rawMaterials:s.rawMaterials||[]};
   }
+  // V9: memoria efímera de cálculo. Vive sólo durante una consulta/render de IA;
+  // nunca sustituye AppState ni persiste datos, sólo evita recorrer los mismos
+  // arreglos varias veces para la misma respuesta.
+  let aiCalcMemoV9=new Map();
+  function resetAiCalcMemoV9(){aiCalcMemoV9=new Map();}
+  function memoAiCalcV9(key,compute){
+    if(aiCalcMemoV9.has(key))return aiCalcMemoV9.get(key);
+    const value=compute();aiCalcMemoV9.set(key,value);return value;
+  }
   function salesStats(periodDays=30){
+    return memoAiCalcV9(`sales:${periodDays}`,()=>{
     const {sales,products}=dataset();
     const now=Date.now();
     const from=now-periodDays*86400000;
@@ -135,8 +143,10 @@
       });
     });
     return {rows,revenue,cost,profit:revenue-cost,margin:revenue?((revenue-cost)/revenue*100):0,units,byProduct:[...byProduct.values()].sort((a,b)=>(b.revenue-b.cost)-(a.revenue-a.cost))};
+    });
   }
   function clientStats(){
+    return memoAiCalcV9('clients',()=>{
     const {clients,sales}=dataset();
     const cutoff=Date.now()-30*86400000;
     const inactive=clients.filter(c=>{
@@ -146,13 +156,16 @@
     });
     const incomplete=clients.filter(c=>!String(c.phone||c.whatsapp||'').trim() || !String(c.name||c.businessName||'').trim());
     return {inactive,incomplete,total:clients.length};
+    });
   }
   function stockStats(){
+    return memoAiCalcV9('stock',()=>{
     const {products}=dataset();
     const threshold=Number(dataset().settings.lowStockThreshold||5);
     const critical=products.filter(p=>Number(p.stock||0)<=threshold);
     const negative=products.filter(p=>Number(p.stock||0)<0);
     return {critical,negative,total:products.length};
+    });
   }
   function normalizedName(v){ return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
   function clientDisplayName(c){ return c?clampText(c?.name||c?.businessName||c?.contactName||'Cliente',100):''; }
@@ -288,6 +301,7 @@
   function dateMs(v){ const n=Number(new Date(v||0)); return Number.isFinite(n)?n:0; }
   function daysSince(v){ const n=dateMs(v); return n?Math.max(0,Math.floor((Date.now()-n)/86400000)):9999; }
   function receivableStats(){
+    return memoAiCalcV9('receivables',()=>{
     const {sales,historicalReceivables,payments}=dataset();
     const operations=[...(sales||[]),...(historicalReceivables||[])];
     const open=[];
@@ -298,6 +312,7 @@
       if(balance>.009) open.push({...x,paid,balance,historical:!!(x.historicalActive||x.sourceSystem==='Mi Negocio')});
     });
     return {open,total:open.reduce((a,x)=>a+x.balance,0),overdue:open.filter(x=>dateMs(x.dueDate||x.originalDate||x.date)<Date.now()),historical:open.filter(x=>x.historical)};
+    });
   }
   function productPriceV827(product){
     if(!product)return 0;
@@ -399,10 +414,21 @@
   function readControlTasksV832(){
     try{const rows=JSON.parse(localStorage.getItem(controlTasksKeyV832())||'[]');return (Array.isArray(rows)?rows:[]).filter(Boolean).slice(-200);}catch(_){return[];}
   }
-  function setControlSyncStateV834(patch={}){
-    controlSyncStateV834={...controlSyncStateV834,...patch};
+  let controlSyncVisualTimerV9=null;
+  function paintControlSyncStateV9(){
     document.querySelectorAll('[data-control-sync-v834]').forEach(el=>{el.textContent=controlSyncStateV834.status==='online'?'Sincronizado':controlSyncStateV834.status==='syncing'?'Sincronizando…':controlSyncStateV834.status==='setup'?'Falta activar nube':'Modo local';el.dataset.state=controlSyncStateV834.status;});
     try{window.dispatchEvent(new CustomEvent('nv:ai-control-sync',{detail:{...controlSyncStateV834}}));}catch(_){}
+  }
+  function setControlSyncStateV834(patch={}){
+    controlSyncStateV834={...controlSyncStateV834,...patch};
+    clearTimeout(controlSyncVisualTimerV9);
+    controlSyncVisualTimerV9=null;
+    if(controlSyncStateV834.status==='syncing'){
+      // Una sincronización breve no necesita hacerse visible: evita "Sincronizando/Sincronizado".
+      controlSyncVisualTimerV9=setTimeout(()=>{controlSyncVisualTimerV9=null;if(controlSyncStateV834.status==='syncing')paintControlSyncStateV9();},700);
+      return;
+    }
+    paintControlSyncStateV9();
   }
   function currentControlUserIdV834(){return String(window.AppState?.session?.onlineUserId||window.AppState?.session?.userId||'');}
   function controlCloudAvailableV834(){return !!(navigator.onLine&&currentControlUserIdV834()&&getSupabaseForAI());}
@@ -459,11 +485,15 @@
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncControlCenterV834({silent:true}).then(()=>showControlReminderV834()).catch(()=>{});});
   }
   function productCommercialHealthV832(){
+    return memoAiCalcV9('product-health',()=>{
     const {products,sales,productionOrders}=dataset();const since=Date.now()-30*86400000;const sold=new Map();
     (sales||[]).filter(row=>dateMs(row.date||row.createdAt)>=since).forEach(row=>(row.items||[]).forEach(item=>{const key=String(item.productId||normalizedName(item.name));sold.set(key,(sold.get(key)||0)+Number(item.qty||item.quantity||0));}));
     const threshold=Number(dataset().settings.lowStockThreshold||5);return (products||[]).filter(p=>p.status!=='archived').map(product=>{const key=String(product.id||normalizedName(product.name));const units30=Number(sold.get(key)||sold.get(normalizedName(product.name))||0);const daily=units30/30;const stock=Number(product.stock||0);const coverage=daily>0?stock/daily:(stock>threshold?999:0);const openPlanned=(productionOrders||[]).filter(o=>String(o.productId)===String(product.id)&&['planned','in_progress'].includes(o.status)).reduce((sum,o)=>sum+Number(o.plannedOutput||0),0);const target=Math.max(threshold*3,Math.ceil(daily*30*1.15));const suggested=Math.max(0,Math.ceil(target-stock-openPlanned));const price=productPriceV827(product),cost=productCostV827(product),margin=price?((price-cost)/price*100):0;return {product,units30,daily,stock,coverage,openPlanned,suggested,price,cost,margin};}).sort((a,b)=>a.coverage-b.coverage||b.suggested-a.suggested);
+    });
   }
   function controlAlertsV832(includeSnoozed=false){
+    const memoKey=includeSnoozed?'alerts:all':'alerts:active';
+    return memoAiCalcV9(memoKey,()=>{
     const rows=[];const rs=receivableStats(),cs=clientStats(),st=salesStats(30),health=productCommercialHealthV832(),state=readAlertStateV832(),now=Date.now();
     health.filter(x=>x.stock<0).forEach(x=>rows.push({id:`stock-negative:${x.product.id}`,priority:'urgent',area:'inventario',title:`Stock negativo: ${x.product.name}`,detail:`Existencia registrada ${x.stock}. Requiere saneamiento antes de vender o producir.`,question:`Analiza el stock de ${x.product.name}`,actionTab:'inventario'}));
     health.filter(x=>x.stock>=0&&x.coverage<=7&&x.suggested>0).slice(0,8).forEach(x=>rows.push({id:`production:${x.product.id}`,priority:x.coverage<=3?'urgent':'high',area:'production',title:`Producir ${x.product.name}`,detail:`Cobertura estimada ${x.coverage===999?'sin consumo':x.coverage.toFixed(1)+' días'}; sugerencia ${x.suggested} unidad(es), descontando órdenes abiertas.`,question:`Prepara una orden de producción de ${x.suggested} unidades de ${x.product.name}`,actionTab:'produccion',productId:x.product.id,suggestedQuantity:x.suggested}));
@@ -472,6 +502,7 @@
     if(st.margin>0&&st.margin<25)rows.push({id:'low-margin',priority:'high',area:'sales',title:'Margen comercial bajo',detail:`Margen estimado de 30 días: ${st.margin.toFixed(1)}%. Revisa descuentos y costos.`,question:'Evalúa el margen y los descuentos',actionTab:'reglas-comerciales'});
     const oldOrders=(dataset().productionOrders||[]).filter(o=>['planned','in_progress'].includes(o.status)&&daysSince(o.createdAt||o.updatedAt)>7);if(oldOrders.length)rows.push({id:'old-production-orders',priority:'normal',area:'production',title:'Órdenes de producción demoradas',detail:`${oldOrders.length} orden(es) abiertas por más de siete días.`,question:'Evalúa las órdenes de producción pendientes',actionTab:'produccion'});
     return rows.filter(row=>{const st=state[row.id];return includeSnoozed||!st?.snoozeUntil||Number(st.snoozeUntil)<=now;}).sort((a,b)=>({urgent:0,high:1,normal:2,low:3}[a.priority]-({urgent:0,high:1,normal:2,low:3}[b.priority])));
+    });
   }
   function personnelScoreV835(){
     const tasks=readControlTasksV832(),completed=tasks.filter(x=>x.status==='completed').length,open=tasks.filter(x=>['pending','in_progress'].includes(x.status)).length;
@@ -482,8 +513,10 @@
     return Math.max(0,Math.min(100,Math.round(completion*.55+assignment*.25+Math.max(0,100-overdue*12)*.20)));
   }
   function businessEvaluationV832(){
+    return memoAiCalcV9('business-evaluation',()=>{
     const st=salesStats(30),ss=stockStats(),rs=receivableStats(),cs=clientStats(),health=productCommercialHealthV832();
     const marginScore=Math.max(0,Math.min(100,st.margin?st.margin/30*100:50));const inventoryScore=Math.max(0,100-ss.critical.length*12-ss.negative.length*30);const collectionBase=rs.total>0?Math.max(0,100-(rs.overdue.reduce((a,x)=>a+Number(x.balance||0),0)/Math.max(rs.total,1))*100):100;const customerScore=Math.max(0,100-(cs.total?cs.inactive.length/cs.total*100:0));const productionRisk=health.filter(x=>x.coverage<=7&&x.suggested>0).length;const productionScore=Math.max(0,100-productionRisk*12);const salesScore=st.rows.length?Math.min(100,55+Math.log10(st.rows.length+1)*25):35;const personnelScore=personnelScoreV835();const dimensions=[['Ventas',salesScore],['Margen',marginScore],['Inventario',inventoryScore],['Cobranzas',collectionBase],['Clientes',customerScore],['Producción',productionScore],['Personal',personnelScore]].map(([name,value])=>({name,score:Math.round(Number(value))}));const score=Math.round(dimensions.reduce((sum,x)=>sum+x.score,0)/dimensions.length);return {score,label:score>=85?'Sólido':score>=70?'Estable':score>=55?'En observación':'Prioridad alta',dimensions,note:'Indicador operativo interno; no sustituye una auditoría financiera.'};
+    });
   }
   function taskOverviewV834(){
     const today=new Date().toISOString().slice(0,10),open=readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)),overdue=open.filter(x=>x.dueDate&&x.dueDate<today),dueToday=open.filter(x=>x.dueDate===today),urgent=open.filter(x=>x.priority==='urgent'||x.priority==='high');
@@ -603,7 +636,9 @@
     document.getElementById('nvAiActionClose').onclick=closeActionSheet;document.getElementById('nvAiActionOverlay').onclick=e=>{if(e.target.id==='nvAiActionOverlay')closeActionSheet();};document.querySelectorAll('[data-control-tab-v832]').forEach(b=>b.onclick=()=>{tab=b.dataset.controlTabV832;render();});render();syncControlCenterV834({silent:true}).then(render).catch(()=>{});
   }
   function waitForV832(test,callback,attempt=0){if(test())return callback();if(attempt>=12)return callback(new Error('La ventana tardó demasiado en abrir.'));setTimeout(()=>waitForV832(test,callback,attempt+1),80);}
-  function openPromotionDraftV832(action){
+  async function openPromotionDraftV832(action){
+    try { if (window.ensureCommercialRulesModuleV9) await ensureCommercialRulesModuleV9(); }
+    catch (_) { return window.showToast?.('El módulo de promociones no está disponible.','error'); }
     window.navigateTo?.('reglas-comerciales');
     waitForV832(()=>typeof window.openPromotionFormV807==='function',(loadError)=>{if(loadError)return window.showToast?.('El módulo de promociones no está disponible.','error');window.openPromotionFormV807();waitForV832(()=>!!document.getElementById('nv807PromoName'),(formError)=>{if(formError)return window.showToast?.('No se pudo preparar la promoción.','error');const product=(dataset().products||[]).find(p=>String(p.id)===String(action.productId||action.items?.[0]?.productId));const set=(id,value)=>{const el=document.getElementById(id);if(el){el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));}};set('nv807PromoName',action.promotionName||`Promoción ${product?.name||'Natura Vida'}`);set('nv807PromoPercent',Number(action.promotionPercent||5));set('nv807PromoActive','0');set('nv807PromoScope','product');set('nv807PromoProduct',product?.id||'');set('nv807PromoStart',action.startsAt||new Date().toISOString().slice(0,10));const end=new Date();end.setDate(end.getDate()+Math.max(1,Number(action.durationDays||7)));set('nv807PromoEnd',action.endsAt||end.toISOString().slice(0,10));set('nv807PromoNote',action.note||'Promoción preparada por el Director Comercial IA. Está pausada para revisar margen y activarla manualmente.');window.showToast?.('Promoción preparada en estado pausado. Revisa y guarda.');});});
   }
@@ -613,6 +648,7 @@
   }
 
   function clientCommercialRows(){
+    return memoAiCalcV9('client-commercial',()=>{
     const {clients,sales}=dataset();
     const rs=receivableStats();
     const balanceByClient=new Map();
@@ -631,10 +667,37 @@
       const balance=Math.max(balanceByClient.get(idKey)||0,balanceByClient.get(nameKey)||0);
       return {name:clampText(c.name||c.businessName||'Cliente',90),sales:own.length,revenue:Number(revenue.toFixed(2)),daysSinceLast:last?daysSince(last):null,balance:Number(balance.toFixed(2)),region:clampText(c.regionName||c.region||c.city||'',50)};
     });
+    });
   }
+  function aiContextScopeV9(question=''){
+    const q=normalizedName(question);
+    const scope=new Set();
+    const add=(...items)=>items.forEach(x=>scope.add(x));
+    if(/venta|vendid|utilidad|ganancia|margen|ingreso|factur|producto.*vend|recibo|cotiz/.test(q)) add('sales','inventory','customers');
+    if(/stock|inventar|producto|precio|costo|mayorista|represent/.test(q)) add('inventory');
+    if(/cliente|seguimiento|inactiv|comprador/.test(q)) add('customers','sales');
+    if(/cobran|deuda|debe|saldo|pago|moros|cuenta/.test(q)) add('receivables','customers');
+    if(/finanz|egreso|gasto|caja|rentab/.test(q)) add('finance','sales');
+    if(/produccion|producir|insumo|materia prima|lote/.test(q)) add('production','inventory','sales');
+    if(/regla|descuento|promocion|promoción|margen minimo|margen mínimo/.test(q)) add('rules','inventory');
+    if(/tarea|prioridad|alerta|resumen|negocio|empresa|como va|cómo va|situacion|situación|general/.test(q)) add('overview');
+    if(!scope.size) add('overview');
+    if(scope.has('overview')) add('sales','inventory','customers','receivables');
+    return scope;
+  }
+
   function businessSnapshot(question=''){
-    const today=salesStats(1), week=salesStats(7), month=salesStats(30), ss=stockStats(), rs=receivableStats();
-    const clients=clientCommercialRows();
+    const scope=aiContextScopeV9(question);
+    const needSales=scope.has('sales')||scope.has('overview')||scope.has('production');
+    const needInventory=scope.has('inventory')||scope.has('overview')||scope.has('production');
+    const needCustomers=scope.has('customers')||scope.has('overview');
+    const needReceivables=scope.has('receivables')||scope.has('overview');
+    const today=needSales?salesStats(1):{rows:[],revenue:0,cost:0,profit:0,margin:0,units:0,byProduct:[]};
+    const week=needSales?salesStats(7):{rows:[],revenue:0,cost:0,profit:0,margin:0,units:0,byProduct:[]};
+    const month=needSales?salesStats(30):{rows:[],revenue:0,cost:0,profit:0,margin:0,units:0,byProduct:[]};
+    const ss=needInventory?stockStats():{critical:[],negative:[],total:0};
+    const rs=needReceivables?receivableStats():{open:[],total:0,overdue:[],historical:[]};
+    const clients=needCustomers?clientCommercialRows():[];
     const productRows=month.byProduct.slice(0,12).map(x=>({name:clampText(x.name,90),units:Number(x.qty||0),revenue:Number(x.revenue.toFixed(2)),profit:Number((x.revenue-x.cost).toFixed(2)),margin:Number((x.revenue?((x.revenue-x.cost)/x.revenue*100):0).toFixed(1))}));
     const productMap=new Map((dataset().products||[]).map(p=>[normalizedName(p.name),p]));
     productRows.forEach(x=>{ const p=productMap.get(normalizedName(x.name))||{}; x.stock=Number(p.stock||0); x.price=productPriceV827(p); x.cost=productCostV827(p); });
@@ -643,7 +706,7 @@
     const settings=dataset().settings||{};
     return {
       generatedAt:new Date().toISOString(),
-      context:{tab:assistantContext.tab,label:assistantContext.label,questionTopic:clampText(question,140)},
+      context:{tab:assistantContext.tab,label:assistantContext.label,questionTopic:clampText(question,140),scope:[...scope]},
       privacy:{phonesExcluded:true,addressesExcluded:true,emailsExcluded:true,rawReceiptsExcluded:true},
       metrics:{
         today:{operations:today.rows.length,revenue:Number(today.revenue.toFixed(2)),profit:Number(today.profit.toFixed(2)),margin:Number(today.margin.toFixed(1))},
@@ -651,17 +714,17 @@
         thirtyDays:{operations:month.rows.length,revenue:Number(month.revenue.toFixed(2)),profit:Number(month.profit.toFixed(2)),margin:Number(month.margin.toFixed(1)),units:month.units},
         receivables:{operations:rs.open.length,total:Number(rs.total.toFixed(2)),overdue:rs.overdue.length,historical:rs.historical.length},
         inventory:{products:ss.total,critical:ss.critical.length,negative:ss.negative.length},
-        customers:{total:(dataset().clients||[]).length,inactive30Days:clientStats().inactive.length,incomplete:clientStats().incomplete.length}
+        customers:needCustomers?{total:(dataset().clients||[]).length,inactive30Days:clientStats().inactive.length,incomplete:clientStats().incomplete.length}:{total:0,inactive30Days:0,incomplete:0}
       },
-      commercialRules:{minimumMargin:Number(settings.minMargin??settings.minimumMargin??25)||25,maximumDiscount:Number(settings.maxDiscount??settings.maximumDiscount??10)||10,currency:'BOB'},
+      commercialRules:(scope.has('rules')||scope.has('overview'))?{minimumMargin:Number(settings.minMargin??settings.minimumMargin??25)||25,maximumDiscount:Number(settings.maxDiscount??settings.maximumDiscount??10)||10,currency:'BOB'}:null,
       topProducts:productRows,
-      catalogProducts:(dataset().products||[]).filter(p=>p.status!=='archived').slice(0,40).map(p=>({name:clampText(p.name||'Producto',100),presentation:clampText(p.presentation||p.packageType||'',50),stock:Number(p.stock||0),price:productPriceV827(p),cost:productCostV827(p)})),
+      catalogProducts:needInventory?(dataset().products||[]).filter(p=>p.status!=='archived').slice(0,40).map(p=>({name:clampText(p.name||'Producto',100),presentation:clampText(p.presentation||p.packageType||'',50),stock:Number(p.stock||0),price:productPriceV827(p),cost:productCostV827(p)})):[],
       criticalStock:ss.critical.slice(0,12).map(p=>({name:clampText(p.name||'Producto',90),stock:Number(p.stock||0),price:productPriceV827(p),cost:productCostV827(p)})),
       customersForFollowUp:topClients,
       topReceivables:receivables,
       focusedAccount:(()=>{const a=focusedAccountContext();return a?{client:clampText(a.name||'Cliente',90),totalBought:Number(Number(a.totalBought||0).toFixed(2)),totalPaid:Number(Number(a.totalPaid||0).toFixed(2)),totalDebt:Number(Number(a.totalDebt||0).toFixed(2)),pendingOperations:Number(a.pendingCount||0),daysLate:Number(a.daysLate||0),oldestDebtDate:a.oldestDebtDate?new Date(Number(a.oldestDebtDate)).toISOString().slice(0,10):null,lastPaymentDate:a.lastPaymentDate?new Date(Number(a.lastPaymentDate)).toISOString().slice(0,10):null}:null;})(),
-      alerts:controlAlertsV832().slice(0,10).map(x=>({level:x.priority,title:clampText(x.title,100),detail:clampText(x.detail,180)})),
-      control:{evaluation:businessEvaluationV832(),dailySummary:dailySummaryV832(),weeklySummary:weeklySummaryV835(),proactiveActions:proactiveActionsV835().map(x=>({priority:x.priority,title:x.title,detail:x.detail})),pendingTasks:readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).slice(0,20),production:productCommercialHealthV832().filter(x=>x.suggested>0).slice(0,12).map(x=>({product:x.product.name,stock:x.stock,coverageDays:Number(x.coverage===999?999:x.coverage.toFixed(1)),suggestedProduction:x.suggested,openPlanned:x.openPlanned}))}
+      alerts:scope.has('overview')?controlAlertsV832().slice(0,10).map(x=>({level:x.priority,title:clampText(x.title,100),detail:clampText(x.detail,180)})):[],
+      control:scope.has('overview')?{evaluation:businessEvaluationV832(),dailySummary:dailySummaryV832(),weeklySummary:weeklySummaryV835(),proactiveActions:proactiveActionsV835().map(x=>({priority:x.priority,title:x.title,detail:x.detail})),pendingTasks:readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).slice(0,20),production:productCommercialHealthV832().filter(x=>x.suggested>0).slice(0,12).map(x=>({product:x.product.name,stock:x.stock,coverageDays:Number(x.coverage===999?999:x.coverage.toFixed(1)),suggestedProduction:x.suggested,openPlanned:x.openPlanned}))}:null
     };
   }
   function conversationForEngine(){
@@ -875,6 +938,7 @@
       recordAction(action,'confirmed',action.summary||'Acción aprobada');await auditAssistantAction(action,'confirmed');close();
       if(action.type==='open_tab')return window.navigateTo?.(action.tab||'inicio');
       if(action.type==='seller_settlement')return window.navigateTo?.('rendicion-caja');
+      if(['generate_collection_document','create_payment_plan','register_payment','generate_receipt'].includes(action.type) && window.ensureFinancialAccountsModuleV9) await ensureFinancialAccountsModuleV9();
       if(action.type==='generate_collection_document'&&window.requestClientDocumentV820)return requestClientDocumentV820(action.clientId,'COB');
       if(action.type==='create_payment_plan'&&window.openPaymentPlanFormV820)return openPaymentPlanFormV820(action.clientId,{installmentAmount:action.installmentAmount,frequency:action.frequency,startDate:action.startDate,notes:action.note||'Plan preparado por el Asistente IA',source:'ai'});
       if((action.type==='register_payment'||action.type==='generate_receipt')&&window.openPaymentFormV820)return openPaymentFormV820(action.clientId,{amount:action.amount,note:action.note||'Pago preparado por el Asistente IA',source:'ai'});
@@ -882,7 +946,7 @@
       if(action.type==='prepare_promotion')return openPromotionDraftV832(action);
       if(action.type==='prepare_production')return openProductionDraftV832(action);
       if(action.type==='create_task'){upsertControlTaskV832({title:action.taskTitle,detail:action.note||action.summary,priority:action.taskPriority,dueDate:action.taskDueDate,responsible:action.taskResponsible||'Administrador central',area:'administration',source:'assistant'});window.showToast?.('Tarea registrada en Iniciativa y control.');return;}
-      if(action.type==='create_quote'&&window.openQuoteForm){const client=(window.AppState?.clients||[]).find(c=>String(c.id)===String(action.clientId));return window.openQuoteForm({client:client||null,priceGroupId:client?.priceGroupId||'',items:action.items||[],source:'ai'});}
+      if(action.type==='create_quote'){try{if(!window.openQuoteForm&&window.ensureQuotesModuleV9)await ensureQuotesModuleV9();}catch(_){return window.showToast?.('No se pudo cargar Cotizaciones.','error');}if(window.openQuoteForm){const client=(window.AppState?.clients||[]).find(c=>String(c.id)===String(action.clientId));return window.openQuoteForm({client:client||null,priceGroupId:client?.priceGroupId||'',items:action.items||[],source:'ai'});}}
       window.showToast?.('La acción quedó preparada, pero el módulo no está disponible en esta sesión.','error');
     };
   }
@@ -1149,6 +1213,7 @@
     if(!input)return;input.style.height='auto';input.style.height=`${Math.min(124,Math.max(46,input.scrollHeight))}px`;
   }
   async function ask(question){
+    resetAiCalcMemoV9();
     const input=document.getElementById('nvAiInput');
     const q=String(question||input?.value||'').trim();
     const now=Date.now();
@@ -1270,7 +1335,7 @@
   }
   function renderAssistant(options={}){
     if(!adminAllowed()){
-      if(oldNavigate) oldNavigate('inicio');
+      window.navigateTo?.('inicio');
       return;
     }
     const existing=document.querySelector('.nvAiPage');
@@ -1291,6 +1356,7 @@
     if(question) setTimeout(()=>ask(question),80);
   }
   function openSheet(){
+    ensureAiDemandServicesV9();
     if(!adminAllowed()) return;
     closeSheet();
     const ctx=currentContext();
@@ -1334,7 +1400,19 @@
     positionFabSmartV827();
   }
 
+  let aiDemandStartedV9=false;
+  function ensureAiDemandServicesV9(){
+    if(aiDemandStartedV9)return;
+    aiDemandStartedV9=true;
+    checkEngine(false).catch(()=>{});
+    installControlSyncV834();
+    Promise.resolve(syncControlCenterV834({silent:true})).catch(()=>{});
+    const background=()=>{ensureDailySummaryV832();ensureWeeklySummaryV835();};
+    if('requestIdleCallback' in window)requestIdleCallback(background,{timeout:1800});else setTimeout(background,500);
+  }
+
   function openForContext(context={},question=''){
+    ensureAiDemandServicesV9();
     const ctx={...currentContext(),...context};assistantContext=ctx;lastNonAiTab=ctx.tab==='asistente-ia'?'inicio':ctx.tab;closeSheet();window.navigateTo?.('asistente-ia');if(question)setTimeout(()=>ask(question),100);
   }
 
@@ -1342,66 +1420,31 @@
     if(window.__NV_AI_V825_INSTALLED) return;
     window.__NV_AI_V825_INSTALLED=true;
     window.__NV_AI_V824_INSTALLED=true;
-    oldNavigate=window.navigateTo;
-    oldRender=window.render;
-    window.navigateTo=function(tab){
-      if(tab==='asistente-ia'){
-        if(!adminAllowed()) return;
-        if(String(window.AppState?.currentTab)!=='asistente-ia'){
-          const ctx=currentContext();
-          if(ctx.tab!=='asistente-ia'){ assistantContext=ctx; lastNonAiTab=ctx.tab; }
-        }
-        window.AppState.currentTab=tab;
-        if(window.highlightActiveV7) try{ highlightActiveV7(); }catch(_){}
-        renderAssistant();
-        ensureFab();
-        return;
-      }
-      if(String(window.AppState?.currentTab)==='asistente-ia'){ lastNonAiTab=tab||'inicio'; stopSpeechV826(); }
-      return oldNavigate(tab);
-    };
-    window.render=function(){
-      if(String(window.AppState?.currentTab)==='asistente-ia') renderAssistant();
-      else oldRender();
-      setTimeout(ensureFab,0);
-    };
-    const main=document.getElementById('mainArea');
-    if(main){
-      const observer=new MutationObserver(()=>setTimeout(()=>{ensureFab();positionFabSmartV827();},0));
-      observer.observe(main,{childList:true,subtree:true});
-    }
-    window.addEventListener('resize',positionFabSmartV827,{passive:true});
-    window.addEventListener('scroll',positionFabSmartV827,{passive:true});
-    document.addEventListener('focusin',positionFabSmartV827);
-    document.addEventListener('focusout',positionFabSmartV827);
+
+    // V9: navegación y render ya conocen la pestaña asistente-ia. La IA no
+    // reemplaza window.navigateTo ni window.render del resto de Natura Vida.
+    let aiFabPositionRafV9=0;
+    const scheduleFabPositionV9=()=>{if(aiFabPositionRafV9)return;aiFabPositionRafV9=requestAnimationFrame(()=>{aiFabPositionRafV9=0;positionFabSmartV827();});};
+    window.addEventListener('resize',scheduleFabPositionV9,{passive:true});
+    window.addEventListener('orientationchange',scheduleFabPositionV9,{passive:true});
+    document.addEventListener('focusin',scheduleFabPositionV9);
+    document.addEventListener('focusout',scheduleFabPositionV9);
+    window.addEventListener('nv:ai-route-changed',ensureFab);
     setTimeout(ensureFab,250);
-    setTimeout(()=>checkEngine(false).catch(()=>{}),700);
-    setTimeout(()=>{installControlSyncV834();ensureDailySummaryV832();ensureWeeklySummaryV835();setTimeout(()=>showProactiveBriefV835(false),700);},900);
+
+    // API pública vigente. V829 se conserva temporalmente porque la regresión
+    // operativa y borradores históricos aún la consumen.
+    window.renderAIAssistantV9=renderAssistant;
+    window.renderAIAssistantV840=renderAssistant;
     window.renderAIAssistantV829=renderAssistant;
-    window.renderAIAssistantV826=renderAssistant;
-    window.renderAIAssistantV825=renderAssistant;
-    window.renderAIAssistantV824=renderAssistant;
-    window.renderAIAssistantV822=renderAssistant;
-    window.renderAIAssistantV821=renderAssistant;
-    window.renderAIAssistantV812=renderAssistant;
-    window.renderAIAssistantV810=renderAssistant;
-    window.openAIAssistantSheetV826=openSheet;
-    window.openAIAssistantSheetV825=openSheet;
-    window.openAIAssistantSheetV824=openSheet;
-    window.openAIAssistantSheetV822=openSheet;
-    window.openAIAssistantSheetV821=openSheet;
-    window.openAIAssistantSheetV812=openSheet;
-    window.openAIAssistantSheetV810=openSheet;
+    window.openAIAssistantSheetV9=openSheet;
+    window.openAIAssistantSheetV840=openSheet;
+    window.refreshAIFabV9=ensureFab;
   }
 
-  window.__nvAiV840={VERSION,openAdministrativeCenterV840,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,openControlCenterV832,readControlTasksV832,controlAlertsV832,businessEvaluationV832,dailySummaryV832,weeklySummaryV835,ensureWeeklySummaryV835,proactiveActionsV835,showProactiveBriefV835,productCommercialHealthV832,taskOverviewV834,executiveOverviewV834,syncControlCenterV834,installControlSyncV834,get controlSyncStateV834(){return {...controlSyncStateV834};},get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}}; window.__nvAiV835=window.__nvAiV840; window.__nvAiV834=window.__nvAiV840; window.__nvAiV832=window.__nvAiV840; window.__nvAiV830=window.__nvAiV840; window.__nvAiV829=window.__nvAiV840;
-  window.__nvAiV827=window.__nvAiV829;
-  window.__nvAiV826=window.__nvAiV829;
-  window.__nvAiV825=window.__nvAiV827;
-  window.__nvAiV824=window.__nvAiV827;
-  window.__nvAiV822=window.__nvAiV827;
-  window.__nvAiV821=window.__nvAiV827;
-  window.__nvAiV812=window.__nvAiV827;
+  window.__nvAiV840={VERSION,openAdministrativeCenterV840,readConversation,writeConversation,addEntry,clearConversation,readArchivesV824,archiveCurrentConversationV824,startNewConversationV824,dedupeEntriesV824,readActionHistory,answerLocal,businessSnapshot,recommendations,discountSimulation,checkEngine,answerWithEngine,renderAssistant,openSheet,openForContext,openActionReview,ask,botSvg,speakTextV826,stopSpeechV826,resolveDraftActionV829,buildActionProposals,shapeOperationalResponseV829,directorOperationalResponseV830,setDirectorModeV830,resetPendingV831,openControlCenterV832,readControlTasksV832,controlAlertsV832,businessEvaluationV832,dailySummaryV832,weeklySummaryV835,ensureWeeklySummaryV835,proactiveActionsV835,showProactiveBriefV835,productCommercialHealthV832,taskOverviewV834,executiveOverviewV834,syncControlCenterV834,installControlSyncV834,get controlSyncStateV834(){return {...controlSyncStateV834};},get directorMode(){return directorModeV830;},get engineState(){return {...engineState};}};
+  window.__nvAiV9=window.__nvAiV840;
+  window.__nvAiV829=window.__nvAiV840;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0));
   else setTimeout(install,0);
 })();

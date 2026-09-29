@@ -83,31 +83,57 @@
     if(Number(row.dueDate||0)<Date.now())return {code:'overdue',label:'Vencida'};
     return {code:'pending',label:'Pendiente'};
   }
-  async function applyPaymentToPlanV825(clientId,payment,preferredPlanId='',preferredInstallment=0){
-    const plans=paymentPlansForClientV825(clientId);let plan=plans.find(p=>String(p.id)===String(preferredPlanId))||plans.find(p=>p.status==='active');
-    if(!plan)return null;
-    let remaining=Core.round(payment.amount||0);const schedule=(plan.schedule||[]).map(r=>({...r,paymentIds:Array.isArray(r.paymentIds)?[...r.paymentIds]:[]}));
-    const ordered=[...schedule].sort((a,b)=>{if(preferredInstallment&&a.number===preferredInstallment)return-1;if(preferredInstallment&&b.number===preferredInstallment)return 1;return Number(a.dueDate||0)-Number(b.dueDate||0);});
-    const installments=[];
-    for(const row of ordered){if(remaining<=.009)break;const open=Core.round(Math.max(0,Number(row.amount||0)-Number(row.paid||0)));if(open<=.009)continue;const used=Core.round(Math.min(open,remaining));row.paid=Core.round(Number(row.paid||0)+used);row.status=scheduleRowStateV825(row).code;row.paymentIds=[...new Set([...(row.paymentIds||[]),payment.id])];installments.push({number:row.number,amount:used});remaining=Core.round(remaining-used);}
-    plan={...plan,schedule,status:schedule.every(r=>Number(r.paid||0)>=Number(r.amount||0)-.009)?'completed':'active',paidTotal:Core.round(schedule.reduce((sum,r)=>sum+Number(r.paid||0),0)),updatedAt:Date.now()};
-    await DB.put('paymentPlans',plan);AppState.paymentPlans=await DB.getAll('paymentPlans');
-    return {plan,installments,unapplied:remaining};
+  async function replacePaymentPlanAtomicV9(plan,existingPlanId=''){
+    if(!navigator.onLine) throw new Error('Se necesita conexión para crear el plan de pagos.');
+    if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para crear el plan.');
+    const {data,error}=await getSupabaseClient().rpc('nv_financial_replace_payment_plan_atomic',{
+      p_plan:plan,p_existing_plan_id:existingPlanId||null
+    });
+    if(error) throw new Error(window.messageFromError?messageFromError(error):error.message);
+    if(window.syncGenericCloudStoreToLocalV9) await syncGenericCloudStoreToLocalV9('paymentPlans');
+    return data||{};
   }
-  async function reversePaymentFromPlanV825(payment){
-    if(!payment?.planId||!Array.isArray(payment.planInstallments))return;const plan=(AppState.paymentPlans||[]).find(p=>String(p.id)===String(payment.planId));if(!plan)return;
-    const map=new Map(payment.planInstallments.map(x=>[Number(x.number),Number(x.amount||0)]));const schedule=(plan.schedule||[]).map(row=>{const back=map.get(Number(row.number))||0;if(!back)return row;const ids=(row.paymentIds||[]).filter(id=>String(id)!==String(payment.id));const next={...row,paid:Core.round(Math.max(0,Number(row.paid||0)-back)),paymentIds:ids};next.status=scheduleRowStateV825(next).code;return next;});
-    const updated={...plan,schedule,status:'active',paidTotal:Core.round(schedule.reduce((sum,r)=>sum+Number(r.paid||0),0)),updatedAt:Date.now()};await DB.put('paymentPlans',updated);AppState.paymentPlans=await DB.getAll('paymentPlans');
+
+  async function postPaymentAtomicV9(payment,planId='',preferredInstallment=0){
+    if(!navigator.onLine) throw new Error('Se necesita conexión para registrar el pago.');
+    if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para registrar el pago.');
+    const {data,error}=await getSupabaseClient().rpc('nv_financial_post_payment_atomic',{
+      p_payment:payment,p_plan_id:planId||null,p_preferred_installment:Number(preferredInstallment||0)
+    });
+    if(error) throw new Error(window.messageFromError?messageFromError(error):error.message);
+    await Promise.all([
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('receivablePayments'):Promise.resolve(),
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('paymentPlans'):Promise.resolve()
+    ]);
+    return data||{};
+  }
+  async function voidPaymentAtomicV9(paymentId,reason){
+    if(!navigator.onLine) throw new Error('Se necesita conexión para anular el pago.');
+    if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para anular el pago.');
+    const {data,error}=await getSupabaseClient().rpc('nv_financial_void_payment_atomic',{p_payment_id:paymentId,p_reason:reason});
+    if(error) throw new Error(window.messageFromError?messageFromError(error):error.message);
+    await Promise.all([
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('receivablePayments'):Promise.resolve(),
+      window.syncGenericCloudStoreToLocalV9?syncGenericCloudStoreToLocalV9('paymentPlans'):Promise.resolve()
+    ]);
+    return data||{};
   }
 
   async function nextFinancialNumberV820(prefix){
     const clean=String(prefix||'DOC').toUpperCase().replace(/[^A-Z]/g,'').slice(0,5)||'DOC';
-    try{
-      if(navigator.onLine && window.getSupabaseClient && requireAuth()){
+    const authenticated=!!(window.requireAuth&&requireAuth());
+    if(authenticated){
+      if(!navigator.onLine) throw new Error('Sin internet. No se puede generar una numeración financiera segura.');
+      if(!window.getSupabaseClient) throw new Error('Supabase no está disponible para generar la numeración financiera.');
+      try{
         const {data,error}=await getSupabaseClient().rpc('nv_next_financial_document_number',{p_prefix:clean});
-        if(!error && data) return String(data);
+        if(error) throw new Error(window.messageFromError?messageFromError(error):error.message);
+        if(!data) throw new Error('Supabase no devolvió un número de documento.');
+        return String(data);
+      }catch(error){
+        throw new Error(error?.message||'No se pudo generar una numeración financiera única.');
       }
-    }catch(_){ }
+    }
     AppState.settings.financialDocumentSequences = AppState.settings.financialDocumentSequences || {};
     const next=Number(AppState.settings.financialDocumentSequences[clean]||0)+1;
     AppState.settings.financialDocumentSequences[clean]=next;
@@ -275,12 +301,19 @@
           const proof=await readProofImageV820($('#nv820Proof',overlay).files?.[0]);
           const payment={id:uid('pay'),clientId:account.client.id,clientName:account.client.name,amount:allocation.amount,allocations:allocation.allocations,applicationMode:mode.value,method:$('#nv820PayMethod',overlay).value,voucherNumber:$('#nv820Voucher',overlay).value.trim(),proofImage:proof,note:$('#nv820PayNote',overlay).value.trim(),date:new Date($('#nv820PayDate',overlay).value).getTime()||Date.now(),responsibleUserId:currentUserId(),responsibleName:AppState.session.fullName||AppState.session.username||'',ownerUserId:currentUserId(),status:'posted',createdAt:Date.now()};
           payment.saleId=allocation.allocations.length===1?allocation.allocations[0].operationId:'';
-          const planResult=await applyPaymentToPlanV825(account.client.id,payment,options.planId||'',Number(options.installmentNumber||0));
-          if(planResult){payment.planId=planResult.plan.id;payment.planInstallments=planResult.installments;payment.planUnapplied=planResult.unapplied;}
-          await DB.put('receivablePayments',payment);AppState.receivablePayments=await DB.getAll('receivablePayments');
-          await writeAudit('receivable_payment_posted','receivablePayments',payment.id,null,{clientId:payment.clientId,amount:payment.amount,allocations:payment.allocations,method:payment.method});
-          const after=clientAccountV820(account.client.id); const kind=after.totalDebt<=.009?'REC':'RPP'; const doc=await createPaymentDocumentV820(payment,after,kind);
-          close();showToast('Pago registrado y recibo generado.');openFinancialDocumentPreviewV820(doc);if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
+          const targetPlanId=options.planId||activePaymentPlanV825(account.client.id)?.id||'';
+          const atomic=await postPaymentAtomicV9(payment,targetPlanId,Number(options.installmentNumber||0));
+          const savedPayment=atomic.payment||payment;
+          await writeAudit('receivable_payment_posted','receivablePayments',savedPayment.id,null,{clientId:savedPayment.clientId,amount:savedPayment.amount,allocations:savedPayment.allocations,method:savedPayment.method,recovered:!!atomic.recovered}).catch(()=>{});
+          const after=clientAccountV820(account.client.id); const kind=after.totalDebt<=.009?'REC':'RPP';
+          let doc=null;
+          try{doc=await createPaymentDocumentV820(savedPayment,after,kind);}
+          catch(receiptError){
+            close();showToast('Pago registrado correctamente, pero no se pudo generar el recibo. Puedes recuperarlo desde Pagos.','warning');
+            if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
+            return;
+          }
+          close();showToast(atomic.recovered?'Pago ya registrado; recibo recuperado.':'Pago registrado y recibo generado.');openFinancialDocumentPreviewV820(doc);if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
         }catch(err){button.disabled=false;button.textContent='Guardar pago y generar recibo';showToast(err.message||'No se pudo guardar el pago.','error');}
       });
     });
@@ -290,8 +323,10 @@
     const payment=(AppState.receivablePayments||[]).find(p=>p.id===paymentId);if(!payment)return;
     const reason=window.prompt('Motivo obligatorio para anular el pago:','');if(!reason?.trim())return showToast('La anulación requiere un motivo.','error');
     if(!window.confirm(`Se anulará el pago de ${money(payment.amount)}. El saldo volverá a calcularse. ¿Continuar?`))return;
-    const before=Object.assign({},payment);const updated=Object.assign({},payment,{status:'voided',voidedAt:Date.now(),voidedBy:currentUserId(),voidReason:reason.trim(),updatedAt:Date.now()});
-    await reversePaymentFromPlanV825(payment);await DB.put('receivablePayments',updated);AppState.receivablePayments=await DB.getAll('receivablePayments');await writeAudit('receivable_payment_voided','receivablePayments',payment.id,before,{status:'voided',reason:reason.trim()});showToast('Pago anulado. El saldo fue restaurado.');renderClientAccountV820();
+    const before=Object.assign({},payment);
+    await voidPaymentAtomicV9(payment.id,reason.trim());
+    await writeAudit('receivable_payment_voided','receivablePayments',payment.id,before,{status:'voided',reason:reason.trim()}).catch(()=>{});
+    showToast('Pago anulado. El saldo fue restaurado.');renderClientAccountV820();
   }
 
   async function createPaymentDocumentV820(payment,account,kind){
@@ -301,8 +336,21 @@
     return saveFinancialDocumentV820({documentType:kind,prefix,documentNumber:number,title,clientId:account.client.id,clientName:account.client.name,total:payment.amount,balanceAfter:account.totalDebt,paymentId:payment.id,snapshot:{client:account.client,payment,accountTotals:{totalBought:account.totalBought,totalPaid:account.totalPaid,totalDebt:account.totalDebt,balanceBefore:Core.round(account.totalDebt+Number(payment.amount||0)),balanceAfter:account.totalDebt},operations:(affected.length?affected:account.operations).map(operationSnapshotV820),region:regionForAccount(account),seller:sellerForAccount(account),generatedBy:AppState.session.fullName||AppState.session.username||'',generatedAt:Date.now()}});
   }
   async function openPaymentReceiptByIdV820(paymentId){
-    let doc=(AppState.financialDocuments||[]).find(d=>d.paymentId===paymentId);const payment=(AppState.receivablePayments||[]).find(p=>p.id===paymentId);if(!payment)return;
-    if(!doc)doc=await createPaymentDocumentV820(payment,clientAccountV820(payment.clientId),clientAccountV820(payment.clientId).totalDebt<=.009?'REC':'RPP');
+    let doc=(AppState.financialDocuments||[]).find(d=>String(d.paymentId||'')===String(paymentId));
+    const payment=(AppState.receivablePayments||[]).find(p=>String(p.id)===String(paymentId));if(!payment)return;
+    if(!doc&&navigator.onLine&&window.syncGenericCloudStoreToLocalV9){
+      try{
+        await syncGenericCloudStoreToLocalV9('financialDocuments');
+        doc=(AppState.financialDocuments||[]).find(d=>String(d.paymentId||'')===String(paymentId));
+      }catch(error){
+        return showToast('No se pudo verificar si ya existe el recibo. Revisa la conexión antes de regenerarlo.','error');
+      }
+    }
+    if(!doc){
+      const account=clientAccountV820(payment.clientId);
+      if(!account)return showToast('No se pudo reconstruir la cuenta del pago.','error');
+      doc=await createPaymentDocumentV820(payment,account,account.totalDebt<=.009?'REC':'RPP');
+    }
     openFinancialDocumentPreviewV820(doc);
   }
   function operationSnapshotV820(op){const due=Core.dueDate(op);const pending=saleBalanceV820(op);const days=pending>.009&&due?Math.max(0,Math.floor((Date.now()-due)/86400000)):0;return {id:op.id,documentNumber:operationLabelV820(op),date:Core.operationDate(op),dueDate:due,items:op.items||[],products:op.products||'',total:Number(op.total||0),paid:salePaidTotalV820(op),balance:pending,status:operationStatusV820(op),daysLate:days,historical:op.operationKind==='historical'||op.historicalActive,origin:op.origin||'',observations:op.observations||op.pendingReason||''}; }
@@ -347,8 +395,7 @@
       const scheduleNow=()=>{const firstDate=new Date(`${first.value||defaultDate}T12:00:00`).getTime();let c=Number(count.value||1);if(mode.value==='amount'){const installment=Math.max(1,Number(amount.value||100));c=Math.min(120,Math.ceil(account.totalDebt/installment));count.value=c;}return buildPaymentScheduleV820(account.totalDebt,c,firstDate,frequency.value);};
       const refresh=()=>{overlay.querySelector('#nv825AmountField').style.display=mode.value==='amount'?'':'none';overlay.querySelector('#nv825CountField').style.display=mode.value==='count'?'':'none';const schedule=scheduleNow();preview.innerHTML=`<strong>${schedule.length} cuotas</strong>${schedule.slice(0,18).map(row=>`<span><b>Cuota ${row.number}</b><small>${dateText(row.dueDate)}</small><em>${money(row.amount)}</em></span>`).join('')}${schedule.length>18?`<small>… y ${schedule.length-18} cuotas adicionales</small>`:''}`;};
       [mode,amount,count,frequency,first].forEach(el=>el.addEventListener('input',refresh));refresh();overlay.querySelector('#closeSheet').onclick=close;
-      overlay.querySelector('#nv820SavePlan').onclick=async()=>{const button=overlay.querySelector('#nv820SavePlan');button.disabled=true;button.textContent='Generando…';try{const firstDate=new Date(`${first.value}T12:00:00`).getTime();if(!first.value||!Number.isFinite(firstDate))throw new Error('Selecciona una fecha válida.');if(existing&&!window.confirm('Se archivará el plan activo anterior y se creará uno nuevo. ¿Continuar?')){button.disabled=false;button.textContent='Guardar y generar plan de pagos';return;}if(existing){await DB.put('paymentPlans',{...existing,status:'replaced',replacedAt:Date.now(),updatedAt:Date.now()});}
-        const schedule=scheduleNow();const number=await nextFinancialNumberV820('PPA');const plan={id:uid('plan'),ownerUserId:currentUserId(),clientId:account.client.id,clientName:account.client.name,documentNumber:number,total:account.totalDebt,frequency:frequency.value,calculationMode:mode.value,installmentTarget:mode.value==='amount'?Number(amount.value||0):null,schedule,paidTotal:0,notes:overlay.querySelector('#nv820PlanNotes').value.trim(),status:'active',source:options.source||'manual',createdAt:Date.now(),updatedAt:Date.now()};await DB.put('paymentPlans',plan);AppState.paymentPlans=await DB.getAll('paymentPlans');await writeAudit('payment_plan_created','paymentPlans',plan.id,null,{clientId:plan.clientId,total:plan.total,installments:schedule.length,documentNumber:number,calculationMode:plan.calculationMode,installmentTarget:plan.installmentTarget});const doc=await saveFinancialDocumentV820({documentType:'PPA',prefix:'PPA',documentNumber:number,title:DOC_META.PPA.title,clientId:account.client.id,clientName:account.client.name,total:account.totalDebt,mode:'detailed',paymentPlanId:plan.id,snapshot:{client:account.client,accountTotals:{totalBought:account.totalBought,totalPaid:account.totalPaid,totalDebt:account.totalDebt,pendingCount:account.pendingCount},operations:account.active.map(operationSnapshotV820),planSchedule:schedule,planFrequency:frequency.value,planNotes:plan.notes,region:regionForAccount(account),seller:sellerForAccount(account),generatedBy:AppState.session.fullName||'',generatedAt:Date.now()}});close();openFinancialDocumentPreviewV820(doc);if(AppState.currentTab==='estado-cuenta'){currentAccountTab='plan';renderClientAccountV820();}}catch(err){button.disabled=false;button.textContent='Reintentar';showToast(err.message||'No se pudo crear el plan.','error');}};
+      overlay.querySelector('#nv820SavePlan').onclick=async()=>{const button=overlay.querySelector('#nv820SavePlan');button.disabled=true;button.textContent='Generando…';try{const firstDate=new Date(`${first.value}T12:00:00`).getTime();if(!first.value||!Number.isFinite(firstDate))throw new Error('Selecciona una fecha válida.');if(existing&&!window.confirm('Se archivará el plan activo anterior y se creará uno nuevo. ¿Continuar?')){button.disabled=false;button.textContent='Guardar y generar plan de pagos';return;}const schedule=scheduleNow();const number=await nextFinancialNumberV820('PPA');const plan={id:uid('plan'),ownerUserId:currentUserId(),clientId:account.client.id,clientName:account.client.name,documentNumber:number,total:account.totalDebt,frequency:frequency.value,calculationMode:mode.value,installmentTarget:mode.value==='amount'?Number(amount.value||0):null,schedule,paidTotal:0,notes:overlay.querySelector('#nv820PlanNotes').value.trim(),status:'active',source:options.source||'manual',createdAt:Date.now(),updatedAt:Date.now()};const atomicPlan=await replacePaymentPlanAtomicV9(plan,existing?.id||'');const savedPlan=atomicPlan.plan||plan;await writeAudit('payment_plan_created','paymentPlans',savedPlan.id,null,{clientId:savedPlan.clientId,total:savedPlan.total,installments:(savedPlan.schedule||schedule).length,documentNumber:savedPlan.documentNumber||number,calculationMode:savedPlan.calculationMode,installmentTarget:savedPlan.installmentTarget,recovered:!!atomicPlan.recovered}).catch(()=>{});const doc=await saveFinancialDocumentV820({documentType:'PPA',prefix:'PPA',documentNumber:number,title:DOC_META.PPA.title,clientId:account.client.id,clientName:account.client.name,total:account.totalDebt,mode:'detailed',paymentPlanId:plan.id,snapshot:{client:account.client,accountTotals:{totalBought:account.totalBought,totalPaid:account.totalPaid,totalDebt:account.totalDebt,pendingCount:account.pendingCount},operations:account.active.map(operationSnapshotV820),planSchedule:schedule,planFrequency:frequency.value,planNotes:plan.notes,region:regionForAccount(account),seller:sellerForAccount(account),generatedBy:AppState.session.fullName||'',generatedAt:Date.now()}});close();openFinancialDocumentPreviewV820(doc);if(AppState.currentTab==='estado-cuenta'){currentAccountTab='plan';renderClientAccountV820();}}catch(err){button.disabled=false;button.textContent='Reintentar';showToast(err.message||'No se pudo crear el plan.','error');}};
     });
   }
   async function generateClientDocumentV820(clientId,type='EC',mode='detailed'){

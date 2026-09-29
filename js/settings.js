@@ -218,16 +218,26 @@ function renderSettings() {
 
   $('#openGovernanceBtn').addEventListener('click', async () => {
     const btn = $('#openGovernanceBtn'); btn.disabled = true; btn.textContent = 'Preparando diagnóstico…';
-    if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
-    if (window.renderGovernanceCenter) renderGovernanceCenter();
+    try {
+      if (window.ensureGovernanceModuleV9) await ensureGovernanceModuleV9();
+      if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
+      if (window.renderGovernanceCenter) renderGovernanceCenter();
+    } catch (_) { btn.disabled=false; btn.textContent='Abrir diagnóstico'; showToast('No se pudo cargar el diagnóstico.', 'error'); }
   });
 
   $('#openQualityControlV806Btn')?.addEventListener('click', async () => {
     const btn = $('#openQualityControlV806Btn');
     btn.disabled = true; btn.textContent = 'Preparando control administrativo…';
-    if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
-    if (window.renderDataControlCenterV806) await renderDataControlCenterV806();
-    else { btn.disabled = false; btn.textContent = 'Abrir respaldo, auditoría y calidad'; showToast('El módulo V8.0.7 no está disponible.', 'error'); }
+    try {
+      if (window.ensureQualityModuleV9) await ensureQualityModuleV9();
+      if (window.NV804Governance) await NV804Governance.collectProfiles().catch(() => []);
+      if (!window.renderDataControlCenterV806) throw new Error('Control de calidad no inicializado');
+      await renderDataControlCenterV806();
+    } catch (_) {
+      btn.disabled = false;
+      btn.textContent = 'Abrir respaldo, auditoría y calidad';
+      showToast('No se pudo cargar respaldo, auditoría y calidad. Revisa tu conexión.', 'error');
+    }
   });
 
   $('#testOnlineBtn').addEventListener('click', async () => {

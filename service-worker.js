@@ -1,75 +1,42 @@
 // NATURA VIDA V8.4.0 — Director Administrativo Inteligente y sesión persistente.
 const VERSION = 'natura-vida-v8-4-0-director-administrativo-sesion-persistente';
-const APP_CACHE = 'nv-app-shell-v840';
-const IMAGE_CACHE = 'nv-images-v3';
-const RUNTIME_CACHE = 'nv-runtime-v840';
-const IMAGE_CACHE_LIMIT = 120;
+const APP_CACHE = 'nv-app-shell-v9-saneamiento-2';
+const IMAGE_CACHE = 'nv-images-v9-saneamiento-2';
+const RUNTIME_CACHE = 'nv-runtime-v9-saneamiento-2';
+const IMAGE_CACHE_LIMIT = 80;
+const RUNTIME_CACHE_LIMIT = 40;
 const APP_SHELL = [
-  './app-version.json',
-  './css/app.css',
-  './css/v7.css',
-  './css/v8.css',
-  './icons/icon-144.png',
-  './icons/icon-180.png',
-  './icons/icon-192.png',
-  './icons/icon-48.png',
-  './icons/icon-512.png',
-  './icons/icon-72.png',
-  './icons/icon-96.png',
-  './index.html',
-  './js/app-update.js',
-  './js/app.js',
-  './js/auth.js',
-  './js/catalog-pdf.js',
-  './js/clients.js',
-  './js/db.js',
-  './js/inbox.js',
-  './js/orders.js',
-  './js/pricegroups.js',
-  './js/products.js',
-  './js/quotes.js',
-  './js/receipt.js',
-  './js/sales.js',
-  './js/settings.js',
-  './js/state.js',
-  './js/v8-financial-core.js',
-  './js/supabase-config.js',
-  './js/supabase-sync.js',
-  './js/ui-helpers.js',
-  './js/v7-commercial-center.js',
-  './js/v7-distribution.js',
-  './js/v7-documents.js',
-  './js/v7-finance.js',
-  './js/v7-integration-v771.js',
-  './js/v7-inventory-sales.js',
-  './js/v7-management-center.js',
-  './js/v7-orders.js',
-  './js/v7-production.js',
-  './js/v7-profile-users.js',
-  './js/v7-regional.js',
-  './js/v7-shell.js',
-  './js/v7-stats.js',
-  './js/v7-supabase.js',
-  './js/v7-workforce.js',
-  './js/v8-core.js',
-  './js/v8-commercial-rules.js',
-  './js/v8-governance.js',
-  './js/v8-linked-stock.js',
-  './js/v8-offline-continuity.js',
-  './js/v8-quality-assurance.js',
-  './js/v8-roles.js',
-  './js/v8-stability.js',
-  './js/v8-territory.js',
-  './js/v8-ai-assistant.js',
-  './js/v8-financial-accounts.js',
-  './js/v8-seller-settlement.js',
-  './data/imports/gabriela-espinoza-mi-negocio.json',
-  './manifest.json',
+  './app-version.json','./css/app.css','./css/v7.css','./css/v8.css','./css/v9.css',
+  './icons/icon-144.png','./icons/icon-180.png','./icons/icon-192.png','./icons/icon-48.png','./icons/icon-512.png','./icons/icon-72.png','./icons/icon-96.png',
+  './index.html','./js/app-update.js','./js/lazy-assets.js','./js/app.js','./js/auth.js','./js/clients.js','./js/db.js','./js/inbox.js',
+  './js/pricegroups.js','./js/products.js','./js/sales.js','./js/settings.js','./js/state.js','./js/v8-financial-core.js','./js/v8-commercial-rules-core.js',
+  './js/supabase-config.js','./js/supabase-sync.js','./js/ui-helpers.js','./js/v7-supabase.js','./js/v8-core.js','./js/v8-stability.js',
+  './js/v8-offline-continuity.js','./js/v7-shell.js','./js/v9-ai-bridge.js','./manifest.json',
 ];
+
+const OPTIONAL_APP_ASSETS = [
+  './js/catalog-pdf.js','./js/quotes.js',
+  './js/v7-commercial-center.js','./js/v7-distribution.js','./js/v7-documents.js','./js/v7-finance.js','./js/v7-integration-v771.js',
+  './js/v7-inventory-sales.js','./js/v7-management-center.js','./js/v7-orders.js','./js/v7-production.js','./js/v7-profile-users.js',
+  './js/v7-regional.js','./js/v7-stats.js','./js/v7-workforce.js','./js/v8-ai-assistant.js','./js/v8-commercial-rules.js',
+  './js/v8-financial-accounts.js','./js/v8-governance.js','./js/v8-linked-stock.js','./js/v8-quality-assurance.js','./js/v8-roles.js',
+  './js/v8-seller-settlement.js','./js/v8-territory.js','./data/imports/gabriela-espinoza-mi-negocio.json',
+];
+
 const MAP_HOSTS = new Set(['tile.openstreetmap.org','a.basemaps.cartocdn.com','b.basemaps.cartocdn.com','c.basemaps.cartocdn.com','d.basemaps.cartocdn.com','nominatim.openstreetmap.org']);
 
+async function precacheRequiredAssets() {
+  const cache = await caches.open(APP_CACHE);
+  // El núcleo debe instalarse completo: si falta uno de estos archivos no se
+  // activa una versión parcialmente funcional.
+  await cache.addAll(APP_SHELL);
+  // Los módulos diferidos mejoran la continuidad offline, pero un fallo aislado
+  // no debe invalidar la instalación completa del Service Worker.
+  await Promise.allSettled(OPTIONAL_APP_ASSETS.map(asset => cache.add(asset)));
+}
+
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(APP_CACHE).then(cache => cache.addAll(APP_SHELL)));
+  event.waitUntil(precacheRequiredAssets());
   // La activación continúa controlada desde “Actualizar ahora”.
 });
 
@@ -117,12 +84,21 @@ async function appShellResponse(request) {
   return network;
 }
 
+async function trimRuntimeCache(cache) {
+  const keys = await cache.keys();
+  if (keys.length <= RUNTIME_CACHE_LIMIT) return;
+  await Promise.all(keys.slice(0, keys.length - RUNTIME_CACHE_LIMIT).map(key => cache.delete(key)));
+}
+
 async function runtimeResponse(request) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(request);
   try {
     const response = await fetch(request, { cache: 'no-store' });
-    if (response && (response.ok || response.type === 'opaque')) await cache.put(request, response.clone());
+    if (response && (response.ok || response.type === 'opaque')) {
+      await cache.put(request, response.clone());
+      trimRuntimeCache(cache).catch(() => {});
+    }
     return response;
   } catch (error) {
     if (cached) return cached;

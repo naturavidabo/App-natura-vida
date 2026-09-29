@@ -55,11 +55,11 @@
     refreshPromise = (async () => {
       if (!sb() || !currentUid()) return { ok: false, message: 'Sesión no disponible.' };
       const [staffRes, taskRes, attendanceRes, laborRes, paymentRes] = await Promise.all([
-        sb().from('staff_members').select('*').order('created_at', { ascending: false }).limit(500),
-        sb().from('staff_tasks').select('*').order('created_at', { ascending: false }).limit(1000),
-        sb().from('staff_attendance').select('*').order('work_date', { ascending: false }).limit(1200),
-        sb().from('labor_costs').select('*').order('work_date', { ascending: false }).limit(1000),
-        sb().from('staff_payments').select('*').order('payment_date', { ascending: false }).limit(1000)
+        sb().from('staff_members').select('id,full_name,email,phone,role_type,operational_role,worker_kind,access_mode,linked_user_id,status,region,pay_mode,pay_rate,created_at').order('created_at', { ascending: false }).limit(500),
+        sb().from('staff_tasks').select('id,staff_id,title,task_type,priority,status,due_date,notes,created_at').order('created_at', { ascending: false }).limit(1000),
+        sb().from('staff_attendance').select('id,staff_id,work_date,status,check_in,check_out,hours,location,notes,created_at').order('work_date', { ascending: false }).limit(1200),
+        sb().from('labor_costs').select('id,staff_id,worker_name,work_date,hours,units,pay_rate,total_cost,production_batch_id,notes,created_at').order('work_date', { ascending: false }).limit(1000),
+        sb().from('staff_payments').select('id,staff_id,worker_name,payment_date,amount,payment_type,payment_status,notes,created_at').order('payment_date', { ascending: false }).limit(1000)
       ]);
       const failed = [staffRes, taskRes, attendanceRes, laborRes, paymentRes].find(result => result.error);
       if (failed) return { ok: false, message: errorText(failed.error) };

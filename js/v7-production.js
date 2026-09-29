@@ -117,10 +117,10 @@
     try {
       const sb = sbV740();
       const [materialsResult, movementsResult, ordersResult, batchesResult] = await Promise.all([
-        sb.from('raw_materials').select('*').order('name', { ascending: true }),
-        sb.from('raw_material_movements').select('*').order('created_at', { ascending: false }).limit(600),
-        sb.from('production_orders').select('*').order('created_at', { ascending: false }).limit(300),
-        sb.from('production_batches').select('*').order('created_at', { ascending: false }).limit(300)
+        sb.from('raw_materials').select('id,name,category,unit,stock,average_cost,min_stock,supplier,note,active,payload,created_at,updated_at').order('name', { ascending: true }),
+        sb.from('raw_material_movements').select('id,material_id,movement_type,quantity,unit_cost,total_cost,reference_id,note,payload,created_at').order('created_at', { ascending: false }).limit(600),
+        sb.from('production_orders').select('id,product_id,product_name,status,planned_output,output_unit,presentation_ml,planned_inputs,note,started_at,completed_at,payload,created_at,updated_at').order('created_at', { ascending: false }).limit(300),
+        sb.from('production_batches').select('id,order_id,lot_code,product_id,product_name,output_qty,output_unit,presentation_ml,actual_inputs,input_cost,direct_cost,total_cost,unit_cost,cost_per_ml,note,payload,created_at').order('created_at', { ascending: false }).limit(300)
       ]);
       const failed = [materialsResult, movementsResult, ordersResult, batchesResult].find(r => r.error);
       if (failed) return { ok: false, message: errorMessageV740(failed.error) };

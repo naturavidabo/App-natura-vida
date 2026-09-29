@@ -43,7 +43,7 @@ const context = {
 };
 context.window = context;
 vm.createContext(context);
-vm.runInContext(fs.readFileSync('js/v8-commercial-rules.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('js/v8-commercial-rules-core.js', 'utf8'), context);
 
 const product = { id: 'p1', name: 'Aceite 500 ml', cost: 100, publicPrice: 150, marketPrice: 140, resellerPrice: 130 };
 context.AppState.products = [product];

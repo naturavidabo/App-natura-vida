@@ -71,53 +71,50 @@ const AppState = {
   }
 };
 
-async function loadAllState() {
-  const [products, priceGroups, sales, clients, quotes, messages, expenses, receivablePayments, historicalReceivables, financialDocuments, paymentPlans, rawMaterials, rawMaterialMovements, productionOrders, productionBatches, representatives, settingsRows] = await Promise.all([
-    DB.getAll('products'),
-    DB.getAll('priceGroups'),
-    DB.getAll('sales'),
-    DB.getAll('clients'),
-    DB.getAll('quotes'),
-    DB.getAll('messages').catch(() => []),
-    DB.getAll('expenses').catch(() => []),
-    DB.getAll('receivablePayments').catch(() => []),
-    DB.getAll('historicalReceivables').catch(() => []),
-    DB.getAll('financialDocuments').catch(() => []),
-    DB.getAll('paymentPlans').catch(() => []),
-    DB.getAll('rawMaterials').catch(() => []),
-    DB.getAll('rawMaterialMovements').catch(() => []),
-    DB.getAll('productionOrders').catch(() => []),
-    DB.getAll('productionBatches').catch(() => []),
-    DB.getAll('representatives').catch(() => []),
-    DB.getAll('settings')
-  ]);
-  AppState.products = products.map(p => window.normalizeLegacyProduct ? normalizeLegacyProduct(p) : p);
-  AppState.priceGroups = priceGroups;
-  AppState.sales = sales;
-  AppState.clients = clients;
-  AppState.quotes = quotes;
-  AppState.messages = messages || [];
-  AppState.expenses = expenses || [];
-  AppState.receivablePayments = receivablePayments || [];
-  AppState.historicalReceivables = historicalReceivables || [];
-  AppState.financialDocuments = financialDocuments || [];
-  AppState.paymentPlans = paymentPlans || [];
-  AppState.rawMaterials = rawMaterials || [];
-  AppState.rawMaterialMovements = rawMaterialMovements || [];
-  AppState.productionOrders = productionOrders || [];
-  AppState.productionBatches = productionBatches || [];
-  AppState.representatives = representatives || [];
+async function loadAllState(options = {}) {
+  const coreOnly = options.coreOnly === true;
+  const secondaryOnly = options.secondaryOnly === true;
 
-  const savedSettings = settingsRows.find(r => r.key === 'main');
-  if (savedSettings && savedSettings.value) {
-    AppState.settings = Object.assign({}, AppState.settings, savedSettings.value);
-    if (!AppState.settings.logo || AppState.settings.logo === 'icons/icon-192.png') {
+  if (!secondaryOnly) {
+    const core = await Promise.all([
+      DB.getAll('products'), DB.getAll('priceGroups'), DB.getAll('sales'),
+      DB.getAll('clients'), DB.getAll('quotes'), DB.getAll('messages').catch(() => []),
+      DB.getAll('settings')
+    ]);
+    const [products, priceGroups, sales, clients, quotes, messages, settingsRows] = core;
+    AppState.products = products.map(p => window.normalizeLegacyProduct ? normalizeLegacyProduct(p) : p);
+    AppState.priceGroups = priceGroups;
+    AppState.sales = sales;
+    AppState.clients = clients;
+    AppState.quotes = quotes;
+    AppState.messages = messages || [];
+    const savedSettings = settingsRows.find(r => r.key === 'main');
+    if (savedSettings && savedSettings.value) {
+      AppState.settings = Object.assign({}, AppState.settings, savedSettings.value);
+      if (!AppState.settings.logo || AppState.settings.logo === 'icons/icon-192.png') {
+        AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
+        await saveSettings();
+      }
+    } else {
       AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
       await saveSettings();
     }
-  } else {
-    AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
-    await saveSettings();
+  }
+
+  if (!coreOnly) {
+    const secondary = await Promise.all([
+      DB.getAll('expenses').catch(() => []), DB.getAll('receivablePayments').catch(() => []),
+      DB.getAll('historicalReceivables').catch(() => []), DB.getAll('financialDocuments').catch(() => []),
+      DB.getAll('paymentPlans').catch(() => []), DB.getAll('rawMaterials').catch(() => []),
+      DB.getAll('rawMaterialMovements').catch(() => []), DB.getAll('productionOrders').catch(() => []),
+      DB.getAll('productionBatches').catch(() => []), DB.getAll('representatives').catch(() => [])
+    ]);
+    [
+      AppState.expenses, AppState.receivablePayments, AppState.historicalReceivables,
+      AppState.financialDocuments, AppState.paymentPlans, AppState.rawMaterials,
+      AppState.rawMaterialMovements, AppState.productionOrders, AppState.productionBatches,
+      AppState.representatives
+    ] = secondary;
   }
 }
 

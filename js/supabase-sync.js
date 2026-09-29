@@ -7,10 +7,16 @@
 
 let _supabaseClient = null;
 let _realtimeChannel = null;
+let _realtimeChannelUserId = null;
 let _realtimeRestartTimer = null;
+let _lastForegroundSyncAt = 0;
+const FOREGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
 let _backgroundStarted = false;
 let _refreshInFlight = null;
 let _deferredRenderPending = false;
+let _realtimeRefreshTimer = null;
+const _realtimeRefreshQueue = [];
+const REALTIME_INCREMENTAL_TABLES_V9 = new Set(['clients', 'sales', 'app_records']);
 let _authObserverSubscription = null;
 const NV801_PROFILE_CACHE_PREFIX = 'nv801-profile-cache:';
 
@@ -562,13 +568,49 @@ function isOnlineConfigured() {
   );
 }
 
-function setCloudConnectionState(state, detail = '') {
+let _cloudConnectionPendingTimer = null;
+let _cloudConnectionPending = null;
+const CLOUD_TRANSIENT_VISUAL_DELAY_MS = 650;
+
+function commitCloudConnectionStateV9(state, detail = '') {
+  const nextDetail = detail || '';
+  const stateChanged = CloudConnection.state !== state;
+  const detailChanged = CloudConnection.detail !== nextDetail;
+  if (!stateChanged && !detailChanged) return;
   CloudConnection.state = state;
-  CloudConnection.detail = detail || '';
+  CloudConnection.detail = nextDetail;
   CloudConnection.updatedAt = Date.now();
+  // La cápsula representa salud de conexión, no actividad interna.
+  // Los cambios de detalle quedan disponibles en CloudConnection sin forzar
+  // un repintado cuando el estado visible sigue siendo el mismo.
+  if (!stateChanged) return;
   window.dispatchEvent(new CustomEvent('nv:connection', {
     detail: Object.assign({}, CloudConnection)
   }));
+}
+
+function setCloudConnectionState(state, detail = '') {
+  const nextState = state || (navigator.onLine ? 'connecting' : 'offline');
+  const transient = nextState === 'connecting' || nextState === 'error';
+
+  if (!transient) {
+    clearTimeout(_cloudConnectionPendingTimer);
+    _cloudConnectionPendingTimer = null;
+    _cloudConnectionPending = null;
+    commitCloudConnectionStateV9(nextState, detail);
+    return;
+  }
+
+  // Evita el parpadeo "Conectando/En línea" durante operaciones breves.
+  // Offline y online reales siguen apareciendo inmediatamente.
+  _cloudConnectionPending = { state: nextState, detail };
+  clearTimeout(_cloudConnectionPendingTimer);
+  _cloudConnectionPendingTimer = setTimeout(() => {
+    const pending = _cloudConnectionPending;
+    _cloudConnectionPending = null;
+    _cloudConnectionPendingTimer = null;
+    if (pending) commitCloudConnectionStateV9(pending.state, pending.detail);
+  }, CLOUD_TRANSIENT_VISUAL_DELAY_MS);
 }
 
 function getSupabaseClient() {
@@ -623,7 +665,7 @@ async function requireClient() {
 // ---------------------------------------------------------------------------
 async function fetchCurrentProfile(userId) {
   const sb = await requireClient();
-  const { data, error } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  const { data, error } = await sb.from('profiles').select('id,email,full_name,role,status,commercial_role,manager_user_id,supplier_user_id,stock_owner_user_id,stock_point_id,region_name,city,operation_city,phone,avatar_url,role_note,seller_can_collect,permissions,created_at,updated_at,last_login_at').eq('id', userId).maybeSingle();
   if (error) throw new Error(messageFromError(error));
   return data || null;
 }
@@ -1019,9 +1061,49 @@ async function fetchRepresentativeStockMap() {
   }]));
 }
 
+async function syncCloudProductByIdV9(productId) {
+  const id=String(productId||'');
+  if(!id)return false;
+  const sb=await requireClient();
+  const {data:row,error}=await sb.from('products')
+    .select('id,name,category,sku,description,cost,market_price,reseller_price,public_price,stock,photo_url,status,payload,updated_at')
+    .eq('id',id).maybeSingle();
+  if(error)throw new Error(messageFromError(error));
+  if(!row || row.status!=='active'){
+    await DB.delete('products',id,{silent:true});
+    AppState.products=(AppState.products||[]).filter(p=>String(p?.id)!==id);
+    return true;
+  }
+  let repStockMap=null,repPrefsMap=null;
+  if(window.isReseller&&isReseller()){
+    // La consulta puntual evita descargar nuevamente todo products. Los mapas
+    // representativos se conservan completos por seguridad de roles/stock.
+    repStockMap=await fetchRepresentativeStockMap();
+    if(AppState.session.commercialRole!=='field_seller'){
+      const {data:prefRows,error:prefError}=await sb.from('representative_product_preferences')
+        .select('product_id,additional_cost,unit_price,wholesale_price,note,updated_at')
+        .eq('representative_user_id',AppState.session.onlineUserId).eq('product_id',id);
+      if(prefError)throw new Error(messageFromError(prefError));
+      repPrefsMap=new Map((prefRows||[]).map(pref=>[pref.product_id,{
+        resellerAdditionalCost:Number(pref.additional_cost||0),
+        resellerLocalUnitPrice:Number(pref.unit_price||0),
+        resellerLocalWholesalePrice:Number(pref.wholesale_price||0),
+        resellerLocalNote:pref.note||'',
+        resellerLocalUpdatedAt:pref.updated_at?new Date(pref.updated_at).getTime():Date.now()
+      }]));
+    } else repPrefsMap=new Map();
+  }
+  const mapped=mapProductFromCloud(row,repStockMap,repPrefsMap);
+  await DB.put('products',mapped,{silent:true});
+  const list=AppState.products||[],index=list.findIndex(p=>String(p?.id)===id);
+  if(index>=0)list[index]=mapped;else list.push(mapped);
+  AppState.products=list;
+  return true;
+}
+
 async function syncCloudProductsToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('products').select('*').eq('status', 'active').order('updated_at', { ascending: true });
+  const { data, error } = await sb.from('products').select('id,name,category,sku,description,cost,market_price,reseller_price,public_price,stock,photo_url,status,payload,updated_at').eq('status', 'active').order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   let repStockMap = null;
   let repPrefsMap = null;
@@ -1029,7 +1111,7 @@ async function syncCloudProductsToLocal() {
     repStockMap = await fetchRepresentativeStockMap();
     if (AppState.session.commercialRole !== 'field_seller') {
       const { data: prefRows, error: prefError } = await sb.from('representative_product_preferences')
-        .select('*').eq('representative_user_id', AppState.session.onlineUserId);
+        .select('product_id,additional_cost,unit_price,wholesale_price,note,updated_at').eq('representative_user_id', AppState.session.onlineUserId);
       if (prefError) return { ok: false, message: messageFromError(prefError) };
       repPrefsMap = new Map((prefRows || []).map(row => [row.product_id, {
         resellerAdditionalCost: Number(row.additional_cost || 0),
@@ -1157,7 +1239,7 @@ async function deleteCloudClient(clientId) {
 
 async function syncCloudClientsToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('clients').select('*').order('updated_at', { ascending: true });
+  const { data, error } = await sb.from('clients').select('id,owner_user_id,name,phone,price_group_id,payload,created_at,updated_at').order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   const rows = (data || []).map(mapClientFromCloud);
   await DB.clear('clients');
@@ -1189,9 +1271,26 @@ function mapSaleFromCloud(row) {
   });
 }
 
+async function syncCloudSaleByIdV9(saleId) {
+  const id=String(saleId||'');if(!id)return false;
+  const result=await findCloudSaleById(id);
+  if(!result.ok)throw new Error(result.message||'No se pudo actualizar la venta.');
+  if(!result.sale){
+    await DB.delete('sales',id,{silent:true});
+    AppState.sales=(AppState.sales||[]).filter(s=>String(s?.id)!==id);
+    return true;
+  }
+  const mapped=mapSaleFromCloud(result.sale);
+  await DB.put('sales',mapped,{silent:true});
+  const list=AppState.sales||[],index=list.findIndex(s=>String(s?.id)===id);
+  if(index>=0)list[index]=mapped;else list.push(mapped);
+  AppState.sales=list;
+  return true;
+}
+
 async function syncCloudSalesToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('sales').select('*').order('created_at', { ascending: true });
+  const { data, error } = await sb.from('sales').select('id,seller_user_id,seller_name,client_name,client_phone,sale_type,total,seller_profit,stock_owner_user_id,stock_point_id,region_name,operation_city,payload,created_at,updated_at').order('created_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
   const rows = (data || []).map(mapSaleFromCloud);
   await DB.clear('sales');
@@ -1203,7 +1302,7 @@ async function syncCloudSalesToLocal() {
 async function findCloudSaleById(saleId) {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('sales').select('*').eq('id', String(saleId)).maybeSingle();
+    const { data, error } = await sb.from('sales').select('id,seller_user_id,seller_name,client_name,client_phone,sale_type,total,seller_profit,stock_owner_user_id,stock_point_id,region_name,operation_city,payload,created_at,updated_at').eq('id', String(saleId)).maybeSingle();
     if (error) return { ok: false, message: messageFromError(error) };
     return { ok: true, sale: data || null };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
@@ -1299,9 +1398,37 @@ async function deleteGenericCloudRecord(storeName, recordId) {
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
 }
 
+async function syncGenericCloudStoreToLocalV9(storeName) {
+  if(!CLOUD_GENERIC_STORES.includes(storeName))return false;
+  const sb=await requireClient();
+  const {data,error}=await sb.from('app_records')
+    .select('store_name,record_id,owner_user_id,visibility,payload,updated_at')
+    .eq('store_name',storeName).order('updated_at',{ascending:true});
+  if(error)throw new Error(messageFromError(error));
+  const currentUserId=AppState.session&&AppState.session.onlineUserId;
+  let rows=(data||[]).filter(row=>row.payload).map(row=>Object.assign({},row.payload,{
+    _cloudOwnerUserId:row.owner_user_id,_cloudVisibility:row.visibility
+  }));
+  if(storeName==='priceGroups'){
+    const central=rows.filter(row=>row._cloudVisibility==='shared'||row.scope==='central');
+    const own=rows.filter(row=>row._cloudOwnerUserId===currentUserId && !(row._cloudVisibility==='shared'||row.scope==='central'));
+    AppState.centralPriceGroups=central;
+    rows=isAdmin()?central:own;
+    AppState.priceGroups=rows;
+  } else if(storeName==='settings'){
+    const main=rows.find(row=>String(row.key||'main')==='main');
+    if(main)AppState.settings=Object.assign({},AppState.settings,main.value||main);
+  } else if(Array.isArray(AppState[storeName])) {
+    AppState[storeName]=rows;
+  }
+  await DB.clear(storeName);
+  if(rows.length)await DB.bulkPut(storeName,rows,{silent:true});
+  return true;
+}
+
 async function syncGenericCloudRecordsToLocal() {
   const sb = await requireClient();
-  const { data, error } = await sb.from('app_records').select('*')
+  const { data, error } = await sb.from('app_records').select('store_name,record_id,owner_user_id,visibility,payload,updated_at')
     .in('store_name', CLOUD_GENERIC_STORES)
     .order('updated_at', { ascending: true });
   if (error) return { ok: false, message: messageFromError(error) };
@@ -1366,7 +1493,7 @@ async function insertCloudPurchaseOrder(order) {
 async function fetchCloudPurchaseOrders() {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(200);
+    const { data, error } = await sb.from('purchase_orders').select('id,representative_user_id,representative_name,status,total,note,supplier_user_id,supplier_name,region_name,regional_manager_user_id,payload,created_at,updated_at').order('created_at', { ascending: false }).limit(200);
     if (error) return { ok: false, message: messageFromError(error) };
     const orders = (data || []).map(row => Object.assign({}, row.payload || {}, {
       id: row.id,
@@ -1444,7 +1571,7 @@ async function insertCloudMessage(message) {
 async function fetchCloudInboxMessages() {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: false }).limit(100);
+    const { data, error } = await sb.from('messages').select('id,type,title,body,sender_user_id,sender_name,sender_role,recipient_role,recipient_user_id,status,payload,created_at,updated_at').order('created_at', { ascending: false }).limit(100);
     return error ? { ok: false, message: messageFromError(error) } : { ok: true, messages: (data || []).map(mapMessageFromCloud) };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
 }
@@ -1483,7 +1610,7 @@ async function fetchRepresentativeStockForAdminV725(userId) {
 async function fetchRepresentativeOrdersForAdminV725(userId) {
   try {
     const sb = await requireClient();
-    const { data, error } = await sb.from('purchase_orders').select('*').eq('representative_user_id', userId).order('created_at', { ascending: false }).limit(50);
+    const { data, error } = await sb.from('purchase_orders').select('id,status,total,payload,created_at').eq('representative_user_id', userId).order('created_at', { ascending: false }).limit(50);
     if (error) return { ok: false, message: messageFromError(error) };
     return { ok: true, orders: (data || []).map(row => Object.assign({}, row.payload || {}, { id: row.id, status: row.status, total: Number(row.total || 0), createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now() })) };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
@@ -1504,7 +1631,7 @@ async function cloudAfterPut(storeName, record) {
   else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await upsertGenericCloudRecord(storeName, record);
   else result = { ok: true, skipped: true };
   if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó el registro.');
-  setCloudConnectionState('online', `Guardado en Supabase: ${storeName}`);
+  // El éxito de escritura lo comunica la operación; no repinta la salud de conexión.
   return result;
 }
 
@@ -1517,7 +1644,7 @@ async function cloudAfterDelete(storeName, id) {
   else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await deleteGenericCloudRecord(storeName, id);
   else result = { ok: true, skipped: true };
   if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó la eliminación.');
-  setCloudConnectionState('online', `Eliminado en Supabase: ${storeName}`);
+  // El éxito de eliminación lo comunica la operación; no repinta la salud de conexión.
   return result;
 }
 
@@ -1531,18 +1658,30 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
     if (!requireAuth()) return { ok: false, message: 'No hay sesión activa.' };
     if (AppState.session.pendingApproval) return { ok: true, restricted: true };
     setCloudConnectionState('connecting', reason);
+    // V9: el arranque crítico prioriza lo necesario para Inicio, Inventario y Ventas.
+    // Producción puede descargar cientos de movimientos/lotes y no debe competir
+    // con el primer render; se sincroniza al entrar a su módulo.
     const tasks = [
       syncCloudProductsToLocal(),
       syncCloudClientsToLocal(),
       syncCloudSalesToLocal(),
-      syncGenericCloudRecordsToLocal(),
-      window.fetchAndCachePurchaseOrders ? fetchAndCachePurchaseOrders() : Promise.resolve({ ok: true }),
-      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true }),
-      window.syncProductionCloudToLocalV740 ? syncProductionCloudToLocalV740() : Promise.resolve({ ok: true })
+      // Sólo stores necesarios por el núcleo visual/comercial.
+      syncGenericCloudStoreToLocalV9('priceGroups'),
+      syncGenericCloudStoreToLocalV9('settings'),
+      window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true })
     ];
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
-    await loadAllState();
+    await loadAllState({ coreOnly: true });
+    // V9: contextos comerciales/roles se sincronizan explícitamente desde el
+    // núcleo, sin reemplazar runBackgroundSyncOnce desde módulos históricos.
+    if (window.syncV7Context) await syncV7Context().catch(() => {});
+    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
     renderAfterCloudRefresh();
+    // Finanzas/producción/históricos quedan disponibles desde su copia actual y
+    // se hidratan después del primer render para no bloquear la experiencia.
+    const hydrateSecondaryStateV9 = () => loadAllState({ secondaryOnly: true }).catch(() => {});
+    if ('requestIdleCallback' in window) requestIdleCallback(hydrateSecondaryStateV9, { timeout: 2500 });
+    else setTimeout(hydrateSecondaryStateV9, 900);
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
     const failed = results.filter(result => result && result.ok === false);
     if (failed.length) {
@@ -1558,71 +1697,240 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
 }
 
 async function refreshAfterEvent(table, payload = null) {
+  // V9 fase 1: agrupa ráfagas de eventos de la misma tabla. Una operación de
+  // negocio puede emitir varios cambios consecutivos; antes cada evento podía
+  // descargar de nuevo una colección completa y volver a renderizar la vista.
+  if (REALTIME_INCREMENTAL_TABLES_V9.has(table)) {
+    // Los handlers incrementales necesitan conservar cada evento para no perder
+    // dos altas/cambios distintos ocurridos dentro de la misma ráfaga.
+    _realtimeRefreshQueue.push({ table, payload });
+  } else {
+    // Los handlers de resincronización completa sí pueden colapsarse por tabla.
+    const index = _realtimeRefreshQueue.findIndex(item => item.table === table);
+    if (index >= 0) _realtimeRefreshQueue[index] = { table, payload };
+    else _realtimeRefreshQueue.push({ table, payload });
+  }
+  clearTimeout(_realtimeRefreshTimer);
+  _realtimeRefreshTimer = setTimeout(flushRealtimeRefreshQueue, 120);
+}
+
+async function flushRealtimeRefreshQueue() {
+  const pending = _realtimeRefreshQueue.splice(0);
+  _realtimeRefreshTimer = null;
+  for (const { table, payload } of pending) {
+    await refreshAfterEventNow(table, payload);
+  }
+}
+
+async function applyGenericRealtimeRecordV9(payload = null) {
+  const eventType = String(payload?.eventType || payload?.event || '').toUpperCase();
+  const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old;
+  const storeName = row?.store_name;
+  const recordId = String(row?.record_id || '');
+  if (!storeName || !recordId || !CLOUD_GENERIC_STORES.includes(storeName)) return false;
+
+  // Sólo se aplica incrementalmente cuando el store tiene una representación
+  // directa como arreglo en AppState. Stores con semántica especial (settings,
+  // priceGroups, etc.) conservan la sincronización completa.
+  if (!Array.isArray(AppState[storeName])) return false;
+
+  if (eventType === 'DELETE') {
+    await DB.delete(storeName, recordId, { silent: true });
+  } else {
+    if (!payload?.new?.payload) return false;
+    const mapped = Object.assign({}, payload.new.payload, {
+      _cloudOwnerUserId: payload.new.owner_user_id,
+      _cloudVisibility: payload.new.visibility
+    });
+    await DB.put(storeName, mapped, { silent: true });
+  }
+
+  const stateKey = storeName;
+  if (Array.isArray(AppState[stateKey])) {
+    const list = AppState[stateKey];
+    const index = list.findIndex(item => String(item?.id || item?.key || '') === recordId);
+    if (eventType === 'DELETE') {
+      if (index >= 0) list.splice(index, 1);
+    } else {
+      const mapped = await DB.get(storeName, recordId);
+      if (mapped) {
+        if (index >= 0) list[index] = mapped;
+        else list.push(mapped);
+      }
+    }
+  }
+  return true;
+}
+
+async function applySimpleRealtimeRecordV9(table, payload = null) {
+  const eventType = String(payload?.eventType || payload?.event || '').toUpperCase();
+  const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old;
+  if (!row?.id || !eventType) return false;
+
+  let storeName = '';
+  let stateKey = '';
+  let mapper = null;
+  if (table === 'clients') {
+    storeName = 'clients';
+    stateKey = 'clients';
+    mapper = mapClientFromCloud;
+  } else if (table === 'sales') {
+    storeName = 'sales';
+    stateKey = 'sales';
+    mapper = mapSaleFromCloud;
+  } else {
+    return false;
+  }
+
+  const id = String(row.id);
+  if (eventType === 'DELETE') {
+    await DB.delete(storeName, id, { silent: true });
+    AppState[stateKey] = (AppState[stateKey] || []).filter(item => String(item?.id) !== id);
+    return true;
+  }
+  if (!payload?.new || !Object.keys(payload.new).length) return false;
+
+  const mapped = mapper(payload.new);
+  await DB.put(storeName, mapped, { silent: true });
+  const list = AppState[stateKey] || [];
+  const index = list.findIndex(item => String(item?.id) === id);
+  if (index >= 0) list[index] = mapped;
+  else list.push(mapped);
+  AppState[stateKey] = list;
+  return true;
+}
+
+async function refreshAfterEventNow(table, payload = null) {
   try {
-    if (table === 'products' || table === 'representative_product_preferences') await syncCloudProductsToLocal();
+    if (table === 'app_records') {
+      if (await applyGenericRealtimeRecordV9(payload)) {
+        renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+        // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+        return;
+      }
+      const storeName=payload?.new?.store_name||payload?.old?.store_name;
+      if(storeName && await syncGenericCloudStoreToLocalV9(storeName).catch(()=>false)){
+        renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:true });
+        // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+        return;
+      }
+    }
+    if ((table === 'clients' || table === 'sales') && await applySimpleRealtimeRecordV9(table, payload)) {
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
+    if (table === 'products' || table === 'representative_product_preferences') {
+      const productId=payload?.new?.product_id||payload?.old?.product_id||payload?.new?.id||payload?.old?.id;
+      const targeted=productId ? await syncCloudProductByIdV9(productId).catch(()=>false) : false;
+      if(!targeted) await syncCloudProductsToLocal();
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
     else if (table === 'representative_stock') {
-      await syncCloudProductsToLocal();
+      const productId=payload?.new?.product_id||payload?.old?.product_id;
+      const targeted=productId ? await syncCloudProductByIdV9(productId).catch(()=>false) : false;
+      if(!targeted) await syncCloudProductsToLocal();
       if (window.handleRegionalRealtimeV771) handleRegionalRealtimeV771(table, payload);
       if (AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
         hydrateRepresentativeCardsV730(AppState.allProfiles || []);
       }
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
-    else if (table === 'clients') await syncCloudClientsToLocal();
+    else if (table === 'clients') {
+      await syncCloudClientsToLocal();
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: false });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
     else if (table === 'sales') {
       await syncCloudSalesToLocal();
-      await loadAllState();
       if (AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
         hydrateRepresentativeCardsV730(AppState.allProfiles || []);
-        setCloudConnectionState('online', `Realtime: ${table}`);
-        return;
       }
+      renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: false });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
     }
-    else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) await fetchAndCachePurchaseOrders();
-    else if (table === 'messages' && window.syncInboxFromCloud) await syncInboxFromCloud();
-    else if (table === 'app_records') await syncGenericCloudRecordsToLocal();
-    else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) await syncProductionCloudToLocalV740();
+    else if (table === 'purchase_orders' && window.fetchAndCachePurchaseOrders) {
+      await fetchAndCachePurchaseOrders();
+      renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
+    else if (table === 'messages' && window.syncInboxFromCloud) {
+      await syncInboxFromCloud();
+      if (window.refreshInboxBadge) refreshInboxBadge({ silent:true }).catch(()=>{});
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
+    else if (table === 'app_records') {
+      const storeName=payload?.new?.store_name||payload?.old?.store_name;
+      if(storeName) await syncGenericCloudStoreToLocalV9(storeName);
+      else await syncGenericCloudRecordsToLocal();
+      renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
+    else if (['raw_materials','raw_material_movements','production_orders','production_batches'].includes(table) && window.syncProductionCloudToLocalV740) {
+      await syncProductionCloudToLocalV740();
+      if(AppState.currentTab==='produccion' && window.renderProductionV740) renderProductionV740();
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
     else if (['delivery_routes','route_stops','deliveries','geo_events','delivery_requests'].includes(table)) {
       if (window.handleDistributionRealtimeV770) handleDistributionRealtimeV770(table, payload);
       else if (window.refreshDistributionV760) await refreshDistributionV760();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['representative_regional_profiles','regional_restock_requests'].includes(table)) {
       if (window.handleRegionalRealtimeV771) handleRegionalRealtimeV771(table, payload);
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['staff_members','staff_tasks','staff_attendance','labor_costs','staff_payments'].includes(table)) {
       if (window.handleWorkforceRealtimeV770) handleWorkforceRealtimeV770(table, payload);
       else if (window.refreshWorkforceV770) await refreshWorkforceV770();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['territory_prospects','territory_visits','territory_events'].includes(table)) {
       if (window.handleTerritoryRealtimeV801) handleTerritoryRealtimeV801(table, payload);
       else if (window.handleTerritoryRealtimeV800) handleTerritoryRealtimeV800(table, payload);
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (['stock_points','stock_point_balances','stock_point_movements','seller_restock_requests'].includes(table)) {
       if (window.handleLinkedStockRealtimeV801) handleLinkedStockRealtimeV801(table, payload);
-      if (['stock_point_balances','stock_point_movements'].includes(table)) await syncCloudProductsToLocal();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      if (['stock_point_balances','stock_point_movements'].includes(table)) {
+        const productId=payload?.new?.product_id||payload?.old?.product_id;
+        const targeted=productId ? await syncCloudProductByIdV9(productId).catch(()=>false) : false;
+        if(!targeted) await syncCloudProductsToLocal();
+        renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
+      }
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
     else if (table === 'business_roles') {
       if (window.fetchRoleCatalogV800) await fetchRoleCatalogV800().catch(() => {});
       if (AppState.currentTab === 'roles-estructura' && window.renderRolesStructureV800) renderRolesStructureV800();
-      setCloudConnectionState('online', `Realtime: ${table}`);
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
       return;
     }
-    else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) await syncV7Context();
+    else if ((table === 'commercial_profiles' || table === 'profile_change_requests') && window.syncV7Context) {
+      await syncV7Context();
+      renderAfterCloudRefresh({ source:'realtime', table, payload, incremental:false });
+      // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
+      return;
+    }
     await loadAllState();
     renderAfterCloudRefresh();
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
-    setCloudConnectionState('online', `Realtime: ${table}`);
+    // V9: el evento confirma actividad, pero no repinta la cápsula de conexión.
   } catch (error) {
     console.warn(`Realtime ${table}:`, error);
     setCloudConnectionState('error', messageFromError(error));
@@ -1634,7 +1942,7 @@ function scheduleRealtimeRestart(detail = 'Reconectando Realtime') {
   if (!navigator.onLine || !requireAuth()) return;
   setCloudConnectionState('connecting', detail);
   _realtimeRestartTimer = setTimeout(() => {
-    startRealtimeSubscriptions();
+    startRealtimeSubscriptions({ force: true });
     if (!AppState.session.pendingApproval) runBackgroundSyncOnce('reconexión').catch(() => {});
   }, 2500);
 }
@@ -1644,16 +1952,21 @@ function stopRealtimeSubscriptions() {
   const sb = getSupabaseClient();
   if (sb && _realtimeChannel) sb.removeChannel(_realtimeChannel).catch(() => {});
   _realtimeChannel = null;
+  _realtimeChannelUserId = null;
 }
 
-function startRealtimeSubscriptions() {
+function startRealtimeSubscriptions(options = {}) {
   installAuthObserverV801();
   const sb = getSupabaseClient();
-  if (!sb || !requireAuth()) return;
+  if (!sb || !requireAuth()) return false;
+  const userId = AppState.session && AppState.session.onlineUserId;
+  if (!userId) return false;
+  const force = options.force === true;
+  if (!force && _realtimeChannel && _realtimeChannelUserId === userId) return true;
   stopRealtimeSubscriptions();
   setCloudConnectionState('connecting', 'Abriendo Realtime');
 
-  let channel = sb.channel(`nv7-main-${AppState.session.onlineUserId}`);
+  let channel = sb.channel(`nv7-main-${userId}`);
   ['products', 'representative_stock', 'representative_product_preferences', 'clients', 'sales', 'purchase_orders', 'messages', 'app_records', 'commercial_profiles', 'profile_change_requests', 'raw_materials', 'raw_material_movements', 'production_orders', 'production_batches', 'delivery_routes', 'route_stops', 'deliveries', 'geo_events', 'delivery_requests', 'representative_regional_profiles', 'regional_restock_requests', 'staff_members', 'staff_tasks', 'staff_attendance', 'labor_costs', 'staff_payments', 'business_roles', 'territory_prospects', 'territory_visits', 'territory_events', 'stock_points', 'stock_point_balances', 'stock_point_movements', 'seller_restock_requests'].forEach(table => {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => refreshAfterEvent(table, payload));
   });
@@ -1687,6 +2000,7 @@ function startRealtimeSubscriptions() {
     } catch (error) { console.warn('Realtime profiles:', error); }
   });
 
+  _realtimeChannelUserId = userId;
   _realtimeChannel = channel.subscribe((status, error) => {
     if (status === 'SUBSCRIBED') setCloudConnectionState('online', 'Realtime conectado');
     else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
@@ -1694,6 +2008,7 @@ function startRealtimeSubscriptions() {
       scheduleRealtimeRestart(status);
     }
   });
+  return true;
 }
 
 function startBackgroundSync() {
@@ -1702,22 +2017,26 @@ function startBackgroundSync() {
   startRealtimeSubscriptions();
   window.addEventListener('online', () => {
     setCloudConnectionState('connecting', 'Internet recuperado');
-    startRealtimeSubscriptions();
+    startRealtimeSubscriptions({ force: true });
     if (requireAuth() && !AppState.session.pendingApproval) runBackgroundSyncOnce('internet recuperado').catch(() => {});
   });
   window.addEventListener('offline', () => setCloudConnectionState('offline', 'Sin internet'));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && navigator.onLine && requireAuth()) {
       startRealtimeSubscriptions();
-      if (!AppState.session.pendingApproval) runBackgroundSyncOnce('aplicación visible').catch(() => {});
+      const now = Date.now();
+      if (!AppState.session.pendingApproval && now - _lastForegroundSyncAt >= FOREGROUND_SYNC_MIN_INTERVAL_MS) {
+        _lastForegroundSyncAt = now;
+        runBackgroundSyncOnce('aplicación visible').catch(() => {});
+      }
     }
   });
 }
 
 async function syncAfterLogin() {
   startBackgroundSync();
-  startRealtimeSubscriptions();
   if (AppState.session && AppState.session.pendingApproval) return { ok: true, mode: 'restricted-realtime' };
+  _lastForegroundSyncAt = Date.now();
   return runBackgroundSyncOnce('inicio de sesión');
 }
 
@@ -1785,6 +2104,9 @@ Object.assign(window, {
   updateCloudProfileStatus,
   uploadProductPhotoIfNeeded,
   syncCloudProductsToLocal,
+  syncGenericCloudStoreToLocalV9,
+  syncCloudProductByIdV9,
+  syncCloudSaleByIdV9,
   pushLocalProductsToCloud,
   adjustRepresentativeStockRemote,
   queueRepresentativeStockDelta,
