@@ -643,9 +643,35 @@
       return {name:clampText(c.name||c.businessName||'Cliente',90),sales:own.length,revenue:Number(revenue.toFixed(2)),daysSinceLast:last?daysSince(last):null,balance:Number(balance.toFixed(2)),region:clampText(c.regionName||c.region||c.city||'',50)};
     });
   }
+  function aiContextScopeV9(question=''){
+    const q=normalizedName(question);
+    const scope=new Set();
+    const add=(...items)=>items.forEach(x=>scope.add(x));
+    if(/venta|vendid|utilidad|ganancia|margen|ingreso|factur|producto.*vend|recibo|cotiz/.test(q)) add('sales','inventory','customers');
+    if(/stock|inventar|producto|precio|costo|mayorista|represent/.test(q)) add('inventory');
+    if(/cliente|seguimiento|inactiv|comprador/.test(q)) add('customers','sales');
+    if(/cobran|deuda|debe|saldo|pago|moros|cuenta/.test(q)) add('receivables','customers');
+    if(/finanz|egreso|gasto|caja|rentab/.test(q)) add('finance','sales');
+    if(/produccion|producir|insumo|materia prima|lote/.test(q)) add('production','inventory','sales');
+    if(/regla|descuento|promocion|promoción|margen minimo|margen mínimo/.test(q)) add('rules','inventory');
+    if(/tarea|prioridad|alerta|resumen|negocio|empresa|como va|cómo va|situacion|situación|general/.test(q)) add('overview');
+    if(!scope.size) add('overview');
+    if(scope.has('overview')) add('sales','inventory','customers','receivables');
+    return scope;
+  }
+
   function businessSnapshot(question=''){
-    const today=salesStats(1), week=salesStats(7), month=salesStats(30), ss=stockStats(), rs=receivableStats();
-    const clients=clientCommercialRows();
+    const scope=aiContextScopeV9(question);
+    const needSales=scope.has('sales')||scope.has('overview')||scope.has('production');
+    const needInventory=scope.has('inventory')||scope.has('overview')||scope.has('production');
+    const needCustomers=scope.has('customers')||scope.has('overview');
+    const needReceivables=scope.has('receivables')||scope.has('overview');
+    const today=needSales?salesStats(1):{rows:[],revenue:0,cost:0,profit:0,margin:0,units:0,byProduct:[]};
+    const week=needSales?salesStats(7):{rows:[],revenue:0,cost:0,profit:0,margin:0,units:0,byProduct:[]};
+    const month=needSales?salesStats(30):{rows:[],revenue:0,cost:0,profit:0,margin:0,units:0,byProduct:[]};
+    const ss=needInventory?stockStats():{critical:[],negative:[],total:0};
+    const rs=needReceivables?receivableStats():{open:[],total:0,overdue:[],historical:[]};
+    const clients=needCustomers?clientCommercialRows():[];
     const productRows=month.byProduct.slice(0,12).map(x=>({name:clampText(x.name,90),units:Number(x.qty||0),revenue:Number(x.revenue.toFixed(2)),profit:Number((x.revenue-x.cost).toFixed(2)),margin:Number((x.revenue?((x.revenue-x.cost)/x.revenue*100):0).toFixed(1))}));
     const productMap=new Map((dataset().products||[]).map(p=>[normalizedName(p.name),p]));
     productRows.forEach(x=>{ const p=productMap.get(normalizedName(x.name))||{}; x.stock=Number(p.stock||0); x.price=productPriceV827(p); x.cost=productCostV827(p); });
@@ -654,7 +680,7 @@
     const settings=dataset().settings||{};
     return {
       generatedAt:new Date().toISOString(),
-      context:{tab:assistantContext.tab,label:assistantContext.label,questionTopic:clampText(question,140)},
+      context:{tab:assistantContext.tab,label:assistantContext.label,questionTopic:clampText(question,140),scope:[...scope]},
       privacy:{phonesExcluded:true,addressesExcluded:true,emailsExcluded:true,rawReceiptsExcluded:true},
       metrics:{
         today:{operations:today.rows.length,revenue:Number(today.revenue.toFixed(2)),profit:Number(today.profit.toFixed(2)),margin:Number(today.margin.toFixed(1))},
@@ -662,17 +688,17 @@
         thirtyDays:{operations:month.rows.length,revenue:Number(month.revenue.toFixed(2)),profit:Number(month.profit.toFixed(2)),margin:Number(month.margin.toFixed(1)),units:month.units},
         receivables:{operations:rs.open.length,total:Number(rs.total.toFixed(2)),overdue:rs.overdue.length,historical:rs.historical.length},
         inventory:{products:ss.total,critical:ss.critical.length,negative:ss.negative.length},
-        customers:{total:(dataset().clients||[]).length,inactive30Days:clientStats().inactive.length,incomplete:clientStats().incomplete.length}
+        customers:needCustomers?{total:(dataset().clients||[]).length,inactive30Days:clientStats().inactive.length,incomplete:clientStats().incomplete.length}:{total:0,inactive30Days:0,incomplete:0}
       },
-      commercialRules:{minimumMargin:Number(settings.minMargin??settings.minimumMargin??25)||25,maximumDiscount:Number(settings.maxDiscount??settings.maximumDiscount??10)||10,currency:'BOB'},
+      commercialRules:(scope.has('rules')||scope.has('overview'))?{minimumMargin:Number(settings.minMargin??settings.minimumMargin??25)||25,maximumDiscount:Number(settings.maxDiscount??settings.maximumDiscount??10)||10,currency:'BOB'}:null,
       topProducts:productRows,
-      catalogProducts:(dataset().products||[]).filter(p=>p.status!=='archived').slice(0,40).map(p=>({name:clampText(p.name||'Producto',100),presentation:clampText(p.presentation||p.packageType||'',50),stock:Number(p.stock||0),price:productPriceV827(p),cost:productCostV827(p)})),
+      catalogProducts:needInventory?(dataset().products||[]).filter(p=>p.status!=='archived').slice(0,40).map(p=>({name:clampText(p.name||'Producto',100),presentation:clampText(p.presentation||p.packageType||'',50),stock:Number(p.stock||0),price:productPriceV827(p),cost:productCostV827(p)})):[],
       criticalStock:ss.critical.slice(0,12).map(p=>({name:clampText(p.name||'Producto',90),stock:Number(p.stock||0),price:productPriceV827(p),cost:productCostV827(p)})),
       customersForFollowUp:topClients,
       topReceivables:receivables,
       focusedAccount:(()=>{const a=focusedAccountContext();return a?{client:clampText(a.name||'Cliente',90),totalBought:Number(Number(a.totalBought||0).toFixed(2)),totalPaid:Number(Number(a.totalPaid||0).toFixed(2)),totalDebt:Number(Number(a.totalDebt||0).toFixed(2)),pendingOperations:Number(a.pendingCount||0),daysLate:Number(a.daysLate||0),oldestDebtDate:a.oldestDebtDate?new Date(Number(a.oldestDebtDate)).toISOString().slice(0,10):null,lastPaymentDate:a.lastPaymentDate?new Date(Number(a.lastPaymentDate)).toISOString().slice(0,10):null}:null;})(),
-      alerts:controlAlertsV832().slice(0,10).map(x=>({level:x.priority,title:clampText(x.title,100),detail:clampText(x.detail,180)})),
-      control:{evaluation:businessEvaluationV832(),dailySummary:dailySummaryV832(),weeklySummary:weeklySummaryV835(),proactiveActions:proactiveActionsV835().map(x=>({priority:x.priority,title:x.title,detail:x.detail})),pendingTasks:readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).slice(0,20),production:productCommercialHealthV832().filter(x=>x.suggested>0).slice(0,12).map(x=>({product:x.product.name,stock:x.stock,coverageDays:Number(x.coverage===999?999:x.coverage.toFixed(1)),suggestedProduction:x.suggested,openPlanned:x.openPlanned}))}
+      alerts:scope.has('overview')?controlAlertsV832().slice(0,10).map(x=>({level:x.priority,title:clampText(x.title,100),detail:clampText(x.detail,180)})):[],
+      control:scope.has('overview')?{evaluation:businessEvaluationV832(),dailySummary:dailySummaryV832(),weeklySummary:weeklySummaryV835(),proactiveActions:proactiveActionsV835().map(x=>({priority:x.priority,title:x.title,detail:x.detail})),pendingTasks:readControlTasksV832().filter(x=>['pending','in_progress'].includes(x.status)).slice(0,20),production:productCommercialHealthV832().filter(x=>x.suggested>0).slice(0,12).map(x=>({product:x.product.name,stock:x.stock,coverageDays:Number(x.coverage===999?999:x.coverage.toFixed(1)),suggestedProduction:x.suggested,openPlanned:x.openPlanned}))}:null
     };
   }
   function conversationForEngine(){
