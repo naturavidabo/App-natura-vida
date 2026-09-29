@@ -352,7 +352,7 @@ function render() {
     case 'resumen': renderResumen(); break;
     case 'ajustes': renderSettings(); break;
     case 'reglas-comerciales': window.renderCommercialRulesV807 ? renderCommercialRulesV807() : renderSettings(); break;
-    case 'asistente-ia': window.renderAIAssistantV9 ? renderAIAssistantV9() : renderInicio(); break;
+    case 'asistente-ia': if (window.renderAIAssistantV9) renderAIAssistantV9(); else { renderInicio(); window.ensureAIAssistantModuleV9?.().then(()=>{ if(AppState.currentTab==='asistente-ia') renderAIAssistantV9?.(); }).catch(()=>showToast('No se pudo cargar el Asistente IA.','error')); } break;
     case 'estado-cuenta': window.renderClientAccountV820 ? renderClientAccountV820() : renderClients(); break;
     case 'usuarios': renderUsersFoundation(); break;
     case 'reportes-pro': renderReportsFoundation(); break;
