@@ -58,6 +58,9 @@
       'js/v8-quality-assurance.js?v=8.4.0', () => !!window.NV806QualityAssurance);
   };
 
+  window.ensureFinancialAccountsModuleV9 = () => loadLocalModuleV9('cuentas-financieras',
+    'js/v8-financial-accounts.js?v=8.4.0', () => !!window.renderReceivablesV820);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
