@@ -1,8 +1,8 @@
 {
-  "version": "10.0.0",
-  "build": "2026-09-29-v100-ui-polish",
-  "releasedAt": "2026-09-29T15:54:00-04:00",
+  "version": "10.1.0",
+  "build": "2026-09-29-v101-audit-polish",
+  "releasedAt": "2026-09-29T16:20:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V10.0.0 - evolución visual sobre base funcional completa",
-  "createdAt": "2026-09-29T15:54:00-04:00"
+  "label": "Natura Vida V10.1.0 - auditoría funcional y pulido visual",
+  "createdAt": "2026-09-29T16:20:00-04:00"
 }
