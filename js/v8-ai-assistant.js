@@ -667,6 +667,7 @@
       const balance=Math.max(balanceByClient.get(idKey)||0,balanceByClient.get(nameKey)||0);
       return {name:clampText(c.name||c.businessName||'Cliente',90),sales:own.length,revenue:Number(revenue.toFixed(2)),daysSinceLast:last?daysSince(last):null,balance:Number(balance.toFixed(2)),region:clampText(c.regionName||c.region||c.city||'',50)};
     });
+    });
   }
   function aiContextScopeV9(question=''){
     const q=normalizedName(question);
