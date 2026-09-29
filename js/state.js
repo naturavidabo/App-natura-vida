@@ -73,36 +73,41 @@ const AppState = {
 
 async function loadAllState(options = {}) {
   const coreOnly = options.coreOnly === true;
-  const core = await Promise.all([
-    DB.getAll('products'),
-    DB.getAll('priceGroups'),
-    DB.getAll('sales'),
-    DB.getAll('clients'),
-    DB.getAll('quotes'),
-    DB.getAll('messages').catch(() => []),
-    DB.getAll('settings')
-  ]);
-  const [products, priceGroups, sales, clients, quotes, messages, settingsRows] = core;
+  const secondaryOnly = options.secondaryOnly === true;
 
-  AppState.products = products.map(p => window.normalizeLegacyProduct ? normalizeLegacyProduct(p) : p);
-  AppState.priceGroups = priceGroups;
-  AppState.sales = sales;
-  AppState.clients = clients;
-  AppState.quotes = quotes;
-  AppState.messages = messages || [];
+  if (!secondaryOnly) {
+    const core = await Promise.all([
+      DB.getAll('products'), DB.getAll('priceGroups'), DB.getAll('sales'),
+      DB.getAll('clients'), DB.getAll('quotes'), DB.getAll('messages').catch(() => []),
+      DB.getAll('settings')
+    ]);
+    const [products, priceGroups, sales, clients, quotes, messages, settingsRows] = core;
+    AppState.products = products.map(p => window.normalizeLegacyProduct ? normalizeLegacyProduct(p) : p);
+    AppState.priceGroups = priceGroups;
+    AppState.sales = sales;
+    AppState.clients = clients;
+    AppState.quotes = quotes;
+    AppState.messages = messages || [];
+    const savedSettings = settingsRows.find(r => r.key === 'main');
+    if (savedSettings && savedSettings.value) {
+      AppState.settings = Object.assign({}, AppState.settings, savedSettings.value);
+      if (!AppState.settings.logo || AppState.settings.logo === 'icons/icon-192.png') {
+        AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
+        await saveSettings();
+      }
+    } else {
+      AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
+      await saveSettings();
+    }
+  }
 
   if (!coreOnly) {
     const secondary = await Promise.all([
-      DB.getAll('expenses').catch(() => []),
-      DB.getAll('receivablePayments').catch(() => []),
-      DB.getAll('historicalReceivables').catch(() => []),
-      DB.getAll('financialDocuments').catch(() => []),
-      DB.getAll('paymentPlans').catch(() => []),
-      DB.getAll('rawMaterials').catch(() => []),
-      DB.getAll('rawMaterialMovements').catch(() => []),
-      DB.getAll('productionOrders').catch(() => []),
-      DB.getAll('productionBatches').catch(() => []),
-      DB.getAll('representatives').catch(() => [])
+      DB.getAll('expenses').catch(() => []), DB.getAll('receivablePayments').catch(() => []),
+      DB.getAll('historicalReceivables').catch(() => []), DB.getAll('financialDocuments').catch(() => []),
+      DB.getAll('paymentPlans').catch(() => []), DB.getAll('rawMaterials').catch(() => []),
+      DB.getAll('rawMaterialMovements').catch(() => []), DB.getAll('productionOrders').catch(() => []),
+      DB.getAll('productionBatches').catch(() => []), DB.getAll('representatives').catch(() => [])
     ]);
     [
       AppState.expenses, AppState.receivablePayments, AppState.historicalReceivables,
@@ -110,18 +115,6 @@ async function loadAllState(options = {}) {
       AppState.rawMaterialMovements, AppState.productionOrders, AppState.productionBatches,
       AppState.representatives
     ] = secondary;
-  }
-
-  const savedSettings = settingsRows.find(r => r.key === 'main');
-  if (savedSettings && savedSettings.value) {
-    AppState.settings = Object.assign({}, AppState.settings, savedSettings.value);
-    if (!AppState.settings.logo || AppState.settings.logo === 'icons/icon-192.png') {
-      AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
-      await saveSettings();
-    }
-  } else {
-    AppState.settings.logo = 'img/brand/natura-vida-logo.jpeg';
-    await saveSettings();
   }
 }
 
