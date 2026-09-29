@@ -1625,7 +1625,7 @@ async function cloudAfterPut(storeName, record) {
   else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await upsertGenericCloudRecord(storeName, record);
   else result = { ok: true, skipped: true };
   if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó el registro.');
-  setCloudConnectionState('online', `Guardado en Supabase: ${storeName}`);
+  // El éxito de escritura lo comunica la operación; no repinta la salud de conexión.
   return result;
 }
 
@@ -1638,7 +1638,7 @@ async function cloudAfterDelete(storeName, id) {
   else if (CLOUD_GENERIC_STORES.includes(storeName)) result = await deleteGenericCloudRecord(storeName, id);
   else result = { ok: true, skipped: true };
   if (!result || result.ok === false) throw new Error((result && result.message) || 'Supabase rechazó la eliminación.');
-  setCloudConnectionState('online', `Eliminado en Supabase: ${storeName}`);
+  // El éxito de eliminación lo comunica la operación; no repinta la salud de conexión.
   return result;
 }
 
