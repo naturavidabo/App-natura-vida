@@ -82,6 +82,15 @@
   window.ensureStatsModuleV9 = () => loadLocalModuleV9('estadisticas',
     'js/v7-stats.js?v=8.4.0', () => !!window.renderCommercialStatsV7);
 
+  window.ensureProfileModuleV9 = () => loadLocalModuleV9('perfil-usuarios',
+    'js/v7-profile-users.js?v=8.4.0', () => !!window.renderProfileV7);
+
+  window.ensureManagementCenterModuleV9 = () => loadLocalModuleV9('centro-gestion',
+    'js/v7-management-center.js?v=8.4.0', () => !!window.renderManagementCenterV770);
+
+  window.ensureLegacyFinanceModuleV9 = () => loadLocalModuleV9('finanzas-v7',
+    'js/v7-finance.js?v=8.4.0', () => !!window.renderFinanceV725);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
