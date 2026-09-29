@@ -168,6 +168,16 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'personal' || tab === 'regional') {
+      try {
+        if (tab === 'personal' && window.ensureWorkforceModuleV9) await ensureWorkforceModuleV9();
+        if (tab === 'regional' && window.ensureRegionalModuleV9) await ensureRegionalModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar el módulo solicitado. Revisa tu conexión.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'territorio' || tab === 'distribucion') {
       try {
         if (window.ensureLeafletV9) await ensureLeafletV9();
