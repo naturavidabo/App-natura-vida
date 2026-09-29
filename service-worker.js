@@ -6,7 +6,7 @@ const RUNTIME_CACHE = 'nv-runtime-v9-saneamiento-2';
 const IMAGE_CACHE_LIMIT = 80;
 const RUNTIME_CACHE_LIMIT = 40;
 const APP_SHELL = [
-  './app-version.json','./css/app.css','./css/v7.css','./css/v8.css',
+  './app-version.json','./css/app.css','./css/v7.css','./css/v8.css','./css/v9.css',
   './icons/icon-144.png','./icons/icon-180.png','./icons/icon-192.png','./icons/icon-48.png','./icons/icon-512.png','./icons/icon-72.png','./icons/icon-96.png',
   './index.html','./js/app-update.js','./js/lazy-assets.js','./js/app.js','./js/auth.js','./js/clients.js','./js/db.js','./js/inbox.js',
   './js/pricegroups.js','./js/products.js','./js/sales.js','./js/settings.js','./js/state.js','./js/v8-financial-core.js','./js/v8-commercial-rules-core.js',
