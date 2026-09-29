@@ -62,7 +62,7 @@
     if (subtitle) subtitle.textContent = 'Te cuida por dentro y por fuera';
 
     const avatarBox = $('#topProfileAvatarV771');
-    const avatarUrl = window.profileAvatarUrlV771 ? profileAvatarUrlV771(AppState.session || {}) : String(AppState.session?.avatarUrl || '');
+    const avatarUrl = String(AppState.session?.avatar_url || AppState.session?.avatarUrl || AppState.session?.photo_url || AppState.session?.photoUrl || '').trim();
     if (avatarBox) avatarBox.innerHTML = avatarUrl
       ? `<img src="${escapeHtml(avatarUrl)}" alt="Mi fotografía" loading="lazy" decoding="async">`
       : `<b>${escapeHtml(displayInitialV7())}</b>`;
