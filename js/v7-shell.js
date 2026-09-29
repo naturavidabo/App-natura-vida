@@ -168,6 +168,15 @@
       if (!leave) return;
     }
     // Carga pesada sólo después de validar permisos y cambios pendientes.
+    if (tab === 'perfil' || tab === 'usuarios' || tab === 'distribucion' || tab === 'pedidos') {
+      try {
+        if (window.ensureIntegrationV771ModuleV9) await ensureIntegrationV771ModuleV9();
+      } catch (_) {
+        if (requestId === navigationRequestV9) showToast('No se pudo cargar la integración operativa.', 'error');
+        return;
+      }
+      if (requestId !== navigationRequestV9) return;
+    }
     if (tab === 'produccion' && isAdmin()) {
       try {
         if (window.ensureProductionModuleV9) await ensureProductionModuleV9();
