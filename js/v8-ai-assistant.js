@@ -643,6 +643,7 @@
   }
 
   function clientCommercialRows(){
+    return memoAiCalcV9('client-commercial',()=>{
     const {clients,sales}=dataset();
     const rs=receivableStats();
     const balanceByClient=new Map();
