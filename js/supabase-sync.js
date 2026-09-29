@@ -1786,7 +1786,9 @@ async function refreshAfterEventNow(table, payload = null) {
       return;
     }
     else if (table === 'representative_stock') {
-      await syncCloudProductsToLocal();
+      const productId=payload?.new?.product_id||payload?.old?.product_id;
+      const targeted=productId ? await syncCloudProductByIdV9(productId).catch(()=>false) : false;
+      if(!targeted) await syncCloudProductsToLocal();
       if (window.handleRegionalRealtimeV771) handleRegionalRealtimeV771(table, payload);
       if (AppState.currentTab === 'usuarios' && window.hydrateRepresentativeCardsV730) {
         hydrateRepresentativeCardsV730(AppState.allProfiles || []);
@@ -1835,7 +1837,9 @@ async function refreshAfterEventNow(table, payload = null) {
     else if (['stock_points','stock_point_balances','stock_point_movements','seller_restock_requests'].includes(table)) {
       if (window.handleLinkedStockRealtimeV801) handleLinkedStockRealtimeV801(table, payload);
       if (['stock_point_balances','stock_point_movements'].includes(table)) {
-        await syncCloudProductsToLocal();
+        const productId=payload?.new?.product_id||payload?.old?.product_id;
+        const targeted=productId ? await syncCloudProductByIdV9(productId).catch(()=>false) : false;
+        if(!targeted) await syncCloudProductsToLocal();
         renderAfterCloudRefresh({ source: 'realtime', table, payload, incremental: true });
       }
       setCloudConnectionState('online', `Realtime: ${table}`);
