@@ -2,11 +2,12 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 js=(root/'js/v8-governance.js').read_text()
 settings=(root/'js/settings.js').read_text()
+lazy=(root/'js/lazy-assets.js').read_text()
 app=(root/'js/app.js').read_text()
 index=(root/'index.html').read_text()
 css=(root/'css/v8.css').read_text()
 checks={
-'governance loaded':'js/v8-governance.js?v=8.4.0' in index,
+'governance deferred':'js/v8-governance.js?v=8.4.0' not in index and 'ensureGovernanceModuleV9' in lazy and 'ensureGovernanceModuleV9' in settings,
 'duplicate detection':'findClientDuplicates' in js,
 'inventory checks':'inventoryIssues' in js,
 'system health':'systemHealth' in js,
