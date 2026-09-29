@@ -308,8 +308,19 @@
     return saveFinancialDocumentV820({documentType:kind,prefix,documentNumber:number,title,clientId:account.client.id,clientName:account.client.name,total:payment.amount,balanceAfter:account.totalDebt,paymentId:payment.id,snapshot:{client:account.client,payment,accountTotals:{totalBought:account.totalBought,totalPaid:account.totalPaid,totalDebt:account.totalDebt,balanceBefore:Core.round(account.totalDebt+Number(payment.amount||0)),balanceAfter:account.totalDebt},operations:(affected.length?affected:account.operations).map(operationSnapshotV820),region:regionForAccount(account),seller:sellerForAccount(account),generatedBy:AppState.session.fullName||AppState.session.username||'',generatedAt:Date.now()}});
   }
   async function openPaymentReceiptByIdV820(paymentId){
-    let doc=(AppState.financialDocuments||[]).find(d=>d.paymentId===paymentId);const payment=(AppState.receivablePayments||[]).find(p=>p.id===paymentId);if(!payment)return;
-    if(!doc)doc=await createPaymentDocumentV820(payment,clientAccountV820(payment.clientId),clientAccountV820(payment.clientId).totalDebt<=.009?'REC':'RPP');
+    let doc=(AppState.financialDocuments||[]).find(d=>String(d.paymentId||'')===String(paymentId));
+    const payment=(AppState.receivablePayments||[]).find(p=>String(p.id)===String(paymentId));if(!payment)return;
+    if(!doc&&navigator.onLine&&window.syncGenericCloudStoreToLocalV9){
+      try{
+        await syncGenericCloudStoreToLocalV9('financialDocuments');
+        doc=(AppState.financialDocuments||[]).find(d=>String(d.paymentId||'')===String(paymentId));
+      }catch(_){ }
+    }
+    if(!doc){
+      const account=clientAccountV820(payment.clientId);
+      if(!account)return showToast('No se pudo reconstruir la cuenta del pago.','error');
+      doc=await createPaymentDocumentV820(payment,account,account.totalDebt<=.009?'REC':'RPP');
+    }
     openFinancialDocumentPreviewV820(doc);
   }
   function operationSnapshotV820(op){const due=Core.dueDate(op);const pending=saleBalanceV820(op);const days=pending>.009&&due?Math.max(0,Math.floor((Date.now()-due)/86400000)):0;return {id:op.id,documentNumber:operationLabelV820(op),date:Core.operationDate(op),dueDate:due,items:op.items||[],products:op.products||'',total:Number(op.total||0),paid:salePaidTotalV820(op),balance:pending,status:operationStatusV820(op),daysLate:days,historical:op.operationKind==='historical'||op.historicalActive,origin:op.origin||'',observations:op.observations||op.pendingReason||''}; }
