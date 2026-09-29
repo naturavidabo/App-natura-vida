@@ -56,11 +56,9 @@ async function verifyCloudSaleV829(saleId) {
 async function openSaleReceiptSafeV829(sale) {
   try {
     if (!window.openV7ReceiptPreview && window.ensureDocumentsV7ModuleV9) {
-      try { await ensureDocumentsV7ModuleV9(); } catch (_) {}
+      await ensureDocumentsV7ModuleV9();
     }
     if (window.openV7ReceiptPreview) { openV7ReceiptPreview(sale, 'sale'); return {ok:true}; }
-    if (!window.openReceiptPreview && window.ensureReceiptModuleV9) { try { await ensureReceiptModuleV9(); } catch (_) {} }
-    if (window.openReceiptPreview) { openReceiptPreview(sale); return {ok:true}; }
     throw new Error('El módulo visual del recibo no está disponible.');
   } catch (error) {
     console.error('NV_RECEIPT_PREVIEW_ERROR', error);
