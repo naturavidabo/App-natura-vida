@@ -91,6 +91,9 @@
   window.ensureLegacyFinanceModuleV9 = () => loadLocalModuleV9('finanzas-v7',
     'js/v7-finance.js?v=8.4.0', () => !!window.renderFinanceV725);
 
+  window.ensureOrdersV7ModuleV9 = () => loadLocalModuleV9('pedidos-v7',
+    'js/v7-orders.js?v=8.4.0', () => !!window.renderOrderRequestV7);
+
   window.ensureJsPdfV9 = () => loadExternalScriptV9('jsPDF',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     () => !!(window.jspdf && window.jspdf.jsPDF)
