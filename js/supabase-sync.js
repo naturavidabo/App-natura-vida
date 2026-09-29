@@ -1580,6 +1580,10 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
     ];
     const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
     await loadAllState({ coreOnly: true });
+    // V9: contextos comerciales/roles se sincronizan explícitamente desde el
+    // núcleo, sin reemplazar runBackgroundSyncOnce desde módulos históricos.
+    if (window.syncV7Context) await syncV7Context().catch(() => {});
+    if (window.syncV8ContextV800) await syncV8ContextV800().catch(() => {});
     renderAfterCloudRefresh();
     // Finanzas/producción/históricos quedan disponibles desde su copia actual y
     // se hidratan después del primer render para no bloquear la experiencia.
