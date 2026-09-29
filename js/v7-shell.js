@@ -181,6 +181,15 @@
       // navegación antigua no puede imponerse al terminar la descarga.
       if (requestId !== navigationRequestV9) return;
     }
+    if (tab === 'produccion' && window.syncProductionCloudToLocalV740 && navigator.onLine) {
+      // Producción ya no bloquea el login. Se actualiza únicamente cuando el
+      // usuario realmente entra al módulo, conservando primero la copia local.
+      syncProductionCloudToLocalV740()
+        .then(result => {
+          if (result?.ok && AppState.currentTab === 'produccion' && requestId === navigationRequestV9 && window.renderProductionV740) renderProductionV740();
+        })
+        .catch(() => {});
+    }
     if (window.clearMeaningfulDirtyV840) clearMeaningfulDirtyV840('navigation');
     else window.V7_FORM_DIRTY = false;
     AppState.currentTab = tab;
