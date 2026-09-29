@@ -1,6 +1,12 @@
 /* NATURA VIDA V7 — compra online, pedidos y venta directa a representantes. */
 
 (() => {
+  async function openOrderReceiptV9(order, kind = 'order') {
+    try { if (!window.openV7ReceiptPreview && window.ensureDocumentsV7ModuleV9) await ensureDocumentsV7ModuleV9(); }
+    catch (_) { return showToast('No se pudo cargar el comprobante.', 'error'); }
+    if (window.openV7ReceiptPreview) return openV7ReceiptPreview(order, kind);
+    showToast('El comprobante no está disponible.', 'error');
+  }
   let orderCart = {};
   let orderSearch = '';
   let orderNote = '';
@@ -122,7 +128,7 @@
     $all('.v7EditOwnOrder').forEach(b => b.addEventListener('click', () => editOwnOrder(b.dataset.id, orders)));
     $all('.v7CancelOwnOrder').forEach(b => b.addEventListener('click', () => cancelOwnOrder(b.dataset.id)));
     $all('.v7PaymentOrder, .v7ReceiptOrder').forEach(b => b.addEventListener('click', () => {
-      const o = orders.find(x => x.id === b.dataset.id); if (o) openV7ReceiptPreview(o, 'order');
+      const o = orders.find(x => x.id === b.dataset.id); if (o) openOrderReceiptV9(o, 'order');
     }));
     renderOrderCartBar();
   }
@@ -184,10 +190,10 @@
     $('#v7DirectSaleBtn').addEventListener('click', openDirectRepresentativeSale);
     $all('.v7AdminEditOrder').forEach(b => b.addEventListener('click', () => openAdminOrderEditor(b.dataset.id, orders)));
     $all('.v7ApproveOrder').forEach(b => b.addEventListener('click', () => approveAdminOrder(b.dataset.id)));
-    $all('.v7PaymentAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openV7ReceiptPreview(o,'order'); }));
+    $all('.v7PaymentAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openOrderReceiptV9(o,'order'); }));
     $all('.v7ConfirmPayment').forEach(b => b.addEventListener('click', () => confirmAdminOrderPayment(b.dataset.id)));
     $all('.v7RejectOrder').forEach(b => b.addEventListener('click', () => rejectAdminOrder(b.dataset.id, orders)));
-    $all('.v7ReceiptAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openV7ReceiptPreview(o,'order'); }));
+    $all('.v7ReceiptAdminOrder').forEach(b => b.addEventListener('click', () => { const o=orders.find(x=>x.id===b.dataset.id); if(o) openOrderReceiptV9(o,'order'); }));
   }
 
   function openAdminOrderEditor(id, orders) {
@@ -226,7 +232,7 @@
       if(!delivery.ok) deliveryWarning=delivery.message||'No se creó la entrega pendiente.';
     }
     showToast(deliveryWarning?`Pago y stock confirmados. Revisa la entrega: ${deliveryWarning}`:'Pago confirmado, stock transferido y entrega enviada a planificación.',deliveryWarning?'error':undefined);
-    if(order) openV7ReceiptPreview(order,'order');
+    if(order) openOrderReceiptV9(order,'order');
   }
   async function rejectAdminOrder(id, orders) { if(!confirmDialog('¿Rechazar este pedido?'))return; const order=orders.find(o=>o.id===id);const res=await adminUpdateOrderV7(id,Object.assign({},order,{status:'rejected',updatedAt:Date.now()}));showToast(res.ok?'Pedido rechazado.':res.message,res.ok?undefined:'error');if(res.ok)renderAdminOrdersInboxV7(); }
 
