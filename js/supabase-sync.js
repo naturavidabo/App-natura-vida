@@ -2025,6 +2025,8 @@ Object.assign(window, {
   updateCloudProfileStatus,
   uploadProductPhotoIfNeeded,
   syncCloudProductsToLocal,
+  syncCloudProductByIdV9,
+  syncCloudSaleByIdV9,
   pushLocalProductsToCloud,
   adjustRepresentativeStockRemote,
   queueRepresentativeStockDelta,
