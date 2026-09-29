@@ -574,10 +574,16 @@ const CLOUD_TRANSIENT_VISUAL_DELAY_MS = 650;
 
 function commitCloudConnectionStateV9(state, detail = '') {
   const nextDetail = detail || '';
-  if (CloudConnection.state === state && CloudConnection.detail === nextDetail) return;
+  const stateChanged = CloudConnection.state !== state;
+  const detailChanged = CloudConnection.detail !== nextDetail;
+  if (!stateChanged && !detailChanged) return;
   CloudConnection.state = state;
   CloudConnection.detail = nextDetail;
   CloudConnection.updatedAt = Date.now();
+  // La cápsula representa salud de conexión, no actividad interna.
+  // Los cambios de detalle quedan disponibles en CloudConnection sin forzar
+  // un repintado cuando el estado visible sigue siendo el mismo.
+  if (!stateChanged) return;
   window.dispatchEvent(new CustomEvent('nv:connection', {
     detail: Object.assign({}, CloudConnection)
   }));
