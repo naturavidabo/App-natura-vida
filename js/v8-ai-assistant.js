@@ -946,7 +946,7 @@
       if(action.type==='prepare_promotion')return openPromotionDraftV832(action);
       if(action.type==='prepare_production')return openProductionDraftV832(action);
       if(action.type==='create_task'){upsertControlTaskV832({title:action.taskTitle,detail:action.note||action.summary,priority:action.taskPriority,dueDate:action.taskDueDate,responsible:action.taskResponsible||'Administrador central',area:'administration',source:'assistant'});window.showToast?.('Tarea registrada en Iniciativa y control.');return;}
-      if(action.type==='create_quote'&&window.openQuoteForm){const client=(window.AppState?.clients||[]).find(c=>String(c.id)===String(action.clientId));return window.openQuoteForm({client:client||null,priceGroupId:client?.priceGroupId||'',items:action.items||[],source:'ai'});}
+      if(action.type==='create_quote'){try{if(!window.openQuoteForm&&window.ensureQuotesModuleV9)await ensureQuotesModuleV9();}catch(_){return window.showToast?.('No se pudo cargar Cotizaciones.','error');}if(window.openQuoteForm){const client=(window.AppState?.clients||[]).find(c=>String(c.id)===String(action.clientId));return window.openQuoteForm({client:client||null,priceGroupId:client?.priceGroupId||'',items:action.items||[],source:'ai'});}}
       window.showToast?.('La acción quedó preparada, pero el módulo no está disponible en esta sesión.','error');
     };
   }
