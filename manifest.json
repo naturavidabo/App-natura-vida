@@ -1,8 +1,8 @@
 {
-  "name": "Natura Vida V8.4.0",
+  "name": "Natura Vida V10.0.0",
   "short_name": "Natura Vida",
-  "description": "Gestión comercial Natura Vida con Director Administrativo Inteligente, centro ejecutivo consolidado, sesión persistente y actualizaciones seguras",
-  "start_url": "./index.html?v=8.4.0",
+  "description": "Gestión comercial Natura Vida V10 con experiencia visual renovada, funciones completas, sesión persistente y actualizaciones seguras",
+  "start_url": "./index.html?v=10.0.0",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
