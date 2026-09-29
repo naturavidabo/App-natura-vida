@@ -1,4 +1,4 @@
-name: Calidad V9
+name: Calidad V10
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: calidad-v9-${{ github.ref }}
+  group: calidad-v10-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Verificar entorno V9
+      - name: Verificar entorno V10
         run: |
           test "$(cat .node-version)" = "24"
           test -f .nojekyll
@@ -32,7 +32,7 @@ jobs:
           find js -type f -name '*.js' -print0 | xargs -0 -n1 node --check
           find tests -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 
-      - name: Auditoría estática V9
+      - name: Auditoría estática V10
         run: python tests/audit_site_v803.py
 
       - name: Regresión JavaScript
