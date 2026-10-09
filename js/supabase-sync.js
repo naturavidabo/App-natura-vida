@@ -1702,6 +1702,11 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
       return { ok: false, message: detail, results };
     }
     setCloudConnectionState('online', 'Datos actualizados desde Supabase');
+    // Evento específico de datos confirmados: Realtime conectado no significa
+    // necesariamente inventario, clientes y ventas ya sincronizados.
+    window.dispatchEvent(new CustomEvent('nv:data-synced', {
+      detail: { reason, confirmedAt: Date.now() }
+    }));
     return { ok: true, results };
   })();
   try { return await _refreshInFlight; }

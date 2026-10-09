@@ -127,12 +127,19 @@
   function updateBanner(customState = '') {
     const el = ensureBanner();
     if (!el) return;
-    const rawState = customState || (navigator.onLine ? 'online' : 'offline');
-    const state = rawState === 'error' ? 'reconnecting' : rawState;
+    // El estado de la red del celular NO equivale a una conexión real con Supabase.
+    const cloudState = window.CloudConnection?.state || 'connecting';
+    const rawState = !navigator.onLine ? 'offline' : (customState || cloudState);
+    const state = rawState === 'error' || (navigator.onLine && rawState === 'offline')
+      ? 'reconnecting' : rawState;
     const labels = { online: 'En línea', reconnecting: 'Reconectando', connecting: 'Conectando', offline: 'Sin internet' };
-    el.classList.remove('offline', 'reconnecting', 'connecting', 'online', 'hidden');
-    el.classList.add(state);
-    el.innerHTML = `<span aria-hidden="true"></span><b>${labels[state] || 'Conectando'}</b>`;
+    const label = labels[state] || 'Conectando';
+    // Evitar repintar la cápsula durante sincronizaciones breves o repetidas.
+    if(!el.classList.contains(state) || el.querySelector('b')?.textContent !== label){
+      el.classList.remove('offline', 'reconnecting', 'connecting', 'online', 'hidden');
+      el.classList.add(state);
+      el.innerHTML = `<span aria-hidden="true"></span><b>${label}</b>`;
+    }
     const draft = readDraft();
     const last = formatDate(getLastSync() || readSnapshot()?.savedAt);
     el.title = draft
@@ -174,7 +181,7 @@
     if (!draft || !activeUserIdV101()) return null;
     draft.reason = reason;
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (_) {}
-    updateBanner(navigator.onLine ? 'online' : 'offline');
+    updateBanner();
     return draft;
   }
 
@@ -304,15 +311,9 @@
     lastOnlineState = true;
     updateBanner('reconnecting');
     clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(async () => {
-      try {
-        if (window.syncAfterLogin && window.requireAuth?.()) await syncAfterLogin({ quiet: true });
-        if (window.startRealtimeSubscriptions && window.requireAuth?.()) startRealtimeSubscriptions();
-        setLastSync();
-        makeReadonlySnapshot();
-      } catch (_) {}
-      updateBanner('online');
-    }, 700);
+    // La capa Supabase ya coordina el reinicio Realtime y una única sincronización.
+    // No repetir esos procesos desde la interfaz ni proclamar "En línea" por tiempo.
+    reconnectTimer = setTimeout(() => updateBanner(), 1200);
   }
 
   function handleOffline() {
@@ -324,12 +325,16 @@
 
   function updateFromCloud(event) {
     const state = event.detail?.state;
-    if (state === 'online') {
-      setLastSync();
-      makeReadonlySnapshot();
-      if (navigator.onLine && !lastOnlineState) handleOnline();
-    }
-    if (state === 'offline' || !navigator.onLine) updateBanner('offline');
+    if(state === 'online') makeReadonlySnapshot();
+    // Escuchar las cuatro posibilidades; no confundir una suscripción Realtime
+    // con una carga exitosa de datos comerciales.
+    updateBanner(state || '');
+  }
+
+  function updateFromConfirmedSync() {
+    if(!navigator.onLine || window.CloudConnection?.state !== 'online') return;
+    setLastSync();
+    makeReadonlySnapshot();
   }
 
   function openContinuityCenter() {
@@ -337,7 +342,7 @@
     const snapshot = readSnapshot();
     const html = `
       <h2>Conexión y continuidad <span class="x" id="closeSheet">✕</span></h2>
-      <div class="nv805ContinuityStatus ${navigator.onLine ? 'online' : 'offline'}"><strong>${navigator.onLine ? 'Con conexión' : 'Sin conexión'}</strong><span>${navigator.onLine ? 'Supabase y Realtime pueden operar.' : 'Solo lectura y conservación local temporal.'}</span></div>
+      <div class="nv805ContinuityStatus ${navigator.onLine && window.CloudConnection?.state === 'online' ? 'online' : 'offline'}"><strong>${!navigator.onLine ? 'Sin internet' : window.CloudConnection?.state === 'online' ? 'Supabase conectado' : 'Verificando Supabase'}</strong><span>${!navigator.onLine ? 'Solo lectura y conservación local temporal.' : window.CloudConnection?.state === 'online' ? 'La conexión está disponible. Revisa la última sincronización confirmada.' : 'Hay internet, pero la conexión con Supabase aún no está confirmada.'}</span></div>
       <div class="cloudRule"><span>Última actualización confirmada</span><strong>${esc(formatDate(getLastSync() || snapshot?.savedAt))}</strong></div>
       <div class="cloudRule"><span>Borrador pendiente</span><strong>${draft ? 'Sí · requiere revisión' : 'No'}</strong></div>
       <div class="cloudRule"><span>Envío automático</span><strong>No existe</strong></div>
@@ -355,7 +360,7 @@
   function init() {
     compactLegacySnapshotV101();
     ensureBanner();
-    if (!navigator.onLine) updateBanner('offline');
+    updateBanner();
     document.addEventListener('click', blockOfflineMutation, true);
     document.addEventListener('submit', blockOfflineMutation, true);
     document.addEventListener('input', trackEditing, true);
@@ -363,6 +368,7 @@
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('nv:connection', updateFromCloud);
+    window.addEventListener('nv:data-synced', updateFromConfirmedSync);
     window.addEventListener('nv:form-saved', () => { clearDraft(); clearMeaningfulDirtyV840('form-saved'); });
     setInterval(() => {
       if (navigator.onLine && window.CloudConnection?.state === 'online') makeReadonlySnapshot();
