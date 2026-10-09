@@ -48,8 +48,21 @@
     try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot)); } catch (_) {}
   }
 
+  function activeUserIdV101() {
+    return String(window.AppState?.session?.onlineUserId || window.AppState?.session?.userId || '');
+  }
+
   function readSnapshot() {
-    return safeParse(localStorage.getItem(SNAPSHOT_KEY), null);
+    const snapshot = safeParse(localStorage.getItem(SNAPSHOT_KEY), null);
+    const uid = activeUserIdV101();
+    if (!snapshot || !uid || !snapshot.userId || String(snapshot.userId) !== uid) return null;
+    return snapshot;
+  }
+
+  function clearSensitiveLocalContinuityV101() {
+    for (const key of [SNAPSHOT_KEY, DRAFT_KEY, LAST_SYNC_KEY]) {
+      try { localStorage.removeItem(key); } catch (_) {}
+    }
   }
 
   function ensureBanner() {
@@ -75,6 +88,7 @@
   function readDraft() {
     const draft = safeParse(localStorage.getItem(DRAFT_KEY), null);
     if (!draft) return null;
+    if (!activeUserIdV101() || String(draft.userId || '') !== activeUserIdV101()) return null;
     if (!draft.savedAt || Date.now() - new Date(draft.savedAt).getTime() > MAX_DRAFT_AGE) {
       try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
       return null;
@@ -326,7 +340,7 @@
 
   Object.assign(window, {
     NV805OfflineContinuity: {
-      init, readDraft, saveCurrentDraft, clearDraft, applyDraftToVisibleForm,
+      init, readDraft, saveCurrentDraft, clearDraft, clearSensitiveLocalContinuityV101, applyDraftToVisibleForm,
       openDraftReview, openContinuityCenter, readSnapshot, makeReadonlySnapshot,
       getLastSync, setLastSync, shouldTrackDirtyFieldV840, hasMeaningfulDirtyFormV840, clearMeaningfulDirtyV840
     },
