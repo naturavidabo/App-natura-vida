@@ -42,9 +42,14 @@ assert.equal(api.readSnapshot().userId, 'usuario-A');
 assert.ok(!localStorage.getItem('nv805:readonly-snapshot').includes('CELULAR-LEGADO'));
 assert.deepEqual(Object.keys(JSON.parse(localStorage.getItem('nv805:readonly-snapshot'))).sort(), ['currentTab', 'savedAt', 'userId']);
 
-// 3. Un usuario diferente no puede recuperar la copia.
+// 3. Un usuario diferente o una sesion no autenticada no puede recuperar la copia.
 AppState.session.onlineUserId = 'usuario-B';
 assert.equal(api.readSnapshot(), null);
+AppState.session.onlineUserId = 'usuario-A';
+AppState.session.isAuthenticated = false;
+assert.equal(api.readSnapshot(), null);
+AppState.session.isAuthenticated = true;
+AppState.session.onlineUserId = 'usuario-B';
 
 // 4. Un borrador de A no se restaura desde B y se elimina de la copia local.
 const draft = {
