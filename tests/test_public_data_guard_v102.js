@@ -19,7 +19,7 @@ assert(!assets.includes('data/imports/'), 'Nunca precachear importaciones comerc
 assert(sw.includes('cache.delete(legacyUrl'), 'Falta depurar las copias antiguas en caché');
 const ignore=fs.readFileSync(path.join(root,'.gitignore'),'utf8');
 assert(ignore.includes('data/imports/**'),'No se ignoran futuros archivos de importacion');
-const sql=fs.readFileSync(path.join(root,'security/rls_audit_readonly_v102.sql'),'utf8');
+const sql=fs.readFileSync(path.join(root,'supabase/rls_audit_readonly_v102.sql'),'utf8');
 const statements=sql.split(/\n/).filter(x=>!x.trim().startsWith('--')).join('\n');
 assert.equal((statements.match(/\bselect\b/gi)||[]).length>=5,true,'Faltan consultas de seguridad');
 assert(!/\b(create|alter|drop|truncate|grant|revoke)\s+(table|policy|function|view|role|schema)/i.test(statements),'La auditoria nunca debe modificar la base');
