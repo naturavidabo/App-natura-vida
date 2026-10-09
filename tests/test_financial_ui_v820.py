@@ -27,7 +27,7 @@ checks={
  'whatsapp/share':'shareCanvasV820' in module,
  'audit':'receivable_payment_posted' in module and 'historical_receivables_imported' in module,
  'sql migration':(root/'supabase/migrations/20260721_v820_financial_accounts.sql').exists(),
- 'gabriela private':not (root/'data/imports/gabriela-espinoza-mi-negocio.json').exists() and "fetch('data/imports/" not in js and 'nv820ImportFile' in js,
+ 'gabriela private':not (root/'data/imports/gabriela-espinoza-mi-negocio.json').exists() and "fetch('data/imports/" not in module and 'nv820ImportFile' in module,
  'stores persisted':all(x in db for x in ['historicalReceivables','financialDocuments','paymentPlans']),
  'financial documents without embedded qr':'QR DE PAGO' not in module and 'El código QR se muestra en la pantalla de cobro' in module,
  'summary and detailed modes':'openDocumentModePickerV820' in module and 'Versión resumida' in module and 'Versión detallada' in module,
