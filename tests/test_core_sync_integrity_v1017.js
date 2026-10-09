@@ -30,6 +30,7 @@ function makeScenario(overrides={}){
     syncGenericCloudStoreToLocalV9:async()=>true,
     syncV7Context:()=>window.syncV7Context(),
     syncV8ContextV800:()=>window.syncV8ContextV800(),
+    syncInboxFromCloud:()=>window.syncInboxFromCloud(),
     loadAllState:async()=>true,
     renderAfterCloudRefresh:()=>{},
     setTimeout:()=>1,
@@ -44,7 +45,8 @@ function makeScenario(overrides={}){
 }
 (async()=>{
   let c=makeScenario();
-  assert.equal((await c.run('normal')).ok,true);
+  const normalResult=await c.run('normal');
+  assert.equal(normalResult.ok,true,normalResult.message);
   assert(c.events.includes('nv:data-synced'),'Solo el éxito confirma datos');
   assert.equal(c.states.at(-1).state,'online');
 
