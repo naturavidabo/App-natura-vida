@@ -103,11 +103,28 @@
     writeArray('recents', [id, ...recentIds().filter(item => item !== id)]);
   }
 
-  function executeAction(action) {
+  async function executeAction(action) {
     if (!action) return;
     trackRecent(action.id);
-    if (typeof action.handler === 'function') action.handler();
-    else if (action.tab && window.navigateTo) navigateTo(action.tab);
+    if (action.tab === 'reglas-comerciales') {
+      // Acceso administrativo: cargar la pantalla antes de navegar, para que
+      // el modulo no termine en una pantalla vacia en Android/PWA.
+      if (!(window.isAdmin && isAdmin())) {
+        window.showToast?.('Solo el administrador puede abrir las reglas comerciales.', 'error');
+        return;
+      }
+      try {
+        if (window.ensureCommercialRulesModuleV9) await ensureCommercialRulesModuleV9();
+        if (!window.renderCommercialRulesV807) throw new Error('No se cargo el modulo comercial.');
+        if (window.navigateTo) window.navigateTo('reglas-comerciales');
+      } catch (error) {
+        window.showToast?.('No se pudieron abrir las reglas comerciales. Comprueba la conexión y vuelve a intentarlo.', 'error');
+        console.error('Natura Vida: acceso a reglas comerciales', error);
+      }
+      return;
+    }
+    if (typeof action.handler === 'function') return action.handler();
+    if (action.tab && window.navigateTo) return window.navigateTo(action.tab);
   }
 
   function actionButton(action, compact = false) {
