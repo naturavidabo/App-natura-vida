@@ -1,4 +1,4 @@
-// Natura Vida 10.1.7 — la sincronización parcial nunca debe aparecer como éxito.
+// Natura Vida 10.1.8 — la sincronización parcial nunca debe aparecer como éxito.
 'use strict';
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -84,5 +84,5 @@ function makeScenario(overrides={}){
   c.navigator.onLine=false;
   assert.equal((await c.run('offline')).ok,false);
   assert.equal(c.events.length,0);
-  console.log('OK V10.1.7: 7 casos (normal, 3 fallos parciales, error de render, concurrencia y sin internet).');
+  console.log('OK V10.1.8: 7 casos (normal, 3 fallos parciales, error de render, concurrencia y sin internet).');
 })().catch(err=>{console.error(err);process.exitCode=1});
