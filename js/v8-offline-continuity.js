@@ -360,7 +360,7 @@
   function init() {
     compactLegacySnapshotV101();
     ensureBanner();
-    if (!navigator.onLine) updateBanner('offline');
+    updateBanner();
     document.addEventListener('click', blockOfflineMutation, true);
     document.addEventListener('submit', blockOfflineMutation, true);
     document.addEventListener('input', trackEditing, true);
