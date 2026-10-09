@@ -44,4 +44,5 @@ for(const token of ['Director Administrativo','openAdministrativeCenterV840','Ce
 
 const publicCount=(()=>{let n=4;const walk=d=>fs.readdirSync(d,{withFileTypes:true}).forEach(e=>e.isDirectory()?walk(path.join(d,e.name)):n++);for(const dir of ['js','css','icons','img','data']){const full=path.join(root,dir);if(fs.existsSync(full))walk(full);}return n;})();
 assert(publicCount<=110,`demasiados recursos públicos de runtime: ${publicCount}`);
+require('./test_local_continuity_security_v101.js');
 console.log(`V10.1.0/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
