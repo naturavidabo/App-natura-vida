@@ -279,9 +279,14 @@
     if(file.size>1_500_000) throw new Error('El comprobante supera 1,5 MB. Reduce el tamaño de la imagen.');
     return await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||''));r.onerror=()=>reject(new Error('No se pudo leer el comprobante.'));r.readAsDataURL(file);});
   }
+  // Mantiene el mismo identificador y los datos de un intento financiero en
+  // caso de respuesta perdida de Supabase. Cambiar el ID podría duplicar el cobro.
+  function reusePaymentAttemptV1018(existing, create) {
+    return existing || create();
+  }
   function openPaymentFormV820(clientId,options={}){
     const account=clientAccountV820(clientId); if(!account||!account.active.length)return showToast('Este cliente no tiene deudas activas.','error');
-    openSheet(`<h2>Registrar pago <span class="x" id="closeSheet">✕</span></h2><div class="nv820PaySummary"><strong>${esc(account.client.name)}</strong><span>Saldo total: <b>${money(account.totalDebt)}</b></span></div><div class="field"><label>Aplicar pago</label><select id="nv820PayMode"><option value="oldest">A la deuda más antigua</option><option value="specific">A una venta específica</option><option value="multiple">A varias ventas</option><option value="general">Como pago general a cuenta</option><option value="total">Cancelación total</option></select></div><div id="nv820PayOperations" class="nv820PayOperations"></div><div class="field-row"><div class="field"><label>Monto Bs</label><input id="nv820PayAmount" type="number" inputmode="decimal" step="0.01" value="${Number(options.amount||0)>0?Number(options.amount):account.active[0]?saleBalanceV820(account.active[0]):account.totalDebt}"></div><div class="field"><label>Fecha</label><input id="nv820PayDate" type="datetime-local" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16)}"></div></div><div class="field-row"><div class="field"><label>Método</label><select id="nv820PayMethod"><option value="cash">Efectivo</option><option value="qr">QR</option><option value="transfer">Transferencia</option><option value="deposit">Depósito</option><option value="other">Otro</option></select></div><div class="field"><label>N.º comprobante</label><input id="nv820Voucher" placeholder="Opcional"></div></div><div class="field"><label>Imagen del comprobante</label><input id="nv820Proof" type="file" accept="image/*"><small>Máximo 1,5 MB.</small></div><div class="field"><label>Observación</label><textarea id="nv820PayNote" placeholder="Pago parcial, compromiso o referencia">${esc(options.note||'')}</textarea></div><div class="nv820AllocationPreview" id="nv820AllocationPreview"></div><button class="btn block" id="nv820SavePayment">Guardar pago y generar recibo</button>`,(overlay,close)=>{
+    openSheet(`<h2>Registrar pago <span class="x" id="closeSheet">✕</span></h2><div class="nv820PaySummary"><strong>${esc(account.client.name)}</strong><span>Saldo total: <b>${money(account.totalDebt)}</b></span></div><div class="field"><label>Aplicar pago</label><select id="nv820PayMode"><option value="oldest">A la deuda más antigua</option><option value="specific">A una venta específica</option><option value="multiple">A varias ventas</option><option value="general">Como pago general a cuenta</option><option value="total">Cancelación total</option></select></div><div id="nv820PayOperations" class="nv820PayOperations"></div><div class="field-row"><div class="field"><label>Monto Bs</label><input id="nv820PayAmount" type="number" inputmode="decimal" step="0.01" value="${Number(options.amount||0)>0?Number(options.amount):account.active[0]?saleBalanceV820(account.active[0]):account.totalDebt}"></div><div class="field"><label>Fecha</label><input id="nv820PayDate" type="datetime-local" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16)}"></div></div><div class="field-row"><div class="field"><label>Método</label><select id="nv820PayMethod"><option value="cash">Efectivo</option><option value="qr">QR</option><option value="transfer">Transferencia</option><option value="deposit">Depósito</option><option value="other">Otro</option></select></div><div class="field"><label>N.º comprobante</label><input id="nv820Voucher" placeholder="Opcional"></div></div><div class="field"><label>Imagen del comprobante</label><input id="nv820Proof" type="file" accept="image/*"><small>Máximo 1,5 MB.</small></div><div class="field"><label>Observación</label><textarea id="nv820PayNote" placeholder="Pago parcial, compromiso o referencia">${esc(options.note||'')}</textarea></div><div class="nv820AllocationPreview" id="nv820AllocationPreview"></div><p id="nv1018PaymentRetryNotice" role="status" aria-live="polite" class="nv820SafetyNote" style="display:none"></p><button class="btn block" id="nv820SavePayment">Guardar pago y generar recibo</button>`,(overlay,close)=>{
       const mode=$('#nv820PayMode',overlay), amount=$('#nv820PayAmount',overlay), list=$('#nv820PayOperations',overlay), preview=$('#nv820AllocationPreview',overlay);
       const renderOps=()=>{
         const value=mode.value;
@@ -293,19 +298,45 @@
       const selected=()=>Array.from($all('[name="nv820DebtChoice"]:checked',overlay)).map(x=>x.value);
       const refreshPreview=()=>{try{const result=Core.allocatePayment(account.active,activePaymentsV820(),Number(amount.value||0),mode.value,selected());preview.className='nv820AllocationPreview ok';preview.innerHTML=`<strong>Distribución prevista</strong>${result.allocations.map(a=>{const op=account.active.find(x=>x.id===a.operationId);return `<span>${esc(operationLabelV820(op))}: ${money(a.amount)} → saldo ${money(a.balanceAfter)}</span>`;}).join('')}`;}catch(err){preview.className='nv820AllocationPreview error';preview.textContent=err.message||'Revisa el monto.';}};
       $('#closeSheet',overlay).addEventListener('click',close);mode.addEventListener('change',renderOps);amount.addEventListener('input',refreshPreview);list.addEventListener('change',refreshPreview);renderOps();
+      let pendingPayment=null, pendingPlanId='', pendingInstallmentNumber=0, paymentInFlight=false;
+      const notice=$('#nv1018PaymentRetryNotice',overlay);
+      const lockPaymentFields=()=>{
+        for(const id of ['nv820PayMode','nv820PayAmount','nv820PayDate','nv820PayMethod','nv820Voucher','nv820Proof','nv820PayNote']){
+          const field=$('#'+id,overlay);if(field)field.disabled=true;
+        }
+        $all('[name="nv820DebtChoice"]',overlay).forEach(field=>{field.disabled=true;});
+      };
       $('#nv820SavePayment',overlay).addEventListener('click',async()=>{
-        const button=$('#nv820SavePayment',overlay);button.disabled=true;button.textContent='Guardando…';
+        if(paymentInFlight)return;
+        paymentInFlight=true;
+        const button=$('#nv820SavePayment',overlay);button.disabled=true;button.textContent=pendingPayment?'Verificando pago anterior…':'Guardando…';
         try{
-          if(!navigator.onLine) throw new Error('Se necesita conexión para registrar el pago. El formulario permanece abierto.');
-          const allocation=Core.allocatePayment(account.active,activePaymentsV820(),Number(amount.value||0),mode.value,selected());
-          const proof=await readProofImageV820($('#nv820Proof',overlay).files?.[0]);
-          const payment={id:uid('pay'),clientId:account.client.id,clientName:account.client.name,amount:allocation.amount,allocations:allocation.allocations,applicationMode:mode.value,method:$('#nv820PayMethod',overlay).value,voucherNumber:$('#nv820Voucher',overlay).value.trim(),proofImage:proof,note:$('#nv820PayNote',overlay).value.trim(),date:new Date($('#nv820PayDate',overlay).value).getTime()||Date.now(),responsibleUserId:currentUserId(),responsibleName:AppState.session.fullName||AppState.session.username||'',ownerUserId:currentUserId(),status:'posted',createdAt:Date.now()};
-          payment.saleId=allocation.allocations.length===1?allocation.allocations[0].operationId:'';
-          const targetPlanId=options.planId||activePaymentPlanV825(account.client.id)?.id||'';
-          const atomic=await postPaymentAtomicV9(payment,targetPlanId,Number(options.installmentNumber||0));
-          const savedPayment=atomic.payment||payment;
+          if(!navigator.onLine)throw new Error('Se necesita conexión para registrar o verificar el pago. No abras un cobro nuevo hasta comprobar este intento.');
+          if(!pendingPayment){
+            const allocation=Core.allocatePayment(account.active,activePaymentsV820(),Number(amount.value||0),mode.value,selected());
+            const proof=await readProofImageV820($('#nv820Proof',overlay).files?.[0]);
+            pendingPayment=reusePaymentAttemptV1018(pendingPayment,()=>({
+              id:uid('pay'),clientId:account.client.id,clientName:account.client.name,
+              amount:allocation.amount,allocations:allocation.allocations,
+              applicationMode:mode.value,method:$('#nv820PayMethod',overlay).value,
+              voucherNumber:$('#nv820Voucher',overlay).value.trim(),proofImage:proof,
+              note:$('#nv820PayNote',overlay).value.trim(),
+              date:new Date($('#nv820PayDate',overlay).value).getTime()||Date.now(),
+              responsibleUserId:currentUserId(),
+              responsibleName:AppState.session.fullName||AppState.session.username||'',
+              ownerUserId:currentUserId(),status:'posted',createdAt:Date.now(),
+              saleId:allocation.allocations.length===1?allocation.allocations[0].operationId:''
+            }));
+            pendingPlanId=options.planId||activePaymentPlanV825(account.client.id)?.id||'';
+            pendingInstallmentNumber=Number(options.installmentNumber||0);
+            // Una vez enviada la operación no permitir cambios que puedan
+            // contradecir el pago que quizá ya se confirmó en PostgreSQL.
+            lockPaymentFields();
+          }
+          const atomic=await postPaymentAtomicV9(pendingPayment,pendingPlanId,pendingInstallmentNumber);
+          const savedPayment=atomic.payment||pendingPayment;
           await writeAudit('receivable_payment_posted','receivablePayments',savedPayment.id,null,{clientId:savedPayment.clientId,amount:savedPayment.amount,allocations:savedPayment.allocations,method:savedPayment.method,recovered:!!atomic.recovered}).catch(()=>{});
-          const after=clientAccountV820(account.client.id); const kind=after.totalDebt<=.009?'REC':'RPP';
+          const after=clientAccountV820(account.client.id);const kind=after.totalDebt<=.009?'REC':'RPP';
           let doc=null;
           try{doc=await createPaymentDocumentV820(savedPayment,after,kind);}
           catch(receiptError){
@@ -313,8 +344,22 @@
             if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
             return;
           }
-          close();showToast(atomic.recovered?'Pago ya registrado; recibo recuperado.':'Pago registrado y recibo generado.');openFinancialDocumentPreviewV820(doc);if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
-        }catch(err){button.disabled=false;button.textContent='Guardar pago y generar recibo';showToast(err.message||'No se pudo guardar el pago.','error');}
+          close();showToast(atomic.recovered?'Pago ya registrado; recibo recuperado.':'Pago registrado y recibo generado.');
+          openFinancialDocumentPreviewV820(doc);
+          if(AppState.currentTab==='estado-cuenta')renderClientAccountV820();
+        }catch(err){
+          button.disabled=false;
+          button.textContent=pendingPayment?'Verificar y reintentar el mismo pago':'Guardar pago y generar recibo';
+          const message=err.message||'No se pudo guardar el pago.';
+          if(pendingPayment){
+            notice.style.display='block';
+            notice.textContent='El registro puede haberse confirmado en Supabase. Se conservará el mismo ID del cobro al reintentar, sin generar otro descuento de saldo. Antes de abandonar esta ventana, verifica el resultado.';
+          }else{
+            notice.style.display='block';
+            notice.textContent='No se creó ningún intento de pago. Corrige los campos y vuelve a intentar.';
+          }
+          showToast(message,'error');
+        }finally{paymentInFlight=false;}
       });
     });
   }
