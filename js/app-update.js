@@ -1,8 +1,8 @@
-/* app-update.js — V10.1.0: actualización segura con sesión persistente. */
+/* app-update.js — V10.1.1: actualización segura con sesión persistente. */
 
 (() => {
-  const CURRENT_VERSION = '10.1.0';
-  const BUILD_ID = '2026-09-29-v101-audit-polish';
+  const CURRENT_VERSION = '10.1.1';
+  const BUILD_ID = '2026-10-09-v1011-security';
   const UPDATE_DIAG_KEY = 'nv833-update-diagnostics';
   const RELOAD_GUARD_KEY = 'nv833-controller-reload';
   let registration = null;
@@ -131,7 +131,7 @@
   }
   async function installAppUpdateManager() {
     if (!('serviceWorker' in navigator)) return { ok: false, unsupported: true };
-    registration = await navigator.serviceWorker.register('./service-worker.js?v=10.1.0', { updateViaCache: 'none' });
+    registration = await navigator.serviceWorker.register('./service-worker.js?v=10.1.1', { updateViaCache: 'none' });
     watchRegistration(registration);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!updateRequested || controllerReloaded) return;
@@ -183,7 +183,7 @@
       const protectedSession = await protectSessionBeforeUpdate();
       if (window.AppState?.session?.isAuthenticated && !protectedSession?.ok) throw new Error('No se confirmó la copia persistente de la sesión. La actualización fue detenida para evitar cerrar tu cuenta.');
       if (!registration && 'serviceWorker' in navigator) {
-        registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register('./service-worker.js?v=10.1.0', { updateViaCache: 'none' });
+        registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register('./service-worker.js?v=10.1.1', { updateViaCache: 'none' });
         watchRegistration(registration);
       }
       recordUpdate({ lastStatus: 'checking-worker' });
@@ -235,7 +235,7 @@
       await protectSessionBeforeUpdate();
       recordUpdate({ lastAttemptAt: Date.now(), lastStatus: 'repairing' });
       await clearOwnedCaches();
-      registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register(`./service-worker.js?v=10.1.0&repair=${Date.now()}`, { updateViaCache: 'none' });
+      registration = await navigator.serviceWorker.getRegistration('./') || await navigator.serviceWorker.register(`./service-worker.js?v=10.1.1&repair=${Date.now()}`, { updateViaCache: 'none' });
       await registration.update().catch(() => {});
       recordUpdate({ lastStatus: 'repair-complete' });
       if (!safeReload('repair-complete')) { updateBusy = false; updateRequested = false; emitUpdateState(); }
