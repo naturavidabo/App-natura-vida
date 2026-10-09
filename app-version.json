@@ -1,8 +1,8 @@
 {
-  "version": "10.1.4",
-  "build": "2026-10-09-v1014-private-import",
+  "version": "10.1.5",
+  "build": "2026-10-09-v1015-plan-correction",
   "channel": "stable",
-  "label": "Natura Vida V10.1.4 - importación histórica privada y segura",
-  "releasedAt": "2026-10-09T10:46:00-04:00",
-  "createdAt": "2026-10-09T10:46:00-04:00"
+  "label": "Natura Vida V10.1.5 - edición de cuotas y sustitución de planes",
+  "releasedAt": "2026-10-09T15:20:53.144Z",
+  "createdAt": "2026-10-09T15:20:53.144Z"
 }
