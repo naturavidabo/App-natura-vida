@@ -6,7 +6,7 @@ const root=path.resolve(__dirname,'..');
 const products=fs.readFileSync(path.join(root,'js/products.js'),'utf8');
 const sync=fs.readFileSync(path.join(root,'js/supabase-sync.js'),'utf8');
 const v=JSON.parse(fs.readFileSync(path.join(root,'app-version.json'),'utf8'));
-assert.equal(v.version,'10.1.7');
+assert.equal(v.version,'10.1.8');
 assert(products.includes("id=\"nv1013ProductSaveError\""),'El formulario debe mostrar el error persistente');
 assert(products.includes("errorBox.style.display = 'block'"),'El error no debe desaparecer tras el toast');
 assert(products.includes("p ? productCost(p) : 0"),'Debe conservarse el costo de un producto legado');
@@ -42,5 +42,5 @@ function makeUpdater(value,admin=true){
   assert.equal((await makeUpdater({data:null,error:null})(expected)).ok,false,'No confirmar sin respuesta del servidor');
   assert.equal((await makeUpdater({data:null,error:{message:'Supabase sin conexion'}})(expected)).ok,false,'Errores remotos permanecen visibles');
   assert.equal((await makeUpdater({data:{...expected},error:null},false)(expected)).ok,false,'Respetar permisos de administrador');
-  console.log('OK V10.1.7: guardado confirmado, cantidades, errores y roles protegidos.');
+  console.log('OK V10.1.8: guardado confirmado, cantidades, errores y roles protegidos.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
