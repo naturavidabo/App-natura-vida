@@ -9,7 +9,7 @@ const legacy='gabriela-espinoza-mi-negocio.json';
 const imports=path.join(root,'data','imports');
 const allowedBlob='0450a43bdf9b7b05775365d76f0414dcb9935909';
 const raw=fs.readFileSync(path.join(imports,legacy));
-const actualBlob=crypto.createHash('sha1').update('blob '+raw.length+'\\0').update(raw).digest('hex');
+const actualBlob=crypto.createHash('sha1').update('blob '+raw.length+'\0').update(raw).digest('hex');
 assert.equal(actualBlob,allowedBlob,'El archivo historico fue alterado: revisar y proteger antes de cambiar su contenido');
 const all=fs.readdirSync(imports).filter(x=>x.toLowerCase().endsWith('.json'));
 assert.deepEqual(all,[legacy],'No publicar nuevos archivos JSON comerciales en data/imports');
