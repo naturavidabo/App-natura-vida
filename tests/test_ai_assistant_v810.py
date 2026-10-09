@@ -5,7 +5,7 @@ js=(root/'js/v8-ai-assistant.js').read_text(encoding='utf-8')
 html=(root/'index.html').read_text(encoding='utf-8')
 bridge=(root/'js/v9-ai-bridge.js').read_text(encoding='utf-8')
 checks={
- 'carga diferida':'v9-ai-bridge.js?v=10.1.7' in html and 'v8-ai-assistant.js?v=10.1.7' in bridge,
+ 'carga diferida':'v9-ai-bridge.js?v=10.1.8' in html and 'v8-ai-assistant.js?v=10.1.8' in bridge,
  'solo administrador':'adminAllowed' in js and 'isAdmin()' in js,
  'fab flotante':'nvAiFab' in js,
  'panel rápido':'nvAiSheet' in js,

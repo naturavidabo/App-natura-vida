@@ -1,8 +1,8 @@
 {
-  "version": "10.1.7",
-  "build": "2026-10-09-v1017-sync-integrity",
+  "version": "10.1.8",
+  "build": "2026-10-09-v1018-financial-idempotency",
   "channel": "stable",
-  "label": "Natura Vida V10.1.7 - consistencia de sincronización",
-  "releasedAt": "2026-10-09T12:40:00-04:00",
-  "createdAt": "2026-10-09T12:40:00-04:00"
+  "label": "Natura Vida V10.1.8 - prevención de cobros duplicados",
+  "releasedAt": "2026-10-09T12:20:00-04:00",
+  "createdAt": "2026-10-09T12:20:00-04:00"
 }
