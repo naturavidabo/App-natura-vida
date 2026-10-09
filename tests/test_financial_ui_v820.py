@@ -12,9 +12,9 @@ db=(root/'js/db.js').read_text()
 sync=(root/'js/supabase-sync.js').read_text()
 version=json.loads((root/'app-version.json').read_text())
 checks={
- 'version 8.2.0':version.get('version')=='10.1.0',
- 'core loaded':'js/v8-financial-core.js?v=10.1.0' in index,
- 'module deferred':'js/v8-financial-accounts.js?v=10.1.0' not in index and 'ensureFinancialAccountsModuleV9' in lazy and 'ensureFinancialAccountsModuleV9' in shell and 'ensureFinancialAccountsModuleV9' in ai,
+ 'version 8.2.0':version.get('version')=='10.1.1',
+ 'core loaded':'js/v8-financial-core.js?v=10.1.1' in index,
+ 'module deferred':'js/v8-financial-accounts.js?v=10.1.1' not in index and 'ensureFinancialAccountsModuleV9' in lazy and 'ensureFinancialAccountsModuleV9' in shell and 'ensureFinancialAccountsModuleV9' in ai,
  'account tab':'estado-cuenta' in (root/'js/v7-shell.js').read_text(),
  'client button':'accountClientBtnV820' in (root/'js/clients.js').read_text(),
  'historical state':'historicalReceivables' in state,
@@ -27,7 +27,7 @@ checks={
  'whatsapp/share':'shareCanvasV820' in module,
  'audit':'receivable_payment_posted' in module and 'historical_receivables_imported' in module,
  'sql migration':(root/'supabase/migrations/20260721_v820_financial_accounts.sql').exists(),
- 'gabriela fixture':(root/'data/imports/gabriela-espinoza-mi-negocio.json').exists(),
+ 'gabriela private':not (root/'data/imports/gabriela-espinoza-mi-negocio.json').exists() and "fetch('data/imports/" not in module and 'nv820ImportFile' in module,
  'stores persisted':all(x in db for x in ['historicalReceivables','financialDocuments','paymentPlans']),
  'financial documents without embedded qr':'QR DE PAGO' not in module and 'El código QR se muestra en la pantalla de cobro' in module,
  'summary and detailed modes':'openDocumentModePickerV820' in module and 'Versión resumida' in module and 'Versión detallada' in module,
@@ -37,4 +37,4 @@ checks={
 }
 failed=[k for k,v in checks.items() if not v]
 if failed: raise SystemExit('FALLÓ: '+', '.join(failed))
-print(f'Interfaz financiera V10.1.0: {len(checks)}/{len(checks)} controles OK')
+print(f'Interfaz financiera V10.1.1: {len(checks)}/{len(checks)} controles OK')

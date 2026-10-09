@@ -1,8 +1,8 @@
-// NATURA VIDA V10.1.0 — Director Administrativo Inteligente y sesión persistente.
-const VERSION = 'natura-vida-v10-1-0-audit-polish';
-const APP_CACHE = 'nv-app-shell-v10-1';
+// NATURA VIDA V10.1.1 — Director Administrativo Inteligente y sesión persistente.
+const VERSION = 'natura-vida-v10-1-1-security';
+const APP_CACHE = 'nv-app-shell-v10-1-1';
 const IMAGE_CACHE = 'nv-images-stable-restore-1';
-const RUNTIME_CACHE = 'nv-runtime-v10-1';
+const RUNTIME_CACHE = 'nv-runtime-v10-1-1';
 const IMAGE_CACHE_LIMIT = 160;
 const RUNTIME_CACHE_LIMIT = 40;
 const APP_SHELL = [
@@ -20,7 +20,7 @@ const OPTIONAL_APP_ASSETS = [
   './js/v7-inventory-sales.js','./js/v7-management-center.js','./js/v7-orders.js','./js/v7-production.js','./js/v7-profile-users.js',
   './js/v7-regional.js','./js/v7-stats.js','./js/v7-workforce.js','./js/v8-ai-assistant.js','./js/v8-commercial-rules.js',
   './js/v8-financial-accounts.js','./js/v8-governance.js','./js/v8-linked-stock.js','./js/v8-quality-assurance.js','./js/v8-roles.js',
-  './js/v8-seller-settlement.js','./js/v8-territory.js','./data/imports/gabriela-espinoza-mi-negocio.json',
+  './js/v8-seller-settlement.js','./js/v8-territory.js',
 ];
 
 const MAP_HOSTS = new Set(['tile.openstreetmap.org','a.basemaps.cartocdn.com','b.basemaps.cartocdn.com','c.basemaps.cartocdn.com','d.basemaps.cartocdn.com','nominatim.openstreetmap.org']);
@@ -50,7 +50,17 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys.filter(key => /^(nv-|natura-vida)/i.test(key) && !key.startsWith('nv-images-') && ![APP_CACHE, IMAGE_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key))))
-      .then(() => self.clients.claim())
+      .then(async () => {
+        // Depurar del cache anterior la importacion historica con datos comerciales.
+        // Esto NO elimina el archivo publicado ni su historial en GitHub.
+        const legacyUrl = new URL('./data/imports/gabriela-espinoza-mi-negocio.json', self.registration.scope).toString();
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(key => /^(nv-|natura-vida)/i.test(key)).map(async key => {
+          const cache = await caches.open(key);
+          await cache.delete(legacyUrl, { ignoreSearch: true });
+        }));
+        return self.clients.claim();
+      })
   );
 });
 
@@ -108,7 +118,7 @@ async function runtimeResponse(request) {
 }
 
 function offlinePage() {
-  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V10.0.0</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  return new Response(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Natura Vida sin conexión</title><body style="margin:0;background:#f4fbf7;font-family:system-ui;color:#143326;display:grid;place-items:center;min-height:100vh;padding:24px"><main style="max-width:420px;background:white;border-radius:24px;padding:28px;text-align:center;box-shadow:0 16px 40px rgba(6,75,46,.12)"><div style="width:70px;height:70px;margin:auto;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#064b2e,#10a963,#a3d63c);color:white;font-weight:900">NV</div><h1>Natura Vida V10.1.1</h1><p>No se pudo abrir la copia instalada. Conéctate una vez para completar la instalación. La aplicación no enviará operaciones offline.</p><button onclick="location.reload()" style="padding:14px 22px;border:0;border-radius:14px;background:#087044;color:white;font-weight:800">Reintentar</button></main></body></html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 self.addEventListener('fetch', event => {

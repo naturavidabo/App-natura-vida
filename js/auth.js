@@ -178,6 +178,13 @@ async function logoutSession() {
   } else if (window.clearSessionMarkerV833) {
     clearSessionMarkerV833();
   }
+  // La PWA nunca debe dejar visibles datos comerciales de la sesión saliente.
+  // Sólo se borran copias temporales del navegador; Supabase no se modifica.
+  try {
+    window.NV805OfflineContinuity?.clearSensitiveLocalContinuityV101?.();
+  } catch (error) {
+    console.warn('No se pudo limpiar la copia temporal local:', error);
+  }
   await clearTransientSessionData();
   clearSession();
   if (window.render) render();

@@ -33,23 +33,58 @@
   }
 
   function makeReadonlySnapshot() {
-    if (!window.AppState || !AppState.session) return;
+    const uid = activeUserIdV101();
+    if (!uid || !window.AppState) return;
+    // No persistir clientes, ventas, pedidos, precios o configuracion en localStorage.
+    // Los datos mostrados en pantalla permanecen en memoria; Supabase es la fuente oficial.
     const snapshot = {
       savedAt: nowIso(),
-      userId: AppState.session.onlineUserId || AppState.session.userId || '',
-      currentTab: AppState.currentTab || 'home',
-      products: (AppState.products || []).slice(0, 500),
-      clients: (AppState.clients || []).slice(0, 1000),
-      sales: (AppState.sales || []).slice(0, 300),
-      orders: (AppState.orders || []).slice(0, 300),
-      settings: AppState.settings || {},
-      note: 'Copia local temporal de solo lectura. Supabase sigue siendo la fuente oficial.'
+      userId: uid,
+      currentTab: AppState.currentTab || 'home'
     };
     try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot)); } catch (_) {}
   }
 
+  function activeUserIdV101() {
+    const session = window.AppState?.session;
+    if (!session || session.isAuthenticated !== true) return '';
+    return String(session.onlineUserId || session.userId || '');
+  }
+
+  function compactLegacySnapshotV101() {
+    // Migracion segura: reemplaza antiguas copias con informacion comercial
+    // por solo metadatos, aun antes de iniciar sesion.
+    let raw = null;
+    try { raw = localStorage.getItem(SNAPSHOT_KEY); } catch (_) { return null; }
+    const old = safeParse(raw, null);
+    if (!old || typeof old !== 'object' || Array.isArray(old)) {
+      if (raw) { try { localStorage.removeItem(SNAPSHOT_KEY); } catch (_) {} }
+      return null;
+    }
+    const safe = {
+      savedAt: String(old.savedAt || ''),
+      userId: String(old.userId || ''),
+      currentTab: String(old.currentTab || 'home')
+    };
+    const serialized = JSON.stringify(safe);
+    if (serialized !== raw) {
+      try { localStorage.setItem(SNAPSHOT_KEY, serialized); }
+      catch (_) { try { localStorage.removeItem(SNAPSHOT_KEY); } catch (_) {} }
+    }
+    return safe;
+  }
+
   function readSnapshot() {
-    return safeParse(localStorage.getItem(SNAPSHOT_KEY), null);
+    const snapshot = compactLegacySnapshotV101();
+    const uid = activeUserIdV101();
+    if (!snapshot || !uid || !snapshot.userId || String(snapshot.userId) !== uid) return null;
+    return snapshot;
+  }
+
+  function clearSensitiveLocalContinuityV101() {
+    for (const key of [SNAPSHOT_KEY, DRAFT_KEY, LAST_SYNC_KEY]) {
+      try { localStorage.removeItem(key); } catch (_) {}
+    }
   }
 
   function ensureBanner() {
@@ -75,6 +110,13 @@
   function readDraft() {
     const draft = safeParse(localStorage.getItem(DRAFT_KEY), null);
     if (!draft) return null;
+    const uid = activeUserIdV101();
+    if (!uid) return null;
+    if (String(draft.userId || '') !== uid) {
+      // No dejar borradores de una cuenta anterior al entrar con otra.
+      try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+      return null;
+    }
     if (!draft.savedAt || Date.now() - new Date(draft.savedAt).getTime() > MAX_DRAFT_AGE) {
       try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
       return null;
@@ -129,7 +171,7 @@
 
   function saveCurrentDraft(reason = 'Edición conservada') {
     const draft = serializeEditableContext();
-    if (!draft) return null;
+    if (!draft || !activeUserIdV101()) return null;
     draft.reason = reason;
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (_) {}
     updateBanner(navigator.onLine ? 'online' : 'offline');
@@ -142,7 +184,9 @@
   }
 
   function applyDraftToVisibleForm(draft = readDraft()) {
-    if (!draft) return { ok: false, message: 'No existe borrador.' };
+    if (!draft || !activeUserIdV101() || String(draft.userId || '') !== activeUserIdV101()) {
+      return { ok: false, message: 'No existe un borrador autorizado para esta cuenta.' };
+    }
     const root = document.querySelector('.overlay:last-of-type, .sheet:last-of-type, #mainArea') || document.body;
     const fields = [...root.querySelectorAll('input, textarea, select')].filter(el => !el.disabled && !el.readOnly);
     let restored = 0;
@@ -309,6 +353,7 @@
   }
 
   function init() {
+    compactLegacySnapshotV101();
     ensureBanner();
     if (!navigator.onLine) updateBanner('offline');
     document.addEventListener('click', blockOfflineMutation, true);
@@ -326,7 +371,7 @@
 
   Object.assign(window, {
     NV805OfflineContinuity: {
-      init, readDraft, saveCurrentDraft, clearDraft, applyDraftToVisibleForm,
+      init, readDraft, saveCurrentDraft, clearDraft, clearSensitiveLocalContinuityV101, applyDraftToVisibleForm,
       openDraftReview, openContinuityCenter, readSnapshot, makeReadonlySnapshot,
       getLastSync, setLastSync, shouldTrackDirtyFieldV840, hasMeaningfulDirtyFormV840, clearMeaningfulDirtyV840
     },
