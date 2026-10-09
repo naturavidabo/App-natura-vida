@@ -12,9 +12,9 @@ db=(root/'js/db.js').read_text()
 sync=(root/'js/supabase-sync.js').read_text()
 version=json.loads((root/'app-version.json').read_text())
 checks={
- 'version 8.2.0':version.get('version')=='10.1.3',
- 'core loaded':'js/v8-financial-core.js?v=10.1.3' in index,
- 'module deferred':'js/v8-financial-accounts.js?v=10.1.3' not in index and 'ensureFinancialAccountsModuleV9' in lazy and 'ensureFinancialAccountsModuleV9' in shell and 'ensureFinancialAccountsModuleV9' in ai,
+ 'version 8.2.0':version.get('version')=='10.1.4',
+ 'core loaded':'js/v8-financial-core.js?v=10.1.4' in index,
+ 'module deferred':'js/v8-financial-accounts.js?v=10.1.4' not in index and 'ensureFinancialAccountsModuleV9' in lazy and 'ensureFinancialAccountsModuleV9' in shell and 'ensureFinancialAccountsModuleV9' in ai,
  'account tab':'estado-cuenta' in (root/'js/v7-shell.js').read_text(),
  'client button':'accountClientBtnV820' in (root/'js/clients.js').read_text(),
  'historical state':'historicalReceivables' in state,
@@ -37,4 +37,4 @@ checks={
 }
 failed=[k for k,v in checks.items() if not v]
 if failed: raise SystemExit('FALLÓ: '+', '.join(failed))
-print(f'Interfaz financiera V10.1.3: {len(checks)}/{len(checks)} controles OK')
+print(f'Interfaz financiera V10.1.4: {len(checks)}/{len(checks)} controles OK')
