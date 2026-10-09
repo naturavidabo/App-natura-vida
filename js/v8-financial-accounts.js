@@ -400,8 +400,31 @@
     const frequencyValue=['monthly','biweekly','weekly'].includes(options.frequency)?options.frequency:(existing?.frequency||'monthly');const initialInstallment=Number(options.installmentAmount||0);const initialCount=initialInstallment>0?Math.ceil(account.totalDebt/initialInstallment):Number(options.count||existing?.schedule?.length||4);
     openSheet(`<h2>${existing?'Actualizar plan de pagos':'Crear plan de pagos'} <span class="x" id="closeSheet">✕</span></h2><div class="nv820PaySummary"><strong>${esc(account.client.name)}</strong><span>Deuda a programar: <b>${money(account.totalDebt)}</b></span></div>${existing?`<div class="nv825PlanWarning"><strong>Ya existe un plan activo de ${(existing.schedule||[]).length} cuotas</strong><span>Puedes modificar las cuotas. El sistema pedirá tu autorización antes de reemplazar el cronograma anterior, conservando su historial y pagos registrados.</span></div>`:''}<div class="field"><label>Calcular plan por</label><select id="nv825PlanMode"><option value="amount" ${initialInstallment>0?'selected':''}>Monto fijo de cuota</option><option value="count" ${initialInstallment>0?'':'selected'}>Número de cuotas</option></select></div><div class="field-row"><div class="field" id="nv825AmountField"><label>Cuota aproximada Bs</label><input id="nv825PlanAmount" type="number" min="1" step="0.01" value="${initialInstallment||100}"></div><div class="field" id="nv825CountField"><label>Número de cuotas (1 a 120)</label><input id="nv820PlanCount" type="number" inputmode="numeric" min="1" max="120" step="1" value="${Math.max(1,Math.min(120,initialCount))}" placeholder="Ej.: 12 o 24"></div><div class="field"><label>Frecuencia</label><select id="nv820PlanFrequency"><option value="monthly" ${frequencyValue==='monthly'?'selected':''}>Mensual</option><option value="biweekly" ${frequencyValue==='biweekly'?'selected':''}>Quincenal</option><option value="weekly" ${frequencyValue==='weekly'?'selected':''}>Semanal</option></select></div></div><div class="field"><label>Primera fecha de pago</label><input id="nv820PlanFirst" type="date" value="${esc(options.startDate||defaultDate)}"></div><div class="field"><label>Observaciones / compromiso</label><textarea id="nv820PlanNotes" placeholder="Condiciones acordadas con el cliente">${esc(options.notes||'')}</textarea></div><div id="nv820PlanPreview" class="nv820PlanPreview"></div><p id="nv820PlanError" role="alert" aria-live="polite" class="nv820PlanError" hidden></p><button class="btn block" id="nv820SavePlan">Guardar y generar plan de pagos</button>`,(overlay,close)=>{
       const mode=overlay.querySelector('#nv825PlanMode'),amount=overlay.querySelector('#nv825PlanAmount'),count=overlay.querySelector('#nv820PlanCount'),frequency=overlay.querySelector('#nv820PlanFrequency'),first=overlay.querySelector('#nv820PlanFirst'),preview=overlay.querySelector('#nv820PlanPreview');
-      const scheduleNow=()=>{const firstDate=new Date(`${first.value||defaultDate}T12:00:00`).getTime();let c=Number(count.value||1);if(mode.value==='amount'){const installment=Math.max(1,Number(amount.value||100));c=Math.min(120,Math.ceil(account.totalDebt/installment));count.value=c;}else{c=Math.max(1,Math.min(120,Math.trunc(c)||1));count.value=c;}return buildPaymentScheduleV820(account.totalDebt,c,firstDate,frequency.value);};
-      const refresh=()=>{overlay.querySelector('#nv825AmountField').style.display=mode.value==='amount'?'':'none';overlay.querySelector('#nv825CountField').style.display=mode.value==='count'?'':'none';const schedule=scheduleNow();preview.innerHTML=`<strong>${schedule.length} cuotas</strong>${schedule.slice(0,18).map(row=>`<span><b>Cuota ${row.number}</b><small>${dateText(row.dueDate)}</small><em>${money(row.amount)}</em></span>`).join('')}${schedule.length>18?`<small>… y ${schedule.length-18} cuotas adicionales</small>`:''}`;};
+      const scheduleNow=()=>{
+        const firstDate=new Date(String(first.value||defaultDate)+'T12:00:00').getTime();
+        if(!Number.isFinite(firstDate))throw new Error('Selecciona una fecha válida.');
+        let c;
+        if(mode.value==='amount'){
+          const installment=Number(amount.value);
+          if(!Number.isFinite(installment)||installment<=0)throw new Error('Introduce un importe de cuota mayor que cero.');
+          c=Math.min(120,Math.ceil(account.totalDebt/installment));
+          count.value=c; // Solo se actualiza automáticamente en modo Monto fijo.
+        }else{
+          if(count.value.trim()==='')throw new Error('Escribe el número de cuotas (1 a 120).');
+          c=Number(count.value);
+          if(!Number.isInteger(c)||c<1||c>120)throw new Error('El número de cuotas debe ser un entero entre 1 y 120.');
+          // No modificar count.value mientras el usuario escribe o borra.
+        }
+        return buildPaymentScheduleV820(account.totalDebt,c,firstDate,frequency.value);
+      };
+      const refresh=()=>{
+        overlay.querySelector('#nv825AmountField').style.display=mode.value==='amount'?'':'none';
+        overlay.querySelector('#nv825CountField').style.display=mode.value==='count'?'':'none';
+        try{
+          const schedule=scheduleNow();
+          preview.innerHTML=`<strong>${schedule.length} cuotas</strong>${schedule.slice(0,18).map(row=>`<span><b>Cuota ${row.number}</b><small>${dateText(row.dueDate)}</small><em>${money(row.amount)}</em></span>`).join('')}${schedule.length>18?`<small>… y ${schedule.length-18} cuotas adicionales</small>`:''}`;
+        }catch(error){preview.textContent=error.message||'Completa el número de cuotas.';}
+      };
       const errorBox=overlay.querySelector('#nv820PlanError');
       let pendingPlan=null, committedPlan=null, pendingDocumentId=null;
       const reportError=message=>{errorBox.hidden=false;errorBox.textContent=message;};
