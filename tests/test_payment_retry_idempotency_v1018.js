@@ -1,0 +1,35 @@
+// Natura Vida V10.1.8: no duplicar un pago por respuesta de red perdida.
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const source=fs.readFileSync(path.join(root,'js/v8-financial-accounts.js'),'utf8');
+const begin=source.indexOf('  function reusePaymentAttemptV1018(');
+const end=source.indexOf('\n  function openPaymentFormV820',begin);
+assert(begin>0&&end>begin,'Se debe conservar helper de reintento');
+const helper=source.slice(begin,end);
+const reuse=new Function(helper+'\nreturn reusePaymentAttemptV1018;')();
+let generated=0;
+const create=()=>({id:'pay-test-'+(++generated),amount:100});
+const initial=reuse(null,create);
+const attemptTwo=reuse(initial,create);
+const attemptThree=reuse(attemptTwo,create);
+assert.equal(generated,1,'Tres reintentos deben generar un solo identificador');
+assert.strictEqual(attemptTwo,initial,'No se debe construir otro payload si el primer intento fue enviado');
+assert.strictEqual(attemptThree,initial,'Debe conservarse la identidad en todos los reintentos');
+
+const listenerStart=source.indexOf("$('#nv820SavePayment',overlay).addEventListener('click',async()=>{");
+const listenerEnd=source.indexOf('\n      });',listenerStart);
+assert(listenerStart>0&&listenerEnd>listenerStart,'Registrar pago necesita un controlador');
+const listener=source.slice(listenerStart,listenerEnd);
+assert(listener.includes('if(paymentInFlight)return;'),'Evitar doble toque mientras se guarda');
+assert(listener.includes("pendingPayment=reusePaymentAttemptV1018(pendingPayment,"),'Usar el mismo objeto de pago en reintentos');
+assert(listener.includes("await postPaymentAtomicV9(pendingPayment,pendingPlanId,pendingInstallmentNumber)"),'No cambiar el ID del RPC');
+assert(!listener.includes("const payment={id:uid('pay')"),'Nunca regenerar un pago nuevo por cada clic');
+assert(listener.includes('lockPaymentFields()'),'Bloquear ediciones después de envío incierto');
+assert(listener.includes("button.textContent=pendingPayment?'Verificar y reintentar el mismo pago'"),'Mostrar reintento seguro');
+assert(listener.includes('notice.textContent='),'Advertir cuando se desconoce si Supabase guardó el cobro');
+assert(source.includes('nv_financial_post_payment_atomic'),'Se mantiene la operación transaccional PostgreSQL');
+assert(source.includes('const savedPayment=atomic.payment||pendingPayment'),'Confirmar usando el pago existente');
+console.log('OK V10.1.8: ID único por cobro, tres reintentos simulados, sin doble clic ni cambio de importe.');
