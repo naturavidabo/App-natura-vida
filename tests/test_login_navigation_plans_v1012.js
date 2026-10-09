@@ -1,4 +1,4 @@
-// Regresion de incidentes observados en Android PWA V10.1.1 (corregidos V10.1.7)
+// Regresion de incidentes observados en Android PWA V10.1.1 (corregidos V10.1.8)
 'use strict';
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -11,7 +11,7 @@ const mgmt=read('js/v7-management-center.js');
 const finance=read('js/v8-financial-accounts.js');
 const sw=read('service-worker.js');
 const ver=JSON.parse(read('app-version.json'));
-assert.equal(ver.version,'10.1.7');
+assert.equal(ver.version,'10.1.8');
 assert(auth.includes("sb.from('profiles').select('id,email,full_name,role,status"),'Se debe consultar el perfil autentico');
 assert(!/from\('profiles'\)\.select\('[^']*permissions/.test(auth),'profiles.permissions no existe en PostgreSQL');
 assert(roles.includes('permissions: permissionsForRole(commercialRole)'),'Los permisos deben derivarse del rol');
@@ -26,5 +26,5 @@ assert(finance.includes('const plan=pendingPlan||{id:uid(\'plan\')'),'No regener
 assert(finance.includes('const atomicPlan=committedPlan?'),'No reenviar el plan si ya se guardo');
 assert(finance.includes('id:pendingDocumentId,documentType:\'PPA\''),'Evitar documento duplicado al reintentar');
 assert(finance.includes('role="alert" aria-live="polite"'),'Errores deben quedar visibles en formulario');
-assert(sw.includes('nv-app-shell-v10-1-7') && sw.includes('nv-runtime-v10-1-7'),'La PWA requiere cache nuevo');
-console.log('OK: seguridad de acceso, modulo de reglas y conteo / reintento de planes V10.1.7.');
+assert(sw.includes('nv-app-shell-v10-1-8') && sw.includes('nv-runtime-v10-1-8'),'La PWA requiere cache nuevo');
+console.log('OK: seguridad de acceso, modulo de reglas y conteo / reintento de planes V10.1.8.');
