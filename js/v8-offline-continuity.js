@@ -46,7 +46,9 @@
   }
 
   function activeUserIdV101() {
-    return String(window.AppState?.session?.onlineUserId || window.AppState?.session?.userId || '');
+    const session = window.AppState?.session;
+    if (!session || session.isAuthenticated !== true) return '';
+    return String(session.onlineUserId || session.userId || '');
   }
 
   function compactLegacySnapshotV101() {
