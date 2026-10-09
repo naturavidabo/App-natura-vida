@@ -1,4 +1,4 @@
-// Natura Vida 10.1.6: estado visual no debe simular una conexión o sync exitosa.
+// Natura Vida 10.1.7: estado visual no debe simular una conexión o sync exitosa.
 'use strict';
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -58,4 +58,4 @@ window.CloudConnection.state='online';emit('nv:connection',{state:'online'});
 assert(html.includes('En línea'));
 assert.equal(api.getLastSync(),synced,'Realtime no debe actualizar ultima sincronización');
 assert(syncSrc.includes("new CustomEvent('nv:data-synced'"),'El núcleo debe emitir la señal de datos validados');
-console.log('OK V10.1.6: conectividad real, fallos de red, reconexión sin doble sync y confirmación de datos.');
+console.log('OK V10.1.7: conectividad real, fallos de red, reconexión sin doble sync y confirmación de datos.');
