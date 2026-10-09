@@ -1134,8 +1134,20 @@ async function upsertCloudProduct(product) {
     if (!isAdmin()) return { ok: false, message: 'Solo el administrador puede modificar productos.' };
     const sb = await requireClient();
     const row = await mapProductToCloud(product);
-    const { data, error } = await sb.from('products').upsert(row, { onConflict: 'id' }).select().single();
+    const { data, error } = await sb.from('products').upsert(row, { onConflict: 'id' })
+      .select('id,name,category,sku,description,cost,market_price,reseller_price,public_price,stock,updated_at').single();
     if (error) return { ok: false, message: messageFromError(error) };
+    if (!data || String(data.id) !== String(row.id)) {
+      return { ok: false, message: 'Supabase no confirmó la actualización del producto.' };
+    }
+    // No informar "guardado" si el servidor devolvió precios o existencias
+    // diferentes de los enviados (restricciones, errores o escrituras concurrentes).
+    const mismatched = ['cost','market_price','reseller_price','public_price','stock']
+      .filter(field => Math.abs(Number(data[field]) - Number(row[field])) > 0.011
+        || !Number.isFinite(Number(data[field])));
+    if (mismatched.length) {
+      return { ok: false, message: 'Los valores confirmados en Supabase difieren de los editados (' + mismatched.join(', ') + '). Recarga el producto antes de reintentar.' };
+    }
     return { ok: true, row: data };
   } catch (error) { return { ok: false, message: messageFromError(error) }; }
 }

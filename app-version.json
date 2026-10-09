@@ -1,8 +1,8 @@
 {
-  "version": "10.1.2",
-  "build": "2026-10-09-v1012-login-plans",
-  "releasedAt": "2026-10-09T09:45:00-04:00",
+  "version": "10.1.3",
+  "build": "2026-10-09-v1013-inventory-save",
+  "releasedAt": "2026-10-09T10:00:00-04:00",
   "channel": "stable",
-  "label": "Natura Vida V10.1.2 - acceso, reglas comerciales y planes de pago",
-  "createdAt": "2026-10-09T09:45:00-04:00"
+  "label": "Natura Vida V10.1.3 - confirmación de cambios en precios e inventario",
+  "createdAt": "2026-10-09T10:00:00-04:00"
 }

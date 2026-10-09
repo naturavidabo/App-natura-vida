@@ -434,6 +434,7 @@ function openProductForm(id) {
       <div class="costSummary"><span class="lbl">Costo calculado por insumos</span><span class="val" id="grossVal">Bs 0</span></div>
     </details>
 
+    <p id="nv1013ProductSaveError" role="alert" aria-live="polite" class="formNotice" style="display:none"></p>
     <div class="actions stickyActions">
       <button class="btn outline block" id="cancelForm">Cancelar</button>
       <button class="btn block" id="saveForm">${p ? 'Guardar cambios' : 'Crear producto'}</button>
@@ -448,12 +449,14 @@ function openProductForm(id) {
     }
 
     function readCost() {
-      return roundBs(currentInsumoCost());
+      // Conservar el costo oficial al editar productos legados sin insumos.
+      const computed = currentInsumoCost();
+      return roundBs(computed > 0 ? computed : (p ? productCost(p) : 0));
     }
 
     function setCostFromInsumosIfNeeded() {
       const calculated = currentInsumoCost();
-      $('#f_cost', overlay).value = calculated ? roundBs(calculated) : '';
+      $('#f_cost', overlay).value = calculated > 0 ? roundBs(calculated) : (p ? productCost(p) : '');
     }
 
     function updateProfitPreview() {
@@ -558,7 +561,17 @@ function openProductForm(id) {
     $('#closeSheet', overlay).addEventListener('click', close);
     $('#cancelForm', overlay).addEventListener('click', close);
 
+    const errorBox = $('#nv1013ProductSaveError', overlay);
+    const reportSaveProblem = message => {
+      errorBox.textContent = message;
+      errorBox.style.display = 'block';
+      showToast(message, 'error');
+    };
+    overlay.querySelectorAll('input,textarea,select').forEach(field =>
+      field.addEventListener('input', () => { errorBox.style.display = 'none'; })
+    );
     $('#saveForm', overlay).addEventListener('click', async () => {
+      errorBox.style.display = 'none';
       const name = $('#f_name', overlay).value.trim();
       const category = $('#f_category', overlay).value.trim() || 'General';
       const cost = readCost();
@@ -568,13 +581,13 @@ function openProductForm(id) {
       const minimumPrice = roundBs(parseFloat($('#f_minprice', overlay).value) || 0);
       const stock = parseInt($('#f_stock', overlay).value, 10);
 
-      if (!name) { showToast('⚠️ Ponle un nombre al producto', 'error'); return; }
-      if (!category) { showToast('⚠️ Define una categoría', 'error'); return; }
-      if (cost <= 0) { showToast('⚠️ Ingresa el costo del producto', 'error'); return; }
-      if (mPrice <= 0 || rPrice <= 0 || pPrice <= 0) { showToast('⚠️ Ingresa precio mayorista, representantes y público', 'error'); return; }
-      if (pPrice < rPrice || pPrice < mPrice) { showToast('⚠️ El precio público no debería ser menor a mayorista o representantes', 'error'); return; }
-      if (minimumPrice > 0 && minimumPrice < cost) { showToast('⚠️ El precio mínimo autorizado no puede quedar por debajo del costo real.', 'error'); return; }
-      if (!Number.isFinite(stock) || stock < 0) { showToast('⚠️ El stock no puede ser negativo', 'error'); return; }
+      if (!name) { reportSaveProblem('Ponle un nombre al producto.'); return; }
+      if (!category) { reportSaveProblem('Define una categoría.'); return; }
+      if (cost <= 0) { reportSaveProblem('Ingresa el costo del producto o su desglose de insumos.'); return; }
+      if (mPrice <= 0 || rPrice <= 0 || pPrice <= 0) { reportSaveProblem('Ingresa los tres precios: mayorista, representantes y público.'); return; }
+      if (pPrice < rPrice || pPrice < mPrice) { reportSaveProblem('El precio público no puede ser menor al mayorista ni al de representantes. Revisa esos campos.'); return; }
+      if (minimumPrice > 0 && minimumPrice < cost) { reportSaveProblem('El precio mínimo autorizado no puede quedar por debajo del costo real.'); return; }
+      if (!Number.isFinite(stock) || stock < 0) { reportSaveProblem('Ingresa un stock válido de cero o más unidades.'); return; }
 
       const cleanInsumos = insumos
         .filter(i => (i.name || '').trim() || (parseFloat(i.unitCost) || 0) > 0)
@@ -637,7 +650,7 @@ function openProductForm(id) {
       } catch (err) {
         saveBtn.disabled = false;
         saveBtn.textContent = p ? 'Guardar cambios' : 'Crear producto';
-        showToast(err.message || 'No se pudo guardar el producto.', 'error');
+        reportSaveProblem(err.message || 'No se pudo guardar el producto. Verifica la conexión y vuelve a intentarlo.');
       }
     });
   });

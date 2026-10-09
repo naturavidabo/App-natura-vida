@@ -16,12 +16,12 @@ const shell=read('js/v7-shell.js');
 const ai=read('js/v8-ai-assistant.js');
 const aiBridge=read('js/v9-ai-bridge.js');
 
-assert.equal(version.version,'10.1.2');
+assert.equal(version.version,'10.1.3');
 assert(index.includes('@supabase/supabase-js@2.111.0'),'Supabase debe estar fijado a 2.111.0');
-assert(index.includes('js/v9-ai-bridge.js?v=10.1.2'),'El arranque debe usar el puente IA liviano');
-assert(!index.includes('<script src="js/v8-ai-assistant.js?v=10.1.2"></script>'),'La IA pesada no debe bloquear el arranque');
-assert(aiBridge.includes("s.src='js/v8-ai-assistant.js?v=10.1.2'"),'El puente debe cargar la IA completa bajo demanda');
-assert.equal(manifest.start_url,'./index.html?v=10.1.2');
+assert(index.includes('js/v9-ai-bridge.js?v=10.1.3'),'El arranque debe usar el puente IA liviano');
+assert(!index.includes('<script src="js/v8-ai-assistant.js?v=10.1.3"></script>'),'La IA pesada no debe bloquear el arranque');
+assert(aiBridge.includes("s.src='js/v8-ai-assistant.js?v=10.1.3'"),'El puente debe cargar la IA completa bajo demanda');
+assert.equal(manifest.start_url,'./index.html?v=10.1.3');
 assert(/APP_CACHE = 'nv-app-shell-v10-/.test(sw),'La rama V9 debe usar una generación propia de app cache');
 assert(/RUNTIME_CACHE = 'nv-runtime-v10-/.test(sw),'La rama V9 debe usar una generación propia de runtime cache');
 
@@ -51,4 +51,5 @@ assert(publicCount<=110,`demasiados recursos públicos de runtime: ${publicCount
 require('./test_local_continuity_security_v101.js');
 require('./test_public_data_guard_v102.js');
 require('./test_login_navigation_plans_v1012.js');
-console.log(`V10.1.2/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
+require('./test_product_inventory_save_v1013.js');
+console.log(`V10.1.3/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
