@@ -26,5 +26,5 @@ assert(finance.includes('const plan=pendingPlan||{id:uid(\'plan\')'),'No regener
 assert(finance.includes('const atomicPlan=committedPlan?'),'No reenviar el plan si ya se guardo');
 assert(finance.includes('id:pendingDocumentId,documentType:\'PPA\''),'Evitar documento duplicado al reintentar');
 assert(finance.includes('role="alert" aria-live="polite"'),'Errores deben quedar visibles en formulario');
-assert(sw.includes('nv-app-shell-v10-1-2') && sw.includes('nv-runtime-v10-1-2'),'La PWA requiere cache nuevo');
+assert(sw.includes('nv-app-shell-v10-1-3') && sw.includes('nv-runtime-v10-1-3'),'La PWA requiere cache nuevo');
 console.log('OK: seguridad de acceso, modulo de reglas y conteo / reintento de planes V10.1.3.');
