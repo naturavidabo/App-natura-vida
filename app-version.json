@@ -1,8 +1,8 @@
 {
-  "version": "10.1.5",
-  "build": "2026-10-09-v1015-plan-correction",
+  "version": "10.1.6",
+  "build": "2026-10-09-v1016-connection-truth",
   "channel": "stable",
-  "label": "Natura Vida V10.1.5 - edición de cuotas y sustitución de planes",
-  "releasedAt": "2026-10-09T15:20:53.144Z",
-  "createdAt": "2026-10-09T15:20:53.144Z"
+  "label": "Natura Vida V10.1.6 - estabilidad de conexión y sincronización",
+  "releasedAt": "2026-10-09T12:00:00-04:00",
+  "createdAt": "2026-10-09T12:00:00-04:00"
 }
