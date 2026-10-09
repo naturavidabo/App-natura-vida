@@ -1666,6 +1666,7 @@ async function cloudAfterDelete(storeName, id) {
 async function runBackgroundSyncOnce(reason = 'automatic') {
   if (_refreshInFlight) return _refreshInFlight;
   _refreshInFlight = (async () => {
+    try {
     if (!navigator.onLine) return { ok: false, message: 'Sin internet.' };
     if (!requireAuth()) return { ok: false, message: 'No hay sesión activa.' };
     if (AppState.session.pendingApproval) return { ok: true, restricted: true };
@@ -1682,7 +1683,24 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
       syncGenericCloudStoreToLocalV9('settings'),
       window.syncInboxFromCloud ? syncInboxFromCloud() : Promise.resolve({ ok: true })
     ];
-    const results = await Promise.all(tasks.map(p => Promise.resolve(p).catch(error => ({ ok: false, message: messageFromError(error) }))));
+    const taskNames = ['productos', 'clientes', 'ventas', 'grupos de precios', 'configuración', 'mensajes'];
+    const results = await Promise.all(tasks.map((promise, index) =>
+      Promise.resolve(promise)
+        .then(value => value === false
+          ? { ok: false, message: 'La actualización de ' + taskNames[index] + ' no se completó.' }
+          : value)
+        .catch(error => ({ ok: false, message: 'Error al actualizar ' + taskNames[index] + ': ' + messageFromError(error) }))
+    ));
+    const failed = results.map((result, index) =>
+      result?.ok === false
+        ? { ok: false, message: taskNames[index] + ': ' + (result.message || 'sin confirmación de Supabase') }
+        : null).filter(Boolean);
+    if (failed.length) {
+      const detail = failed.map(item => item.message).join(' | ');
+      setCloudConnectionState('error', detail);
+      // No presentar una actualización parcial como datos sincronizados.
+      return { ok: false, message: detail, results };
+    }
     await loadAllState({ coreOnly: true });
     // V9: contextos comerciales/roles se sincronizan explícitamente desde el
     // núcleo, sin reemplazar runBackgroundSyncOnce desde módulos históricos.
@@ -1695,12 +1713,6 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
     if ('requestIdleCallback' in window) requestIdleCallback(hydrateSecondaryStateV9, { timeout: 2500 });
     else setTimeout(hydrateSecondaryStateV9, 900);
     if (window.refreshInboxBadge) refreshInboxBadge({ silent: true }).catch(() => {});
-    const failed = results.filter(result => result && result.ok === false);
-    if (failed.length) {
-      const detail = failed.map(item => item.message).filter(Boolean).join(' | ');
-      setCloudConnectionState('error', detail);
-      return { ok: false, message: detail, results };
-    }
     setCloudConnectionState('online', 'Datos actualizados desde Supabase');
     // Evento específico de datos confirmados: Realtime conectado no significa
     // necesariamente inventario, clientes y ventas ya sincronizados.
@@ -1708,6 +1720,13 @@ async function runBackgroundSyncOnce(reason = 'automatic') {
       detail: { reason, confirmedAt: Date.now() }
     }));
     return { ok: true, results };
+    } catch (error) {
+      // La carga local o de contextos también puede fallar después de obtener
+      // respuestas correctas. Debe quedar visible como error, no "Conectando".
+      const detail = messageFromError(error);
+      setCloudConnectionState(navigator.onLine ? 'error' : 'offline', detail);
+      return { ok: false, message: detail };
+    }
   })();
   try { return await _refreshInFlight; }
   finally { _refreshInFlight = null; }
