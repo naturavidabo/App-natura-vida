@@ -1,0 +1,13 @@
+# Natura Vida: los datos reales de clientes y operaciones no van al repositorio publico.
+# El archivo historico previamente rastreado permanece en Git hasta migracion segura.
+# gitignore no elimina archivos ya versionados ni el historial Git.
+data/imports/**
+!data/imports/.gitkeep
+*.sqlite
+*.sqlite3
+*.db-backup
+*.private.json
+*.customer-export.json
+.env
+.env.*
+!.env.example
