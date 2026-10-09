@@ -12,7 +12,7 @@ const all=fs.existsSync(imports)?fs.readdirSync(imports).filter(x=>x.toLowerCase
 assert.deepEqual(all,[],'No publicar exportaciones de datos comerciales');
 const financial=fs.readFileSync(path.join(root,'js/v8-financial-accounts.js'),'utf8');
 assert(!financial.includes("fetch('data/imports/"),'El modulo no debe leer datos de clientes desde URL publica');
-assert(financial.includes("$('#nv820ImportFile',overlay).click()"),'El usuario conserva la importacion mediante archivo privado');
+assert(financial.includes("input.value='';input.click();"),'El usuario conserva la importacion mediante archivo privado con selector Android');
 const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
 const assets=sw.split('const OPTIONAL_APP_ASSETS = [')[1]?.split('];')[0]||'';
 assert(!assets.includes('data/imports/'), 'Nunca precachear importaciones comerciales privadas');

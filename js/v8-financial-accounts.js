@@ -484,14 +484,50 @@
     AppState.historicalReceivables=await DB.getAll('historicalReceivables');await writeAudit('historical_receivables_imported','historicalReceivables','batch_'+Date.now(),null,{imported,skipped,total:Core.round(total),origin:'Mi Negocio',inventoryImpact:false});return {imported,skipped,total:Core.round(total)};
   }
   function openHistoricalImportV820(){
-    openSheet(`<h2>Importar deudas históricas <span class="x" id="closeSheet">✕</span></h2><div class="nv820SafetyNote"><strong>Importación segura</strong><span>Cada venta se conserva separada, queda activa y no vuelve a descontar inventario.</span></div><div class="field"><label>Archivo JSON o CSV de Mi Negocio</label><input id="nv820ImportFile" type="file" accept=".json,.csv,text/csv,application/json"></div><div class="nv820ImportActions"><button class="btn outline" id="nv820Template">Descargar plantilla CSV</button><button class="btn outline" id="nv820Gabriela">Cargar archivo privado: Gabriela Espinoza</button></div><div id="nv820ImportPreview" class="nv820ImportPreview"><p>Selecciona un archivo para revisar antes de importar.</p></div><button class="btn block" id="nv820ConfirmImport" disabled>Confirmar importación</button>`,(overlay,close)=>{
+    openSheet(`<h2>Importar deudas históricas <span class="x" id="closeSheet">✕</span></h2><div class="nv820SafetyNote"><strong>Importación segura</strong><span>Cada venta se conserva separada, queda activa y no vuelve a descontar inventario.</span></div><div class="field"><label>Archivo privado JSON o CSV</label><input id="nv820ImportFile" type="file" accept=".json,.csv,text/csv,application/json"></div><p class="nv820SafetyNote"><strong>Primero descarga el respaldo en tu teléfono.</strong> Por seguridad, las deudas históricas ya no se descargan automáticamente desde una dirección pública. Selecciónalo en Archivos o Descargas para revisar sus registros. Nada se importa hasta pulsar Confirmar.</p><div class="nv820ImportActions"><button class="btn outline" id="nv820Template">Descargar plantilla CSV</button><button type="button" class="btn outline" id="nv820Gabriela">Elegir archivo desde Descargas</button></div><p id="nv820ImportFeedback" role="status" aria-live="polite" class="nv820SafetyNote">Selecciona el respaldo privado en formato JSON o CSV.</p><div id="nv820ImportPreview" class="nv820ImportPreview"><p>Aquí aparecerán los registros del archivo antes de importar.</p></div><button class="btn block" id="nv820ConfirmImport" disabled>Confirmar importación</button>`,(overlay,close)=>{
       let current=[];const preview=$('#nv820ImportPreview',overlay),confirm=$('#nv820ConfirmImport',overlay);
-      const setRows=rows=>{current=rows;const p=historicalPreviewHtmlV820(rows);preview.innerHTML=p.html;confirm.disabled=!p.fresh.length;};
+      const feedback=$('#nv820ImportFeedback',overlay);
+      const setFeedback=(message,isError=false)=>{feedback.textContent=message;feedback.setAttribute('role',isError?'alert':'status');};
+      const setRows=(rows,fileName)=>{
+        if(!Array.isArray(rows))throw new Error('El archivo no contiene una lista de registros. Usa el respaldo JSON original o una plantilla CSV.');
+        if(!rows.length)throw new Error('El archivo está vacío.');
+        if(rows.length>5000)throw new Error('El archivo supera 5000 registros. Divide la importación en varios archivos.');
+        const p=historicalPreviewHtmlV820(rows);
+        if(!p.normalized.length)throw new Error('No hay deudas válidas: revisa cliente y total de venta. Comprueba las columnas del CSV.');
+        current=rows;
+        preview.innerHTML=p.html;
+        confirm.disabled=!p.fresh.length;
+        const invalid=rows.length-p.normalized.length;
+        setFeedback(fileName+': '+p.normalized.length+' registros válidos; '+p.fresh.length+' nuevos; '+(p.normalized.length-p.fresh.length)+' ya registrados'+(invalid?'; '+invalid+' omitidos por datos incompletos':'')+'. '+(p.fresh.length?'Revisa la vista previa antes de confirmar.':'No hay registros nuevos para importar.'));
+      };
       $('#closeSheet',overlay).addEventListener('click',close);
-      $('#nv820ImportFile',overlay).addEventListener('change',async e=>{try{const file=e.target.files?.[0];if(!file)return;const text=await file.text();setRows(file.name.toLowerCase().endsWith('.json')?JSON.parse(text):parseCsvV820(text));}catch(err){showToast('No se pudo leer el archivo: '+err.message,'error');}});
+      $('#nv820ImportFile',overlay).addEventListener('change',async e=>{
+        const file=e.target.files?.[0];if(!file)return;
+        current=[];confirm.disabled=true;
+        preview.innerHTML='<p>Comprobando archivo local…</p>';
+        setFeedback('Leyendo '+file.name+'…');
+        try{
+          if(file.size>10*1024*1024)throw new Error('El archivo supera 10 MB.');
+          if(!/\.(json|csv)$/i.test(file.name))throw new Error('Selecciona un archivo terminado en .json o .csv.');
+          const raw=await file.text();
+          const isJson=/\.json$/i.test(file.name);
+          const parsed=isJson?JSON.parse(raw.replace(/^\uFEFF/,'')):parseCsvV820(raw);
+          // Algunos sistemas exportan un objeto contenedor en vez de un arreglo.
+          const rows=Array.isArray(parsed)?parsed:(
+            parsed&&typeof parsed==='object'
+              ?(parsed.rows||parsed.records||parsed.registros||parsed.deudas||parsed.data)
+              :null);
+          setRows(rows,file.name);
+        }catch(err){
+          const msg='No se pudo preparar la vista previa: '+(err.message||'archivo incompatible.');
+          setFeedback(msg,true);
+          preview.innerHTML='<p>La importación no se realizó. Revisa el formato y selecciona el archivo nuevamente.</p>';
+          showToast(msg,'error');
+        }
+      });
       $('#nv820Template',overlay).addEventListener('click',()=>downloadTextV820('plantilla_deudas_mi_negocio.csv','cliente;fecha;numero_venta;productos;total_venta;pagado;saldo_pendiente;observaciones\nCliente ejemplo;20/07/2026;VEN-0001;Aceite de coco;500;100;400;Pago parcial','text/csv;charset=utf-8'));
-      $('#nv820Gabriela',overlay).addEventListener('click',()=>$('#nv820ImportFile',overlay).click());
-      confirm.addEventListener('click',async()=>{confirm.disabled=true;confirm.textContent='Importando…';try{const result=await importHistoricalRowsV820(current);close();showToast(`${result.imported} deudas importadas · ${money(result.total)} pendientes.`);renderReceivablesV820();}catch(err){confirm.disabled=false;confirm.textContent='Confirmar importación';showToast(err.message||'No se pudo importar.','error');}});
+      $('#nv820Gabriela',overlay).addEventListener('click',()=>{const input=$('#nv820ImportFile',overlay);input.value='';input.click();});
+      confirm.addEventListener('click',async()=>{if(!current.length)return;confirm.disabled=true;confirm.textContent='Importando…';try{const result=await importHistoricalRowsV820(current);close();showToast(`${result.imported} deudas importadas · ${money(result.total)} pendientes.`);renderReceivablesV820();}catch(err){confirm.disabled=false;confirm.textContent='Confirmar importación';setFeedback('La importación no terminó: '+(err.message||'error desconocido.'),true);showToast(err.message||'No se pudo importar.','error');}});
     });
   }
 
