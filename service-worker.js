@@ -20,7 +20,7 @@ const OPTIONAL_APP_ASSETS = [
   './js/v7-inventory-sales.js','./js/v7-management-center.js','./js/v7-orders.js','./js/v7-production.js','./js/v7-profile-users.js',
   './js/v7-regional.js','./js/v7-stats.js','./js/v7-workforce.js','./js/v8-ai-assistant.js','./js/v8-commercial-rules.js',
   './js/v8-financial-accounts.js','./js/v8-governance.js','./js/v8-linked-stock.js','./js/v8-quality-assurance.js','./js/v8-roles.js',
-  './js/v8-seller-settlement.js','./js/v8-territory.js','./data/imports/gabriela-espinoza-mi-negocio.json',
+  './js/v8-seller-settlement.js','./js/v8-territory.js',
 ];
 
 const MAP_HOSTS = new Set(['tile.openstreetmap.org','a.basemaps.cartocdn.com','b.basemaps.cartocdn.com','c.basemaps.cartocdn.com','d.basemaps.cartocdn.com','nominatim.openstreetmap.org']);
@@ -50,7 +50,17 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys.filter(key => /^(nv-|natura-vida)/i.test(key) && !key.startsWith('nv-images-') && ![APP_CACHE, IMAGE_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key))))
-      .then(() => self.clients.claim())
+      .then(async () => {
+        // Depurar del cache anterior la importacion historica con datos comerciales.
+        // Esto NO elimina el archivo publicado ni su historial en GitHub.
+        const legacyUrl = new URL('./data/imports/gabriela-espinoza-mi-negocio.json', self.registration.scope).toString();
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(key => /^(nv-|natura-vida)/i.test(key)).map(async key => {
+          const cache = await caches.open(key);
+          await cache.delete(legacyUrl, { ignoreSearch: true });
+        }));
+        return self.clients.claim();
+      })
   );
 });
 
