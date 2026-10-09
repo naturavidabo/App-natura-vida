@@ -434,7 +434,7 @@ function openProductForm(id) {
       <div class="costSummary"><span class="lbl">Costo calculado por insumos</span><span class="val" id="grossVal">Bs 0</span></div>
     </details>
 
-    <p id="nv1013ProductSaveError" role="alert" aria-live="polite" class="formNotice" hidden></p>
+    <p id="nv1013ProductSaveError" role="alert" aria-live="polite" class="formNotice" style="display:none"></p>
     <div class="actions stickyActions">
       <button class="btn outline block" id="cancelForm">Cancelar</button>
       <button class="btn block" id="saveForm">${p ? 'Guardar cambios' : 'Crear producto'}</button>
@@ -564,14 +564,14 @@ function openProductForm(id) {
     const errorBox = $('#nv1013ProductSaveError', overlay);
     const reportSaveProblem = message => {
       errorBox.textContent = message;
-      errorBox.hidden = false;
+      errorBox.style.display = 'block';
       showToast(message, 'error');
     };
     overlay.querySelectorAll('input,textarea,select').forEach(field =>
-      field.addEventListener('input', () => { errorBox.hidden = true; })
+      field.addEventListener('input', () => { errorBox.style.display = 'none'; })
     );
     $('#saveForm', overlay).addEventListener('click', async () => {
-      errorBox.hidden = true;
+      errorBox.style.display = 'none';
       const name = $('#f_name', overlay).value.trim();
       const category = $('#f_category', overlay).value.trim() || 'General';
       const cost = readCost();
