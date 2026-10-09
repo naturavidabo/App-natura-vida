@@ -17,7 +17,7 @@ const badge={
   set innerHTML(v){html=v;},get innerHTML(){return html;},
   title:''
 };
-const document={readyState:'loading',getElementById(id){return id==='cloudStatusBadge'?badge:null;},addEventListener(){}};
+const document={readyState:'loading',getElementById(id){return id==='cloudStatusBadge'?badge:null;},addEventListener(){},querySelector:()=>null,body:{querySelectorAll:()=>[]}};
 const local=new Map();
 const storage={getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,String(v)),removeItem:k=>local.delete(k)};
 let duplicateNetworkCalls=0;
