@@ -1,4 +1,4 @@
-// Natura Vida 10.1.6: el numero de cuotas no se reescribe mientras se edita.
+// Natura Vida 10.1.7: el numero de cuotas no se reescribe mientras se edita.
 'use strict';
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -6,7 +6,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const src=fs.readFileSync(path.join(root,'js/v8-financial-accounts.js'),'utf8');
 const version=JSON.parse(fs.readFileSync(path.join(root,'app-version.json'),'utf8'));
-assert.equal(version.version,'10.1.6');
+assert.equal(version.version,'10.1.7');
 const start=src.indexOf('      const scheduleNow=()=>{');
 const end=src.indexOf('      const refresh=()=>{',start);
 assert(start>0&&end>start,'El calculador de cuotas debe poder evaluarse');
@@ -38,4 +38,4 @@ assert(src.includes('replacePaymentPlanAtomicV9(plan,existingIdToReplace)'),'Nun
 assert(src.includes('El plan activo pertenece a otra cuenta'),'Respetar propietario del plan');
 assert(src.includes('const savedSchedule=Array.isArray(savedPlan.schedule)'),'Los documentos deben usar el cronograma confirmado');
 assert(!src.includes("Math.trunc(c)||1"),'No reinstaurar automáticamente el 1 en modo número');
-console.log('OK V10.1.6: campo vaciable, conteo 2/24, validación, plan vigente y reemplazo autorizado.');
+console.log('OK V10.1.7: campo vaciable, conteo 2/24, validación, plan vigente y reemplazo autorizado.');
