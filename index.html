@@ -6,17 +6,17 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>NATURA VIDA V10.1.8 — Director Administrativo Inteligente</title>
+<title>NATURA VIDA V10.1.9 — Director Administrativo Inteligente</title>
 <meta name="theme-color" content="#064B2E">
-<link rel="manifest" href="manifest.json?v=10.1.8">
+<link rel="manifest" href="manifest.json?v=10.1.9">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css?v=10.1.8">
-<link rel="stylesheet" href="css/v7.css?v=10.1.8">
-<link rel="stylesheet" href="css/v8.css?v=10.1.8">
-<link rel="stylesheet" href="css/v10.css?v=10.1.8">
+<link rel="stylesheet" href="css/app.css?v=10.1.9">
+<link rel="stylesheet" href="css/v7.css?v=10.1.9">
+<link rel="stylesheet" href="css/v8.css?v=10.1.9">
+<link rel="stylesheet" href="css/v10.css?v=10.1.9">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0"></script>
 </head>
 <body class="nv10">
@@ -57,40 +57,63 @@
 </div>
 
 <script>
+/* Rescate de arranque V10.1.9: sin credenciales ni escritura de datos. */
+(function () {
+  function mostrarErrorDeArranque(forzar) {
+    const main = document.getElementById('mainArea');
+    if (!main || (!forzar && !main.querySelector('.loading'))) return false;
+    const nav = document.getElementById('bottomNav');
+    if (nav) nav.textContent = '';
+    main.innerHTML = '<section class="loginShell"><div class="loginCard" style="max-width:460px;margin:24px auto;text-align:center">' +
+      '<h2>La conexión está tardando demasiado</h2>' +
+      '<p>Natura Vida no pudo terminar de cargar los datos desde Supabase. El servidor puede estar recuperándose o la conexión puede estar interrumpida.</p>' +
+      '<p><strong>No se mostrarán cifras de ventas ni inventario sin confirmar la sincronización.</strong> La sesión no se cerrará ni se borrarán registros.</p>' +
+      '<button class="btn block" id="nvRetryStartupV1019" type="button">Reintentar carga</button>' +
+      '<small style="display:block;margin-top:12px">Si continúa el error, avisa al administrador. No borres los datos de la aplicación.</small></div></section>';
+    document.getElementById('nvRetryStartupV1019').addEventListener('click', function () {
+      const u = new URL(window.location.href);
+      u.searchParams.set('nv-reintento', String(Date.now()));
+      window.location.replace(u.toString());
+    });
+    return true;
+  }
+  window.nvShowStartupProblemV1019 = mostrarErrorDeArranque;
+  window.setTimeout(function () { mostrarErrorDeArranque(false); }, 16000);
+})();
+</script>
+
+<script>
   document.addEventListener('DOMContentLoaded', () => {
     const d = new Date();
     document.getElementById('dateStamp').textContent = d.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
   });
 </script>
-<script src="js/lazy-assets.js?v=10.1.8"></script>
-<script src="js/db.js?v=10.1.8"></script>
-<script src="js/ui-helpers.js?v=10.1.8"></script>
-<script src="js/state.js?v=10.1.8"></script>
-<script src="js/v8-financial-core.js?v=10.1.8"></script>
-<script src="js/v8-commercial-rules-core.js?v=10.1.8"></script>
-<script src="js/products.js?v=10.1.8"></script>
-<script src="js/pricegroups.js?v=10.1.8"></script>
-<script src="js/clients.js?v=10.1.8"></script>
-<script src="js/sales.js?v=10.1.8"></script>
+<script src="js/lazy-assets.js?v=10.1.9"></script>
+<script src="js/db.js?v=10.1.9"></script>
+<script src="js/ui-helpers.js?v=10.1.9"></script>
+<script src="js/state.js?v=10.1.9"></script>
+<script src="js/v8-financial-core.js?v=10.1.9"></script>
+<script src="js/v8-commercial-rules-core.js?v=10.1.9"></script>
+<script src="js/products.js?v=10.1.9"></script>
+<script src="js/pricegroups.js?v=10.1.9"></script>
+<script src="js/clients.js?v=10.1.9"></script>
+<script src="js/sales.js?v=10.1.9"></script>
 
 
-<script src="js/settings.js?v=10.1.8"></script>
-<script src="js/supabase-config.js?v=10.1.8"></script>
-<script src="js/supabase-sync.js?v=10.1.8"></script>
-<script src="js/auth.js?v=10.1.8"></script>
+<script src="js/settings.js?v=10.1.9"></script>
+<script src="js/supabase-config.js?v=10.1.9"></script>
+<script src="js/supabase-sync.js?v=10.1.9"></script>
+<script src="js/auth.js?v=10.1.9"></script>
 
 
-<script src="js/inbox.js?v=10.1.8"></script>
-<script src="js/app-update.js?v=10.1.8"></script>
-<script src="js/app.js?v=10.1.8"></script>
-<script src="js/v7-supabase.js?v=10.1.8"></script>
-<script src="js/v8-core.js?v=10.1.8"></script>
+<script src="js/inbox.js?v=10.1.9"></script>
+<script src="js/app-update.js?v=10.1.9"></script>
+<script src="js/app.js?v=10.1.9"></script>
+<script src="js/v7-supabase.js?v=10.1.9"></script>
+<script src="js/v8-core.js?v=10.1.9"></script>
 
-<script src="js/v8-stability.js?v=10.1.8"></script>
-<script src="js/v8-offline-continuity.js?v=10.1.8"></script>
-
-
-
+<script src="js/v8-stability.js?v=10.1.9"></script>
+<script src="js/v8-offline-continuity.js?v=10.1.9"></script>
 
 
 
@@ -103,8 +126,11 @@
 
 
 
-<script src="js/v7-shell.js?v=10.1.8"></script>
-<script src="js/v9-ai-bridge.js?v=10.1.8"></script>
+
+
+
+<script src="js/v7-shell.js?v=10.1.9"></script>
+<script src="js/v9-ai-bridge.js?v=10.1.9"></script>
 
 
 </body>

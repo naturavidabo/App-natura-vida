@@ -1,8 +1,8 @@
 {
-  "version": "10.1.8",
-  "build": "2026-10-09-v1018-financial-idempotency",
+  "version": "10.1.9",
+  "build": "2026-10-30-v1019-startup-recovery",
   "channel": "stable",
-  "label": "Natura Vida V10.1.8 - prevención de cobros duplicados",
-  "releasedAt": "2026-10-09T12:20:00-04:00",
-  "createdAt": "2026-10-09T12:20:00-04:00"
+  "label": "Natura Vida V10.1.9 - recuperación de pantalla de carga",
+  "releasedAt": "2026-10-30T23:10:57.190Z",
+  "createdAt": "2026-10-30T23:10:57.190Z"
 }

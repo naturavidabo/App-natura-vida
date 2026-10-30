@@ -755,4 +755,9 @@ window.renderUsersFoundation = renderUsersFoundation;
 window.renderLoginScreen = renderLoginScreen;
 window.renderEmailConfirmationScreenV801 = renderEmailConfirmationScreenV801;
 window.renderSessionRecoveryScreenV801 = renderSessionRecoveryScreenV801;
-document.addEventListener('DOMContentLoaded', initApp);
+document.addEventListener('DOMContentLoaded', () => {
+  Promise.resolve().then(initApp).catch(error => {
+    console.error('Natura Vida: error durante el arranque', error);
+    if (window.nvShowStartupProblemV1019) nvShowStartupProblemV1019(true);
+  });
+});
