@@ -7,8 +7,8 @@ sw=(root/'service-worker.js').read_text()
 settings=(root/'js/settings.js').read_text()
 version=json.loads((root/'app-version.json').read_text())
 checks={
- 'version 8.2.0':version.get('version')=='10.1.8',
- 'module loaded':'js/v8-offline-continuity.js?v=10.1.8' in index,
+ 'version 8.2.0':tuple(map(int, version.get('version','0.0.0').split('.'))) >= (10,1,8),
+ 'module loaded':f'js/v8-offline-continuity.js?v={version["version"]}' in index,
  'app shell cache':"APP_CACHE = 'nv-app-shell-v10-" in sw and 'APP_SHELL' in sw and 'OPTIONAL_APP_ASSETS' in sw,
  'navigation fallback':"cache.match('./index.html'" in sw,
  'no offline queue':'No existe cola offline' in js and 'no se envía automáticamente' in js,

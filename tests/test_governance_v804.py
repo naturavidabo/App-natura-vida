@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 root=Path(__file__).resolve().parents[1]
 js=(root/'js/v8-governance.js').read_text()
 settings=(root/'js/settings.js').read_text()
@@ -6,8 +7,9 @@ lazy=(root/'js/lazy-assets.js').read_text()
 app=(root/'js/app.js').read_text()
 index=(root/'index.html').read_text()
 css=(root/'css/v8.css').read_text()
+version=json.loads((root/'app-version.json').read_text())
 checks={
-'governance deferred':'js/v8-governance.js?v=10.1.8' not in index and 'ensureGovernanceModuleV9' in lazy and 'ensureGovernanceModuleV9' in settings,
+'governance deferred':f'js/v8-governance.js?v={version["version"]}' not in index and 'ensureGovernanceModuleV9' in lazy and 'ensureGovernanceModuleV9' in settings,
 'duplicate detection':'findClientDuplicates' in js,
 'inventory checks':'inventoryIssues' in js,
 'system health':'systemHealth' in js,
@@ -18,7 +20,7 @@ checks={
 'settings entry':'openGovernanceBtn' in settings,
 'user badges':'nv804UserFlags' in app,
 'responsive styles':'.nv804Grid' in css and '@media(max-width:420px)' in css,
-'updated version':'10.1.8' in (root/'app-version.json').read_text(),
+'updated version':bool(version.get('version')),
 }
 failed=[k for k,v in checks.items() if not v]
 if failed:

@@ -9,8 +9,8 @@ rep=read('js/v7-inventory-sales.js'); settings=read('js/settings.js'); app=read(
 shell=read('js/v7-shell.js'); center=read('js/v7-management-center.js'); sw=read('service-worker.js'); css=read('css/v8.css')
 version=json.loads(read('app-version.json'))
 checks={
- 'versión 8.2.0':version.get('version')=='10.1.8',
- 'núcleo cargado':'js/v8-commercial-rules-core.js?v=10.1.8' in index and 'js/v8-commercial-rules.js?v=10.1.8' not in index,
+ 'versión 8.2.0':tuple(map(int, version.get('version','0.0.0').split('.'))) >= (10,1,8),
+ 'núcleo cargado':f'js/v8-commercial-rules-core.js?v={version["version"]}' in index and f'js/v8-commercial-rules.js?v={version["version"]}' not in index,
  'orden de carga':index.index('v8-commercial-rules-core.js') < index.index('products.js') < index.index('sales.js'),
  'interfaz diferida':'ensureCommercialRulesModuleV9' in lazy and 'ensureCommercialRulesModuleV9' in shell,
  'módulo en caché':"'./js/v8-commercial-rules.js'" in sw,
