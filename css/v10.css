@@ -306,3 +306,62 @@ body.nv10 .btn.ghost{background:#edf7f1;color:#0a6f46;box-shadow:none}
   body.nv10 .nv101ActionList .v770ActionMain{grid-template-columns:50px minmax(0,1fr) 30px;min-height:78px;padding:11px 52px 11px 13px}
   body.nv10 .nv101ActionList .v770ActionIcon{width:48px;height:48px}
 }
+
+/* V10.1.10 — Corrección de contraste real del carrito (evita conflicto
+   con body.nv10 .btn), accesibilidad y espacio de navegación móvil. */
+body.nv10 #cartBar.cartBar{
+  gap:12px;
+  padding:12px 14px!important;
+  border:1px solid rgba(196,242,214,.72)!important;
+  background:linear-gradient(115deg,#064832,#08764b)!important;
+  box-shadow:0 13px 30px rgba(3,52,32,.28)!important;
+}
+body.nv10 #cartBar .cartBarInfo{flex:1 1 auto;min-width:0}
+body.nv10 #cartBar .cartCount{color:#e5faed;font-size:12px;line-height:1.35}
+body.nv10 #cartBar .cartTotal{color:#fff;font-size:20px;line-height:1.25;letter-spacing:-.02em}
+body.nv10 #cartBar button#goToCheckout.btn{
+  flex:0 0 auto;
+  min-width:150px;
+  min-height:54px;
+  padding:12px 18px;
+  border:2px solid #d1ead9!important;
+  border-radius:16px!important;
+  background:linear-gradient(180deg,#fff 0%,#eafbf0 100%)!important;
+  color:#06482e!important;
+  font-size:16px;
+  font-weight:850;
+  line-height:1.2;
+  text-shadow:none;
+  opacity:1;
+  box-shadow:0 5px 14px rgba(0,24,13,.20)!important;
+}
+body.nv10 #cartBar button#goToCheckout.btn:focus-visible{
+  outline:3px solid #f3d66c!important;
+  outline-offset:3px;
+}
+body.nv10 #cartBar button#goToCheckout.btn:active{
+  background:#d9f5e4!important;
+  color:#06482e!important;
+  transform:translateY(1px);
+}
+body.nv10 #cartBar button#goToCheckout.btn:disabled{
+  opacity:.58;
+  cursor:not-allowed;
+  box-shadow:none!important;
+}
+body.nv10 nav.bottom button:not(.active){color:#f0fff6}
+body.nv10 nav.bottom button:focus-visible{outline:3px solid #f3d66c;outline-offset:1px}
+body.nv10 .catalogCard .catalogStock{color:#445d50;font-weight:650;font-size:11px}
+body.nv10 .catalogCard .catalogName{color:#19392e;line-height:1.35}
+body.nv10 .catalogCard .catalogPrice{font-size:15px;font-weight:850}
+body.nv10 #mainArea:has(#catalogGrid){padding-bottom:200px}
+@media(max-width:390px){
+  body.nv10 #cartBar.cartBar{gap:8px;padding:11px 10px!important}
+  body.nv10 #cartBar button#goToCheckout.btn{
+    min-width:130px;
+    min-height:52px;
+    padding:10px 12px;
+    font-size:15px;
+  }
+  body.nv10 #cartBar .cartTotal{font-size:18px}
+}

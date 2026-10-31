@@ -1,8 +1,8 @@
 {
-  "version": "10.1.9",
-  "build": "2026-10-30-v1019-startup-recovery",
+  "version": "10.1.10",
+  "build": "2026-10-31-v10110-contraste-carrito",
   "channel": "stable",
-  "label": "Natura Vida V10.1.9 - recuperación de pantalla de carga",
-  "releasedAt": "2026-10-30T23:10:57.190Z",
-  "createdAt": "2026-10-30T23:10:57.190Z"
+  "label": "Natura Vida V10.1.10 - legibilidad de ventas y carrito",
+  "releasedAt": "2026-10-31T11:50:00-04:00",
+  "createdAt": "2026-10-31T11:50:00-04:00"
 }

@@ -6,7 +6,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const src=fs.readFileSync(path.join(root,'js/v8-financial-accounts.js'),'utf8');
 const version=JSON.parse(fs.readFileSync(path.join(root,'app-version.json'),'utf8'));
-assert.equal(version.version,'10.1.8');
+assert(new Intl.Collator('en',{numeric:true}).compare(version.version,'10.1.8')>=0,'Se requiere V10.1.8 o posterior');
 const start=src.indexOf('      const scheduleNow=()=>{');
 const end=src.indexOf('      const refresh=()=>{',start);
 assert(start>0&&end>start,'El calculador de cuotas debe poder evaluarse');

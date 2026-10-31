@@ -12,9 +12,9 @@ db=(root/'js/db.js').read_text()
 sync=(root/'js/supabase-sync.js').read_text()
 version=json.loads((root/'app-version.json').read_text())
 checks={
- 'version 8.2.0':version.get('version')=='10.1.8',
- 'core loaded':'js/v8-financial-core.js?v=10.1.8' in index,
- 'module deferred':'js/v8-financial-accounts.js?v=10.1.8' not in index and 'ensureFinancialAccountsModuleV9' in lazy and 'ensureFinancialAccountsModuleV9' in shell and 'ensureFinancialAccountsModuleV9' in ai,
+ 'version 8.2.0':tuple(map(int, version.get('version','0.0.0').split('.'))) >= (10,1,8),
+ 'core loaded':f'js/v8-financial-core.js?v={version["version"]}' in index,
+ 'module deferred':f'js/v8-financial-accounts.js?v={version["version"]}' not in index and 'ensureFinancialAccountsModuleV9' in lazy and 'ensureFinancialAccountsModuleV9' in shell and 'ensureFinancialAccountsModuleV9' in ai,
  'account tab':'estado-cuenta' in (root/'js/v7-shell.js').read_text(),
  'client button':'accountClientBtnV820' in (root/'js/clients.js').read_text(),
  'historical state':'historicalReceivables' in state,

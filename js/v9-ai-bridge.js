@@ -1,6 +1,12 @@
 /* Natura Vida V9 — puente liviano del Asistente IA. */
 (() => {
   'use strict';
+  const AI_ASSET_VERSION_V9 = (() => {
+    try {
+      const uri = document.currentScript?.src || document.querySelector('script[src*="v9-ai-bridge.js"]')?.src;
+      return uri ? new URL(uri, location.href).searchParams.get('v') || '10.1.10' : '10.1.10';
+    } catch (_) { return '10.1.10'; }
+  })();
   let loading=null;
   function adminAllowed(){ try{return !!(window.isAdmin&&isAdmin());}catch(_){return false;} }
   function loadAI(){
@@ -8,7 +14,7 @@
     if(loading)return loading;
     loading=new Promise((resolve,reject)=>{
       const s=document.createElement('script');
-      s.src='js/v8-ai-assistant.js?v=10.1.8';
+      s.src='js/v8-ai-assistant.js?v='+encodeURIComponent(AI_ASSET_VERSION_V9);
       s.async=true;
       s.onload=()=>window.renderAIAssistantV9?resolve(window.__nvAiV9||true):reject(new Error('IA no inicializada'));
       s.onerror=()=>reject(new Error('No se pudo cargar IA'));

@@ -16,12 +16,12 @@ const shell=read('js/v7-shell.js');
 const ai=read('js/v8-ai-assistant.js');
 const aiBridge=read('js/v9-ai-bridge.js');
 
-assert.equal(version.version,'10.1.8');
+assert(/^\d+\.\d+\.\d+$/.test(version.version),'app-version debe ser semver');
 assert(index.includes('@supabase/supabase-js@2.111.0'),'Supabase debe estar fijado a 2.111.0');
-assert(index.includes('js/v9-ai-bridge.js?v=10.1.8'),'El arranque debe usar el puente IA liviano');
-assert(!index.includes('<script src="js/v8-ai-assistant.js?v=10.1.8"></script>'),'La IA pesada no debe bloquear el arranque');
-assert(aiBridge.includes("s.src='js/v8-ai-assistant.js?v=10.1.8'"),'El puente debe cargar la IA completa bajo demanda');
-assert.equal(manifest.start_url,'./index.html?v=10.1.8');
+assert(index.includes(`js/v9-ai-bridge.js?v=${version.version}`),'El arranque debe usar el puente IA liviano');
+assert(!index.includes(`<script src="js/v8-ai-assistant.js?v=${version.version}"></script>`),'La IA pesada no debe bloquear el arranque');
+assert(aiBridge.includes('js/v8-ai-assistant.js?v=') && aiBridge.includes('AI_ASSET_VERSION_V9'),'El puente debe cargar la IA completa bajo demanda');
+assert.equal(manifest.start_url,`./index.html?v=${version.version}`);
 assert(/APP_CACHE = 'nv-app-shell-v10-/.test(sw),'La rama V9 debe usar una generación propia de app cache');
 assert(/RUNTIME_CACHE = 'nv-runtime-v10-/.test(sw),'La rama V9 debe usar una generación propia de runtime cache');
 
@@ -57,4 +57,4 @@ require('./test_payment_plan_existing_count_v1015.js');
 require('./test_connection_truth_v1016.js');
 require('./test_core_sync_integrity_v1017.js');
 require('./test_payment_retry_idempotency_v1018.js');
-console.log(`V10.1.8/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
+console.log(`V${version.version}/V9 OK: sesión persistente, actualización segura, control de cambios y centro administrativo; ${publicCount} recursos públicos.`);
